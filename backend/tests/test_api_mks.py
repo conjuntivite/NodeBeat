@@ -65,7 +65,7 @@ async def test_create_and_get_never_returns_password(client, db):
 
 
 @pytest.mark.parametrize("campo,valor", [
-    ("ip_tunel", "8.8.8.8"), ("ip_publico", "192.168.0.1"), ("ip_publico", "abc"), ("nome", "  "),
+    ("ip_tunel", "8.8.8.8"), ("ip_tunel", "127.0.0.1"), ("ip_tunel", "169.254.1.1"), ("ip_tunel", "0.0.0.0"), ("usuario", "  "), ("ip_publico", "192.168.0.1"), ("ip_publico", "abc"), ("nome", "  "),
     ("usuario", ""), ("senha", ""),
 ])
 async def test_create_mk_rejects_bad_input(client, campo, valor):
@@ -100,16 +100,16 @@ async def test_status_summary_and_order(client, r):
     await client.put(f"/api/mks/{b}/interfaces-vigiadas", json={"interfaces": ["ether1", "ether2", "ether1"]})
     ok = {"detalhe": "", "desde": "2026-01-01T00:00:00+00:00", "uptime": "1d", "versao": "7.1"}
     await history.save_state(r, a, {**ok, "status": "no_ar", "cpu": 10, "mem": 20, "ifaces": {}})
-    await history.save_state(r, b, {**ok, "status": "no_ar", "cpu": 85.4, "mem": 20,
+    await history.save_state(r, b, {**ok, "status": "no_ar", "cpu": 80.5, "mem": 20,
                                     "ifaces": {"ether1": True, "ether2": False}})
     await history.save_state(r, c, {**ok, "status": "offline", "cpu": None, "mem": None, "ifaces": {}})
     await r.rpush("queue:webhook", "{}")
     body = (await client.get("/api/status")).json()
-    assert body["resumo"] == {"no_ar": 2, "com_alerta": 1, "fora": 1}
+    assert body["resumo"] == {"no_ar": 1, "com_alerta": 1, "fora": 1}
     assert body["fila_pendente"] == 1 and body["sede_ok"] is True
     assert [m["nome"] for m in body["mks"]] == ["Charlie", "bravo", "Alfa", "Delta"]
     bravo = body["mks"][1]
-    assert bravo["alertas"] == ["CPU alta (85%)", "Interface ether2 caída"]
+    assert bravo["alertas"] == ["CPU alta (80,5%)", "Interface ether2 caída"]
     assert (bravo["ifaces_ok"], bravo["ifaces_total"]) == (1, 2)
     assert body["mks"][3]["status"] == "aguardando" and d == body["mks"][3]["id"]
 

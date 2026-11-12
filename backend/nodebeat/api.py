@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from nodebeat import auth, crypto, history, routeros, store, webhook
+from nodebeat.rules import LIMITE, _pct
 
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
@@ -27,7 +28,7 @@ class MkIn(BaseModel):
     usuario: str = Field(min_length=1)
     senha: str = ""
 
-    @field_validator("nome")
+    @field_validator("nome", "usuario")
     @classmethod
     def _nome(cls, v: str) -> str:
         v = v.strip()
@@ -39,7 +40,11 @@ class MkIn(BaseModel):
     @classmethod
     def _ip(cls, v: str, info) -> str:
         ip = ipaddress.IPv4Address(v)  # ValueError -> 422
-        if not (ip.is_private if info.field_name == "ip_tunel" else ip.is_global):
+        if info.field_name == "ip_tunel":
+            ok = ip.is_private and not (ip.is_loopback or ip.is_link_local or ip.is_unspecified)
+        else:
+            ok = ip.is_global
+        if not ok:
             raise ValueError("faixa de IP inválida")
         return v
 
@@ -61,8 +66,8 @@ FORA = {"offline", "vpn_caiu", "erro_acesso"}
 def _alertas(mk: dict, st: dict) -> list[str]:
     out = []
     for campo, rotulo in (("cpu", "CPU alta"), ("mem", "Memória alta")):
-        if (st.get(campo) or 0) > 80:
-            out.append(f"{rotulo} ({round(st[campo])}%)")
+        if (st.get(campo) or 0) > LIMITE:
+            out.append(f"{rotulo} ({_pct(st[campo])}%)")
     ifaces = st.get("ifaces") or {}
     out += [f"Interface {n} caída" for n in mk.get("interfaces_vigiadas") or [] if ifaces.get(n) is False]
     return out
@@ -125,7 +130,7 @@ def create_app(db, r, settings) -> FastAPI:
             vig = mk.get("interfaces_vigiadas") or []
             alertas = _alertas(mk, st) if s == "no_ar" else []
             resumo["fora"] += s in FORA
-            resumo["no_ar"] += s == "no_ar"
+            resumo["no_ar"] += s == "no_ar" and not alertas
             resumo["com_alerta"] += bool(alertas)
             ifaces = (st or {}).get("ifaces") or {}
             linhas.append(({"id": mk["id"], "nome": mk["nome"], "status": s, "desde": (st or {}).get("desde"),

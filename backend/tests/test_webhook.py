@@ -130,3 +130,24 @@ async def test_sender_drains_without_sleeping(r):
         await run_sender(r, client(h), URL, None, sleep=fake_sleep(delays, 1))
     assert got == [0, 1, 2]
     assert delays == [5]
+
+
+async def test_sender_survives_redis_error(r, monkeypatch):
+    import redis.exceptions
+
+    await enqueue(r, {"a": 1})
+    real, calls = r.lindex, []
+
+    async def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise redis.exceptions.ConnectionError("blip")
+        return await real(*a, **k)
+
+    monkeypatch.setattr(r, "lindex", flaky)
+    delays = []
+    with pytest.raises(Stop):
+        await run_sender(r, client(lambda q: httpx.Response(200)), URL, None,
+                         sleep=fake_sleep(delays, 2))
+    assert delays == [5, 5]  # 1ª: erro -> backoff; 2ª: entregou, fila vazia -> poll
+    assert await pending_count(r) == 0

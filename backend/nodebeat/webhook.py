@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import httpx
 
+log = logging.getLogger(__name__)
 QUEUE = "queue:webhook"
 BASE, TETO = 5, 300
 
@@ -37,9 +39,15 @@ async def deliver_once(r, client: httpx.AsyncClient, url: str, token: str | None
 async def run_sender(r, client, url, token, sleep=asyncio.sleep) -> None:
     delay = BASE
     while True:
-        if await deliver_once(r, client, url, token):
+        try:
+            ok = await deliver_once(r, client, url, token)
+            more = ok and await pending_count(r)
+        except Exception as e:  # Redis fora, cabeça corrompida: nunca derruba o sender
+            log.warning("webhook sender: %s: %s", type(e).__name__, e)
+            ok = more = False
+        if ok:
             delay = BASE
-            if await pending_count(r):
+            if more:
                 continue
             await sleep(BASE)
         else:

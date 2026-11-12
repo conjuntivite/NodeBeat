@@ -1,6 +1,6 @@
-# Monitor de MKs — design (fase 1)
+# NodeBeat — monitor de MKs — design (fase 1)
 
-Data: 2026-11-11 · Status: aprovado
+Data: 2026-11-11 · Status: aprovado · Nome do sistema: **NodeBeat** (batimento dos equipamentos; renomeado em 2026-11-12)
 
 ## Intenção
 

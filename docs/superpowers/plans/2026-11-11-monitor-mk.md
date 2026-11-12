@@ -1,4 +1,4 @@
-# Monitor de MKs (fase 1) — Implementation Plan
+# NodeBeat — monitor de MKs (fase 1) — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -21,9 +21,9 @@
 - Conexão RouterOS: **API-SSL, porta 8729, TLS** com certificado fixado por **SHA-256**. Login plain (RouterOS ≥ **6.43**). Só leitura, nunca escreve na MK.
 - Referência da sede: **`<HOST_REFERENCIA>`** (DNS + HTTPS `HEAD`, timeout 5 s).
 - Histórico no Redis por **90 dias**. Fila do webhook persistida no Redis, ordem preservada, nunca descarta. Backoff de 5 s dobrando até **300 s**.
-- Webhook: URL em `MKMON_WEBHOOK_URL`. Se `MKMON_WEBHOOK_TOKEN` estiver definido → `Authorization: Bearer <token>`. Payload exatamente como na spec (`evento`, `tipo`, `mk`, `detalhe`, `inicio`, `fim`, `duracao_s`), com datas ISO 8601 em `America/Sao_Paulo`.
-- Senhas das MKs: Fernet com a chave em `MKMON_SECRET_KEY`. **Nunca** saem pela API. Senhas do painel: argon2.
-- Nenhuma porta publicada exceto o nginx, preso em `${MKMON_BIND_IP}` (443 e 80→443). Mongo e Redis só na rede do compose, com senha. Redis com `appendonly yes`.
+- Webhook: URL em `NODEBEAT_WEBHOOK_URL`. Se `NODEBEAT_WEBHOOK_TOKEN` estiver definido → `Authorization: Bearer <token>`. Payload exatamente como na spec (`evento`, `tipo`, `mk`, `detalhe`, `inicio`, `fim`, `duracao_s`), com datas ISO 8601 em `America/Sao_Paulo`.
+- Senhas das MKs: Fernet com a chave em `NODEBEAT_SECRET_KEY`. **Nunca** saem pela API. Senhas do painel: argon2.
+- Nenhuma porta publicada exceto o nginx, preso em `${NODEBEAT_BIND_IP}` (443 e 80→443). Mongo e Redis só na rede do compose, com senha. Redis com `appendonly yes`.
 - UI: Trade UI. Tokens copiados para `frontend/design-system/tokens.json`, nunca valores na mão. Temas claro (padrão) e escuro. Números com `tabular-nums` (Space Mono). Status em `positive`/`warning`/`negative`.
 - Textos da UI e mensagens em pt-BR. Identificadores de código em inglês, exceto campos do payload/Mongo definidos na spec.
 
@@ -43,7 +43,7 @@
 .gitignore                      # .superpowers/, .env, build/, __pycache__/
 backend/
   pyproject.toml
-  mkmon/
+  nodebeat/
     config.py       # Settings lidas do ambiente
     rules.py        # motor de alertas (puro)
     classify.py     # resultado das sondas → Observation (puro)
@@ -94,11 +94,11 @@ docs/spike-tls.md
 ### Task 1: Esqueleto do back-end + motor de alertas
 
 **Files:**
-- Create: `backend/pyproject.toml` (deps da Tech Stack, `[tool.pytest.ini_options] asyncio_mode="auto"`), `backend/mkmon/rules.py`
+- Create: `backend/pyproject.toml` (deps da Tech Stack, `[tool.pytest.ini_options] asyncio_mode="auto"`), `backend/nodebeat/rules.py`
 - Test: `backend/tests/test_rules.py`
 
 **Interfaces:**
-- Produces (`mkmon/rules.py`):
+- Produces (`nodebeat/rules.py`):
   ```python
   class MkState(StrEnum): NO_AR="no_ar"; VPN_CAIU="vpn_caiu"; OFFLINE="offline"; ERRO_ACESSO="erro_acesso"
   @dataclass(frozen=True) class MkRef: id: str; nome: str
@@ -144,8 +144,8 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
   - `test_reference_recovery_restarts_pending`: MK OFFLINE de 0 a 90, referência falha em 90, volta em 100, MK OFFLINE de 100 em diante → `queda offline` só em 220.
   - `test_dump_load_preserves_open_alert`: queda em 120, depois `AlertEngine.load(json.loads(json.dumps(e.dump())))`. A cópia, com NO_AR em 150 e 210, emite o `retorno`.
   - `test_payload_shape`: `to_payload()` de uma `queda` → chaves exatamente `{"evento","tipo","mk","detalhe","inicio","fim","duracao_s"}`, `mk == {"id":"1","nome":"Cond. Alfa"}` e `inicio == "2026-11-11T14:00:00-03:00"`.
-- [ ] **Step 2:** `cd backend && pytest tests/test_rules.py -v` → FAIL (`ModuleNotFoundError: mkmon.rules`).
-- [ ] **Step 3:** Implementar `mkmon/rules.py` conforme o bloco Interfaces e o algoritmo acima.
+- [ ] **Step 2:** `cd backend && pytest tests/test_rules.py -v` → FAIL (`ModuleNotFoundError: nodebeat.rules`).
+- [ ] **Step 3:** Implementar `nodebeat/rules.py` conforme o bloco Interfaces e o algoritmo acima.
 - [ ] **Step 4:** `pytest tests/test_rules.py -v` → todos PASS.
 - [ ] **Step 5:** Commit: `feat(backend): motor de alertas com confirmação de 2 min e retorno estável`.
 
@@ -154,7 +154,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 2: Classificação e sondas
 
 **Files:**
-- Create: `backend/mkmon/classify.py`, `backend/mkmon/probes.py`
+- Create: `backend/nodebeat/classify.py`, `backend/nodebeat/probes.py`
 - Test: `backend/tests/test_classify.py`, `backend/tests/test_probes.py`
 
 **Interfaces:**
@@ -184,7 +184,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 3: Cliente RouterOS com certificado fixado + criptografia de senha
 
 **Files:**
-- Create/Modify: `backend/mkmon/routeros.py`, `backend/mkmon/crypto.py`
+- Create/Modify: `backend/nodebeat/routeros.py`, `backend/nodebeat/crypto.py`
 - Test: `backend/tests/test_routeros.py`, `backend/tests/test_crypto.py`
 
 **Interfaces:**
@@ -213,7 +213,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 4: Histórico, estado do painel e fila do webhook (Redis)
 
 **Files:**
-- Create: `backend/mkmon/history.py`, `backend/mkmon/webhook.py`
+- Create: `backend/nodebeat/history.py`, `backend/nodebeat/webhook.py`
 - Test: `backend/tests/test_history.py`, `backend/tests/test_webhook.py` (fakeredis.aioredis)
 
 **Interfaces:**
@@ -241,7 +241,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 5: Store MongoDB + ciclo do worker
 
 **Files:**
-- Create: `backend/mkmon/config.py`, `backend/mkmon/store.py`, `backend/mkmon/worker.py`
+- Create: `backend/nodebeat/config.py`, `backend/nodebeat/store.py`, `backend/nodebeat/worker.py`
 - Test: `backend/tests/test_worker.py` (mongomock-motor + fakeredis; `fetch` e as sondas substituídos por fakes)
 
 **Interfaces:**
@@ -250,7 +250,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
   ```python
   # config.py
   @dataclass class Settings: mongo_url; redis_url; secret_key; webhook_url; webhook_token: str|None; reference_host="<HOST_REFERENCIA>"; interval_s=30
-  def load_settings() -> Settings     # variáveis MKMON_*; falta obrigatória -> RuntimeError com o nome da variável
+  def load_settings() -> Settings     # variáveis NODEBEAT_*; falta obrigatória -> RuntimeError com o nome da variável
   # store.py — coleção mks: {_id, nome, ip_tunel, ip_publico, usuario, senha_cifrada, cert_sha256, interfaces_vigiadas: list[str], criado_em}
   #            coleção users: {_id, usuario (único), senha_hash, criado_em}
   async def list_mks(db) -> list[dict] ; async def get_mk(db, id) -> dict|None ; async def insert_mk(db, doc) -> str
@@ -272,7 +272,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 6: Autenticação do painel
 
 **Files:**
-- Create: `backend/mkmon/auth.py`, `backend/mkmon/cli.py`, `backend/mkmon/api.py` (app + rotas `/api/auth/*`)
+- Create: `backend/nodebeat/auth.py`, `backend/nodebeat/cli.py`, `backend/nodebeat/api.py` (app + rotas `/api/auth/*`)
 - Test: `backend/tests/test_auth.py` (FastAPI `TestClient` em modo async via httpx `ASGITransport`)
 
 **Interfaces:**
@@ -285,9 +285,9 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
   async def current_user(request) -> dict    # dependência FastAPI; 401 sem cookie válido
   # api.py
   def create_app(db, r, settings) -> FastAPI
-  POST /api/auth/login {usuario, senha} -> 204 + cookie mkmon_sess (HttpOnly, Secure, SameSite=Strict, Path=/api)
+  POST /api/auth/login {usuario, senha} -> 204 + cookie nodebeat_sess (HttpOnly, Secure, SameSite=Strict, Path=/api)
   POST /api/auth/logout -> 204 ; GET /api/auth/me -> {usuario}
-  # cli.py:  python -m mkmon.cli create-user <usuario>   (lê a senha com getpass, pede confirmação; mínimo 12 caracteres)
+  # cli.py:  python -m nodebeat.cli create-user <usuario>   (lê a senha com getpass, pede confirmação; mínimo 12 caracteres)
   ```
 - [ ] **Step 1: Failing tests:** `test_login_sets_secure_cookie` (atributos do cookie conferidos); `test_wrong_password_401` (mesma mensagem genérica "Usuário ou senha inválidos" para usuário inexistente); `test_login_rate_limited_after_5_failures` (6ª tentativa → 429, mesmo com a senha certa); `test_me_requires_session` (401 sem cookie); `test_logout_invalidates_session`; `test_password_stored_as_argon2` (`senha_hash` começa com `$argon2`); `test_cli_rejects_short_password`.
 - [ ] **Step 2:** `pytest tests/test_auth.py -v` → FAIL.
@@ -300,7 +300,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 7: API de MKs, status e histórico
 
 **Files:**
-- Modify: `backend/mkmon/api.py`
+- Modify: `backend/nodebeat/api.py`
 - Test: `backend/tests/test_api_mks.py`
 
 **Interfaces:**
@@ -392,16 +392,16 @@ Comportamento:
 - Modify: `deploy/routeros-monitor-user.rsc` (Task 0), se o spike mudou algo
 
 **Interfaces:**
-- Consumes: `python -m mkmon.worker`, `uvicorn mkmon.api:app_from_env` (adicionar `app_from_env()` em `api.py`: `load_settings()` + clientes → `create_app`), `python -m mkmon.cli create-user`.
+- Consumes: `python -m nodebeat.worker`, `uvicorn nodebeat.api:app_from_env` (adicionar `app_from_env()` em `api.py`: `load_settings()` + clientes → `create_app`), `python -m nodebeat.cli create-user`.
 
 Decisões:
-- **compose:** os serviços `mongo` (com usuário e senha, volume), `redis` (`--appendonly yes --requirepass`, volume), `api`, `worker` (`cap_add: [NET_RAW]`) e `web` (nginx). Só o `web` publica `${MKMON_BIND_IP}:443` e `:80`. Todos com `restart: unless-stopped`.
-- **nginx:** TLS com o certificado autoassinado montado de `deploy/certs/` (README traz o comando `openssl req -x509 -newkey rsa:2048 -days 825 -nodes -subj "/CN=mkmon"`), redirect 80→443, `location /api/` com proxy para `api:8000`, cabeçalhos `X-Frame-Options DENY`, `X-Content-Type-Options nosniff`, `Referrer-Policy no-referrer`, `Content-Security-Policy "default-src 'self'"` (ajustar se o Flutter web pedir `wasm-unsafe-eval`/fontes).
-- **`.env.example`:** `MKMON_MONGO_URL`, `MKMON_REDIS_URL`, `MKMON_SECRET_KEY` (com o comando de geração `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), `MKMON_WEBHOOK_URL`, `MKMON_WEBHOOK_TOKEN`, `MKMON_BIND_IP`, `MONGO_PASSWORD`, `REDIS_PASSWORD`.
-- **README:** criar a VM no Proxmox; `docker compose up -d`; criar o primeiro usuário; o `.rsc` por MK; as regras do SonicWall (origem = IP da VM, destino = redes dos condomínios, serviços TCP 8729 + ICMP, nada mais); o aviso de que trocar a `MKMON_SECRET_KEY` inutiliza as senhas guardadas.
+- **compose:** os serviços `mongo` (com usuário e senha, volume), `redis` (`--appendonly yes --requirepass`, volume), `api`, `worker` (`cap_add: [NET_RAW]`) e `web` (nginx). Só o `web` publica `${NODEBEAT_BIND_IP}:443` e `:80`. Todos com `restart: unless-stopped`.
+- **nginx:** TLS com o certificado autoassinado montado de `deploy/certs/` (README traz o comando `openssl req -x509 -newkey rsa:2048 -days 825 -nodes -subj "/CN=nodebeat"`), redirect 80→443, `location /api/` com proxy para `api:8000`, cabeçalhos `X-Frame-Options DENY`, `X-Content-Type-Options nosniff`, `Referrer-Policy no-referrer`, `Content-Security-Policy "default-src 'self'"` (ajustar se o Flutter web pedir `wasm-unsafe-eval`/fontes).
+- **`.env.example`:** `NODEBEAT_MONGO_URL`, `NODEBEAT_REDIS_URL`, `NODEBEAT_SECRET_KEY` (com o comando de geração `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), `NODEBEAT_WEBHOOK_URL`, `NODEBEAT_WEBHOOK_TOKEN`, `NODEBEAT_BIND_IP`, `MONGO_PASSWORD`, `REDIS_PASSWORD`.
+- **README:** criar a VM no Proxmox; `docker compose up -d`; criar o primeiro usuário; o `.rsc` por MK; as regras do SonicWall (origem = IP da VM, destino = redes dos condomínios, serviços TCP 8729 + ICMP, nada mais); o aviso de que trocar a `NODEBEAT_SECRET_KEY` inutiliza as senhas guardadas.
 
 - [ ] **Step 1:** Escrever os arquivos.
 - [ ] **Step 2:** `docker compose -f deploy/compose.yml config` → sem erro; `docker compose up -d --build` → os 5 serviços `running`.
-- [ ] **Step 3:** Verificação ponta a ponta: `python -m mkmon.cli create-user admin` dentro do container `api` → login em `https://<BIND_IP>` funciona. Cadastrar uma MK real → em até 60 s ela aparece "No ar" com CPU, memória e versão. Apontar `MKMON_WEBHOOK_URL` para um endpoint de teste, bloquear temporariamente a 8729 da VM no SonicWall → em ~2,5 min chega `queda erro_acesso` ou `vpn_caiu`; desbloquear → ~1 min depois chega o `retorno`.
+- [ ] **Step 3:** Verificação ponta a ponta: `python -m nodebeat.cli create-user admin` dentro do container `api` → login em `https://<BIND_IP>` funciona. Cadastrar uma MK real → em até 60 s ela aparece "No ar" com CPU, memória e versão. Apontar `NODEBEAT_WEBHOOK_URL` para um endpoint de teste, bloquear temporariamente a 8729 da VM no SonicWall → em ~2,5 min chega `queda erro_acesso` ou `vpn_caiu`; desbloquear → ~1 min depois chega o `retorno`.
 - [ ] **Step 4:** Conferir que nada além do nginx escuta fora: `docker compose ps` e `ss -tlnp` na VM, só 80/443 no `BIND_IP`.
 - [ ] **Step 5:** Commit: `chore(deploy): compose, nginx HTTPS, script RouterOS e guia de implantação`.

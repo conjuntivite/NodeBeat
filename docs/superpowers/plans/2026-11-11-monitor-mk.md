@@ -25,6 +25,7 @@
 - Senhas das MKs: Fernet com a chave em `NODEBEAT_SECRET_KEY`. **Nunca** saem pela API. Senhas do painel: argon2.
 - Nenhuma porta publicada exceto o nginx, preso em `${NODEBEAT_BIND_IP}` (443 e 80→443). Mongo e Redis só na rede do compose, com senha. Redis com `appendonly yes`.
 - UI: Trade UI. Tokens copiados para `frontend/design-system/tokens.json`, nunca valores na mão. Temas claro (padrão) e escuro. Números com `tabular-nums` (Space Mono). Status em `positive`/`warning`/`negative`.
+- **Temática hospitalar (decisão do usuário, 2026-11-12):** cada equipamento é um "paciente" num monitor cardíaco. **No ar → linha de batimento (ECG) animada com bip a cada batida. Fora → linha reta horizontal com apito contínuo, sem fim, enquanto estiver fora.** Detalhes na Task 9.
 - Textos da UI e mensagens em pt-BR. Identificadores de código em inglês, exceto campos do payload/Mongo definidos na spec.
 
 ## Review Focus
@@ -363,8 +364,8 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 ### Task 9: Flutter — painel, detalhe e cadastro
 
 **Files:**
-- Create: `frontend/lib/screens/dashboard.dart`, `mk_detail.dart`, `mk_form.dart`
-- Test: `frontend/test/dashboard_test.dart`, `frontend/test/mk_form_test.dart`
+- Create: `frontend/lib/screens/dashboard.dart`, `mk_detail.dart`, `mk_form.dart`, `frontend/lib/widgets/heartbeat.dart`, `frontend/lib/audio/monitor_sound.dart`
+- Test: `frontend/test/dashboard_test.dart`, `frontend/test/mk_form_test.dart`, `frontend/test/heartbeat_test.dart`, `frontend/test/monitor_sound_test.dart`
 
 **Interfaces:**
 - Consumes: `ApiClient` e os modelos (Task 8).
@@ -373,14 +374,16 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 Comportamento:
 - **Painel (layout B da spec):** os três cards de resumo (No ar / Com alerta / Fora) e a tabela com as colunas Condomínio · Status · CPU · Mem · Uptime · Interfaces ("3/3"), ordenável ao clicar no cabeçalho. A ordem padrão é a do servidor. Atualiza a cada **15 s** com `Timer.periodic`, cancelado no `dispose`.
 - **Status:** pílula com texto + `desde` relativo ("VPN caiu · 6 min"), em `negative` (fora), `warning` (alerta) ou `positive` (no ar).
+- **Temática hospitalar — linha de batimento** (`frontend/lib/widgets/heartbeat.dart`, `CustomPainter` + `AnimationController`, sem pacote novo): uma linha estreita em cada linha da tabela e uma maior no detalhe. `no_ar` sem alerta → traçado de ECG rolando, cor `positive`; `no_ar` com alerta paralelo → mesmo traçado em `warning`; `vpn_caiu`/`offline`/`erro_acesso` → linha reta horizontal em `negative`. Cores só dos tokens, nos dois temas. Com `MediaQuery.disableAnimations` (movimento reduzido), o traçado fica parado, mas a forma (batimento × reta) continua.
+- **Temática hospitalar — som** (`frontend/lib/audio/monitor_sound.dart`, Web Audio via `package:web`/`dart:js_interop`, tom gerado por `OscillatorNode`, sem arquivos de áudio): um único som para o painel inteiro, decidido por uma função pura `soundFor(StatusData) → MonitorSound.flatline | beep | silent`. Alguma MK fora → **apito contínuo** (sem fim, até ela voltar ou o som ser desligado). Nenhuma fora → **bip curto a cada batida**, sincronizado com a animação. Botão "Som" (ícone de alto-falante com `aria-label`) na barra: o navegador só libera áudio depois de um clique, então o som começa desligado e o primeiro clique liga; a escolha fica salva em `localStorage`.
 - **Banner** "N eventos aguardando envio" quando `fila_pendente > 0`. Sessão expirada (401) → volta ao login.
 - **Detalhe:** métricas, lista de interfaces vigiadas com o estado, histórico e os botões "Editar", "Escolher interfaces" (lista de checkboxes vinda de `interfaces()`, salva com `setWatched`), "Aceitar novo certificado" (diálogo Flutter de confirmação) e "Remover".
 - **Formulário:** os campos da spec, com a senha obscurecida. Na edição, o placeholder da senha é "deixe vazio para manter". Os erros 422 aparecem no campo correspondente. Depois de criar, abre a escolha de interfaces.
 
-- [ ] **Step 1: Failing tests:** `dashboard_test`: com um `StatusData` falso (1 fora, 1 com alerta, 1 no ar) → os cards mostram 1/1/1, a primeira linha da tabela é a que está fora, e o banner aparece com `fila_pendente: 3`. `mk_form_test`: um 422 com erro em `ip_tunel` mostra a mensagem abaixo desse campo; e a edição com senha vazia envia `MkInput.senha == null`.
+- [ ] **Step 1: Failing tests:** `dashboard_test`: com um `StatusData` falso (1 fora, 1 com alerta, 1 no ar) → os cards mostram 1/1/1, a primeira linha da tabela é a que está fora, e o banner aparece com `fila_pendente: 3`. `mk_form_test`: um 422 com erro em `ip_tunel` mostra a mensagem abaixo desse campo; e a edição com senha vazia envia `MkInput.senha == null`. `heartbeat_test`: `HeartbeatLine` com status `offline` pinta reta (painter expõe `isFlat == true`) em `negative`; com `no_ar` não é reta e usa `positive`; com alerta usa `warning`. `monitor_sound_test`: `soundFor` → `flatline` com 1 MK fora entre 3; `beep` com todas no ar (mesmo com alerta); `silent` com lista vazia.
 - [ ] **Step 2:** `flutter test` → FAIL.
 - [ ] **Step 3:** Implementar.
-- [ ] **Step 4:** `flutter test` → PASS; `flutter analyze` limpo. Conferir manualmente os temas claro e escuro com `flutter run -d chrome` e a API local.
+- [ ] **Step 4:** `flutter test` → PASS; `flutter analyze` limpo. Conferir manualmente os temas claro e escuro com `flutter run -d chrome` e a API local, e ouvir o bip e o apito (derrubar uma MK de teste ou simular pela API).
 - [ ] **Step 5:** Commit: `feat(frontend): painel, detalhe e cadastro de MKs`.
 
 ---

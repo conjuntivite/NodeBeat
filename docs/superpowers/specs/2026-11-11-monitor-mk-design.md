@@ -119,6 +119,7 @@ Só na rede interna. Layout **B** (escolhido pelo usuário, porque o número de 
 - **Cadastro (formulário):** nome do condomínio, IP da MK no túnel, IP público fixo, usuário e senha da API. Depois de salvar, o sistema lê as interfaces da MK e o usuário marca quais vigiar. Dá para editar e remover.
 - **Usuários:** login individual. Todos têm a mesma permissão (escolha do designer). O primeiro usuário é criado por comando na VM.
 - Números com `tabular-nums`, status com cores semânticas (`positive`, `warning`, `negative`). Temas claro e escuro.
+- **Temática hospitalar (decisão do usuário, 2026-11-12):** o painel imita um monitor cardíaco. Equipamento no ar mostra uma linha de batimento animada com bip a cada batida; equipamento fora mostra uma linha reta horizontal com apito contínuo enquanto durar a falha. O som pode ser ligado e desligado no painel (o navegador exige um clique para liberar áudio).
 
 ## Segurança
 

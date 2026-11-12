@@ -31,6 +31,7 @@ class Observation:
     cpu: float | None = None
     mem: float | None = None
     ifaces: dict[str, bool] = field(default_factory=dict)  # nome -> running (só as vigiadas)
+    missing_ifaces: frozenset[str] = frozenset()  # vigiadas que não existem na MK
 
 
 @dataclass(frozen=True)
@@ -154,7 +155,8 @@ class AlertEngine:
             ("memoria_alta", "memoria_alta", obs.mem is not None and obs.mem > LIMITE,
              f"Memória em {_pct(obs.mem or 0)}%"),
             *((f"interface_caida:{n}", "interface_caida", not running,
-               f"Interface {n} caída") for n, running in obs.ifaces.items()),
+               f"Interface {n} não encontrada na MK" if n in obs.missing_ifaces
+               else f"Interface {n} caída") for n, running in obs.ifaces.items()),
         ):
             evs += self._step(prefix + key, bad, now, tipo, det, mk)
         return evs

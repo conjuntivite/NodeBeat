@@ -185,3 +185,12 @@ def test_payload_shape():
     assert p["mk"] == {"id": "1", "nome": "Cond. Alfa"}
     assert p["inicio"] == "2026-11-11T14:00:00-03:00"
     assert p["fim"] is None and p["duracao_s"] is None
+
+
+def test_missing_interface_detalhe():
+    e = AlertEngine()
+    obs = Observation(MkState.NO_AR, ifaces={"ether9": False, "ether1": False},
+                      missing_ifaces=frozenset({"ether9"}))
+    evs = [ev for s in (0, 30, 60, 90, 120) for ev in e.observe_mk(mk, obs, at(s))]
+    assert {ev.detalhe for ev in evs} == {"Interface ether9 não encontrada na MK",
+                                          "Interface ether1 caída"}

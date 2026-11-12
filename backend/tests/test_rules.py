@@ -86,10 +86,19 @@ def test_parallel_alerts_closed_silently_on_mk_down():
     e = AlertEngine()
     hot = Observation(MkState.NO_AR, cpu=90.0)
     run(e, hot, (0, 30, 60, 90, 120))
-    evs = e.observe_mk(mk, OFF, at(150))
-    assert [(x.evento, x.tipo) for x in evs] == [("encerrado", "cpu_alta")]
-    more = run(e, OK, range(180, 400, 30))
+    assert run(e, OFF, (150, 180, 210, 240)) == []
+    evs = e.observe_mk(mk, OFF, at(270))
+    assert [(x.evento, x.tipo) for x in evs] == [("queda", "offline"), ("encerrado", "cpu_alta")]
+    more = run(e, OK, range(300, 600, 30))
     assert not [x for x in more if x.tipo == "cpu_alta"]
+
+
+def test_one_probe_flap_keeps_parallel_alert_open():
+    e = AlertEngine()
+    hot = Observation(MkState.NO_AR, cpu=90.0)
+    run(e, hot, (0, 30, 60, 90, 120))
+    assert e.observe_mk(mk, OFF, at(150)) == []
+    assert run(e, hot, (180, 210, 240)) == []
 
 
 def test_interface_down_alert():
@@ -151,6 +160,22 @@ def test_forget_mk_and_dropped_interface():
     e = AlertEngine()
     run(e, Observation(MkState.NO_AR, ifaces={"ether1": False}), (0, 30))
     assert run(e, OK, (60, 90, 120, 150)) == []
+    down = Observation(MkState.NO_AR, ifaces={"ether1": False})
+    assert run(e, down, (200, 230, 260, 290)) == []
+    (ev,) = e.observe_mk(mk, down, at(320))
+    assert (ev.tipo, ev.inicio) == ("interface_caida", at(200))
+
+
+def test_reference_recovery_restarts_parallel_pending():
+    e = AlertEngine()
+    hot = Observation(MkState.NO_AR, cpu=90.0)
+    evs = run(e, hot, (0, 30, 60, 90))
+    evs += e.observe_reference(False, at(90))
+    evs += e.observe_reference(True, at(100))
+    evs += run(e, hot, (100, 120, 150, 180, 210))
+    assert evs == []
+    (ev,) = e.observe_mk(mk, hot, at(220))
+    assert (ev.tipo, ev.inicio) == ("cpu_alta", at(100))
 
 
 def test_payload_shape():

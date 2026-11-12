@@ -125,7 +125,7 @@ class AlertEngine:
                          "Referência da sede sem resposta", None)
         if ok and was_frozen:
             for k in [k for k, t in self._t.items()
-                      if k.endswith("|mk") and t.phase == "pending"]:
+                      if k != "sede" and t.phase == "pending"]:
                 del self._t[k]
         return evs
 
@@ -137,10 +137,12 @@ class AlertEngine:
         prefix = f"{mk.id}|"
         parallel = [k for k in self._t if k.startswith(prefix) and k != prefix + "mk"]
         if obs.state != MkState.NO_AR:
-            for k in parallel:
-                t = self._t.pop(k)
-                if t.phase != "pending":
-                    evs.append(self._encerrado(t, now))
+            # só fecha as paralelas quando a queda da MK é confirmada
+            if any(e.evento == "queda" for e in evs):
+                for k in parallel:
+                    t = self._t.pop(k)
+                    if t.phase != "pending":
+                        evs.append(self._encerrado(t, now))
             return evs
         for k in parallel:  # interface que deixou de ser vigiada: descarta sem evento
             if k.startswith(prefix + "interface_caida:") \

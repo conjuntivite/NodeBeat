@@ -2,7 +2,7 @@
 # Preencha antes de aplicar (substitua nas linhas abaixo; nao ha IPs fixos no arquivo):
 #   <IP_VM>            IP de origem permitido na API (spike: <IP_PUBLICO_SEDE>; depois: IP do tunel da VM)
 #   <IP_PUBLICO_SEDE>  IP de origem permitido para ICMP (spike: <IP_PUBLICO_SEDE>)
-#   <SENHA_MONITOR>    senha do usuario monitor
+#   <SENHA_MONITOR>    senha do usuario monitor; SO ASCII alfanumerico (sem $, aspas ou barra invertida), pois fica entre aspas no .rsc e o librouteros exige ASCII
 #   <WAN_IFACE>        nome da interface WAN (ex.: ether1 ou pppoe-out1)
 # Re-executar falha em nomes ja existentes (certificado, grupo, usuario): remova antes ou rode so o que falta.
 # Evite "$" dentro de strings: RouterOS interpreta como variavel.

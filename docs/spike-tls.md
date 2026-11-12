@@ -9,7 +9,7 @@ O spike roda da estação (<IP_ESTACAO>), que sai para a internet com o IP públ
 1. Copie `deploy/routeros-monitor-user.rsc` e preencha os placeholders do topo:
    - `<IP_VM>` = `<IP_PUBLICO_SEDE>` (só no spike)
    - `<IP_PUBLICO_SEDE>` = `<IP_PUBLICO_SEDE>`
-   - `<SENHA_MONITOR>` = senha forte nova
+   - `<SENHA_MONITOR>` = senha forte nova, **só ASCII alfanumérico** (sem `$`, aspas ou barra invertida): fica entre aspas no .rsc e o librouteros exige ASCII
    - `<WAN_IFACE>` = interface WAN da MK (`/interface print`)
 2. Aplique no terminal da MK (Winbox > New Terminal) colando o conteúdo, ou `/import file-name=routeros-monitor-user.rsc` após enviar o arquivo. Vale para v6 e v7.
 3. Se o firewall dropar a 8729 no WAN, ative a regra comentada no final do .rsc.

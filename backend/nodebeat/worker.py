@@ -92,9 +92,12 @@ async def main() -> None:
     saved = await r.get("engine")
     engine = AlertEngine.load(json.loads(saved)) if saved else AlertEngine()
     async with httpx.AsyncClient(timeout=10) as client:
-        asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))
+        # referência guardada: o loop só tem weakref das tasks; se o envio morrer, o processo cai
+        sender = asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))
         loop = asyncio.get_running_loop()
         while True:
+            if sender.done():
+                raise RuntimeError("envio do webhook parou") from sender.exception()
             t0 = loop.time()
             try:
                 await run_cycle(db, r, engine, s, datetime.now(UTC))

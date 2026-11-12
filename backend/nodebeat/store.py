@@ -47,3 +47,14 @@ async def delete_mk(db, id: str) -> bool:
 
 async def set_cert(db, id: str, sha: str | None) -> None:
     await update_mk(db, id, {"cert_sha256": sha})
+
+
+async def get_user(db, usuario: str) -> dict | None:
+    return await db.users.find_one({"usuario": usuario})
+
+
+async def insert_user(db, usuario: str, senha_hash: str) -> str:
+    """Usuário duplicado -> DuplicateKeyError (índice único)."""
+    await db.users.create_index("usuario", unique=True)
+    doc = {"usuario": usuario, "senha_hash": senha_hash, "criado_em": datetime.now(UTC)}
+    return str((await db.users.insert_one(doc)).inserted_id)

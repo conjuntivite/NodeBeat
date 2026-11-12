@@ -36,7 +36,7 @@ def tentar(nome, ctx, host, user, senha):
         api = librouteros.connect(host, user, senha, port=8729, timeout=10,
                                   ssl_wrapper=wrap, login_method=plain)
         # RouterOS < 6.43 responde /login com =ret= sem erro; a falha real aparece aqui
-        recurso = list(api("/system/resource"))
+        recurso = list(api("/system/resource/print"))
     except Exception as e:
         print(f"[{nome}] FALHOU: {e!r}")
         if info:

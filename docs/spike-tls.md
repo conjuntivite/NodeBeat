@@ -6,6 +6,7 @@ O spike roda da estação (<IP_ESTACAO>), que sai para a internet com o IP públ
 
 ## 1. Aplicar o .rsc (humano, em cada MK)
 
+0. **Backup antes de tudo**: Winbox > Files > Backup (o campo de senha da GUI e literal, entao `$` e seguro ali, ao contrario do terminal) e `/export file=antes-monitor` (v6 inclui segredos; v7 precisa de `show-sensitive`). Baixe os dois arquivos.
 1. Copie `deploy/routeros-monitor-user.rsc` e preencha os placeholders do topo:
    - `<IP_VM>` = `<IP_PUBLICO_SEDE>` (só no spike)
    - `<IP_PUBLICO_SEDE>` = `<IP_PUBLICO_SEDE>`
@@ -31,17 +32,22 @@ O script tenta o contexto padrão e, se falhar, `minimum_version=TLSv1` + `DEFAU
 
 | Roteador | RouterOS | TLS | Cifra | SHA-256 do cert | Config que funcionou | Login |
 |---|---|---|---|---|---|---|
-| <IP_MK_V6_TESTE> (v6) | | | | | | |
-| <IP_MK_V7_TESTE> (v7) | | | | | | |
+| <IP_MK_V6_TESTE> (v6, hEX, WAN `PPPoE - ALT`) | 6.49.17 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `a0e3dcc77313e5e14fa71d9e8687fc27c90b8c4a3bcdf3438d3dee9326dbc43c` (bate com o `fingerprint` do RouterOS) | default (`create_default_context`, `check_hostname=False`, `CERT_NONE`) | plain OK |
+| <IP_MK_V7_TESTE> (v7, cliente-v7, hEX, WAN `pppoe-out1`) | 7.24.4 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `952606fa6d5ebcdff6ff85b508c7969f6c287fbbb55820098d2ade4b5e5c3f10` (bate com `:put [/certificate get monitor-api fingerprint]`; o `/certificate print` da v7 nao mostra a coluna) | default | plain OK |
+
+O contexto legado nao foi necessario em nenhuma das duas.
 
 ## 4. Assinatura do RouterOS < 6.43
 
-Login plain (`/login name= password=`) em RouterOS < 6.43 — colar o `repr()` exato da exceção (ou resposta) e a versão da MK:
-
-```
-(preencher)
-```
+**Não capturada**: não havia MK < 6.43 disponível. Decisão do controlador: a Task 3 detecta RouterOS < 6.43 pela resposta do `/login` conter a chave `ret` (login antigo por desafio, comportamento documentado pela MikroTik, **não verificado empiricamente**) e levanta `RouterOsError("RouterOS anterior a 6.43, atualizar")`.
 
 ## 5. Gate
 
-Se **nenhuma** configuração funcionar na v6: parar e levar ao usuário antes da Task 3.
+**Passou**: v6 e v7 funcionam com o contexto padrão.
+
+## 6. Para a Task 3
+
+- `SSLContext` = `ssl.create_default_context()` + `check_hostname=False` + `verify_mode=CERT_NONE`; a confiança vem do pinning por SHA-256. Sem `minimum_version`/`set_ciphers`.
+- Comandos precisam da forma completa: `/system/resource/print` (`/system/resource` dá `TrapError('no such command')`).
+- `/system/resource/print` devolve `cpu-load`, `free-memory`, `total-memory` como int; `version` vem como `"6.49.17 (stable)"` — remover o sufixo ` (stable)` ao parsear.
+- Lembrete: no spike, api-ssl e usuário `monitor` ficam restritos a <IP_PUBLICO_SEDE>; mover para o IP do túnel da VM depois.

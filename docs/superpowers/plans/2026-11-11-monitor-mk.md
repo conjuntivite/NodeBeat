@@ -19,7 +19,7 @@
 - Ciclo de verificação: **30 s**. Confirmação de alerta: **120 s** seguidos. Retorno: **60 s** estável.
 - CPU e memória alertam quando **> 80** (estritamente maior; 80,0 não alerta).
 - Conexão RouterOS: **API-SSL, porta 8729, TLS** com certificado fixado por **SHA-256**. Login plain (RouterOS ≥ **6.43**). Só leitura, nunca escreve na MK.
-- Referência da sede: **`<HOST_REFERENCIA>`** (DNS + HTTPS `HEAD`, timeout 5 s).
+- Referência da sede: host em `NODEBEAT_REFERENCE_HOST` (obrigatória, sem default no código; valor real em `docs/ambiente.local.md`), DNS + HTTPS `HEAD`, timeout 5 s.
 - Histórico no Redis por **90 dias**. Fila do webhook persistida no Redis, ordem preservada, nunca descarta. Backoff de 5 s dobrando até **300 s**.
 - Webhook: URL em `NODEBEAT_WEBHOOK_URL`. Se `NODEBEAT_WEBHOOK_TOKEN` estiver definido → `Authorization: Bearer <token>`. Payload exatamente como na spec (`evento`, `tipo`, `mk`, `detalhe`, `inicio`, `fim`, `duracao_s`), com datas ISO 8601 em `America/Sao_Paulo`.
 - Senhas das MKs: Fernet com a chave em `NODEBEAT_SECRET_KEY`. **Nunca** saem pela API. Senhas do painel: argon2.
@@ -169,7 +169,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
                public_ping: bool | None, watched: list[str]) -> Observation
   # probes.py
   async def ping(ip: str) -> bool              # `ping -n -c 2 -W 1 <ip>`, True se exit 0
-  async def reference_ok(host: str = "<HOST_REFERENCIA>") -> bool   # httpx HEAD https://host, timeout 5 s; qualquer status HTTP = True; erro de DNS/conexão/timeout = False
+  async def reference_ok(host: str) -> bool   # httpx HEAD https://host, timeout 5 s; qualquer status HTTP = True; erro de DNS/conexão/timeout = False
   ```
   Regras do `classify`: com snapshot → `NO_AR`, com cpu/mem e só as interfaces vigiadas (uma vigiada que não existir na MK vira `False`, e o `detalhe` lista "interface não encontrada: X"). Sem snapshot e com `tunnel_ping=True` → `ERRO_ACESSO`, com `detalhe=api_error`. Com `tunnel_ping=False`: `public_ping=True` → `VPN_CAIU` ("Túnel sem resposta; IP público responde"), `False` → `OFFLINE` ("Túnel e IP público sem resposta").
 
@@ -249,7 +249,7 @@ O algoritmo, que os testes fixam: cada condição tem uma chave (`"mk"`, `"cpu_a
 - Produces:
   ```python
   # config.py
-  @dataclass class Settings: mongo_url; redis_url; secret_key; webhook_url; webhook_token: str|None; reference_host="<HOST_REFERENCIA>"; interval_s=30
+  @dataclass class Settings: mongo_url; redis_url; secret_key; webhook_url; webhook_token: str|None; reference_host (NODEBEAT_REFERENCE_HOST, obrigatória); interval_s=30
   def load_settings() -> Settings     # variáveis NODEBEAT_*; falta obrigatória -> RuntimeError com o nome da variável
   # store.py — coleção mks: {_id, nome, ip_tunel, ip_publico, usuario, senha_cifrada, cert_sha256, interfaces_vigiadas: list[str], criado_em}
   #            coleção users: {_id, usuario (único), senha_hash, criado_em}
@@ -397,7 +397,7 @@ Comportamento:
 Decisões:
 - **compose:** os serviços `mongo` (com usuário e senha, volume), `redis` (`--appendonly yes --requirepass`, volume), `api`, `worker` (`cap_add: [NET_RAW]`) e `web` (nginx). Só o `web` publica `${NODEBEAT_BIND_IP}:443` e `:80`. Todos com `restart: unless-stopped`.
 - **nginx:** TLS com o certificado autoassinado montado de `deploy/certs/` (README traz o comando `openssl req -x509 -newkey rsa:2048 -days 825 -nodes -subj "/CN=nodebeat"`), redirect 80→443, `location /api/` com proxy para `api:8000`, cabeçalhos `X-Frame-Options DENY`, `X-Content-Type-Options nosniff`, `Referrer-Policy no-referrer`, `Content-Security-Policy "default-src 'self'"` (ajustar se o Flutter web pedir `wasm-unsafe-eval`/fontes).
-- **`.env.example`:** `NODEBEAT_MONGO_URL`, `NODEBEAT_REDIS_URL`, `NODEBEAT_SECRET_KEY` (com o comando de geração `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), `NODEBEAT_WEBHOOK_URL`, `NODEBEAT_WEBHOOK_TOKEN`, `NODEBEAT_BIND_IP`, `MONGO_PASSWORD`, `REDIS_PASSWORD`.
+- **`.env.example`:** `NODEBEAT_MONGO_URL`, `NODEBEAT_REDIS_URL`, `NODEBEAT_SECRET_KEY` (com o comando de geração `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`), `NODEBEAT_REFERENCE_HOST`, `NODEBEAT_WEBHOOK_URL`, `NODEBEAT_WEBHOOK_TOKEN`, `NODEBEAT_BIND_IP`, `MONGO_PASSWORD`, `REDIS_PASSWORD`.
 - **README:** criar a VM no Proxmox; `docker compose up -d`; criar o primeiro usuário; o `.rsc` por MK; as regras do SonicWall (origem = IP da VM, destino = redes dos condomínios, serviços TCP 8729 + ICMP, nada mais); o aviso de que trocar a `NODEBEAT_SECRET_KEY` inutiliza as senhas guardadas.
 
 - [ ] **Step 1:** Escrever os arquivos.

@@ -1,3 +1,5 @@
+import asyncio
+
 import fakeredis
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -78,3 +80,37 @@ async def test_password_stored_as_argon2(db):
 
 def test_cli_rejects_short_password():
     assert cli.main(["create-user", "ana"], getpass=lambda _: "curta") == 1
+
+
+async def test_parallel_wrong_logins_are_limited(client):
+    rs = await asyncio.gather(*(entrar(client, senha="errada") for _ in range(10)))
+    assert sum(x.status_code != 429 for x in rs) <= 5
+
+
+async def test_unknown_user_failures_count(client):
+    for _ in range(5):
+        await entrar(client, usuario="fulano", senha="x")
+    assert (await entrar(client, usuario="fulano", senha="x")).status_code == 429
+
+
+async def test_success_clears_counter(client):
+    for _ in range(4):
+        await entrar(client, senha="errada")
+    assert (await entrar(client)).status_code == 204
+    for _ in range(5):
+        assert (await entrar(client, senha="errada")).status_code == 401
+
+
+async def test_logout_deletes_cookie_with_path(client):
+    await entrar(client)
+    ck = (await client.post("/api/auth/logout")).headers["set-cookie"].lower()
+    assert ck.startswith("nodebeat_sess=") and "path=/api" in ck and "max-age=0" in ck
+
+
+async def test_422_does_not_echo_password(client):
+    resp = await client.post("/api/auth/login", json={"senha": "segredo-vazado"})
+    assert resp.status_code == 422 and "segredo-vazado" not in resp.text
+
+
+def test_verify_password_corrupted_hash():
+    assert auth.verify_password("lixo", "x") is False

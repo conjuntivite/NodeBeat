@@ -1,10 +1,11 @@
 """Login do painel: argon2, sessões em Redis (sess:<token>) e limite de tentativas."""
 from __future__ import annotations
 
+import asyncio
 import secrets
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import HTTPException, Request
 
 from nodebeat import store
@@ -33,19 +34,20 @@ def hash_password(p: str) -> str:
 def verify_password(h: str, p: str) -> bool:
     try:
         return _ph.verify(h, p)
-    except VerifyMismatchError:
+    except (VerificationError, InvalidHashError):
         return False
 
 
 async def login(db, r, usuario: str, senha: str) -> str:
     usuario = usuario.strip().lower()
     chave = f"login_fail:{usuario}"
-    if int(await r.get(chave) or 0) >= MAX_FALHAS:
+    # conta a tentativa ANTES de verificar (atômico; INCR+EXPIRE na mesma transação)
+    async with r.pipeline(transaction=True) as pipe:
+        n = (await pipe.incr(chave).expire(chave, BLOQUEIO_TTL, nx=True).execute())[0]
+    if n > MAX_FALHAS:
         raise TooManyAttempts
     u = await store.get_user(db, usuario)
-    if not verify_password(u["senha_hash"] if u else _DUMMY, senha) or not u:
-        if await r.incr(chave) == 1:
-            await r.expire(chave, BLOQUEIO_TTL)
+    if not await asyncio.to_thread(verify_password, u["senha_hash"] if u else _DUMMY, senha) or not u:
         raise LoginFailed
     await r.delete(chave)
     token = secrets.token_urlsafe(32)

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from nodebeat import auth
@@ -17,6 +19,10 @@ class LoginIn(BaseModel):
 def create_app(db, r, settings) -> FastAPI:
     app = FastAPI()
     app.state.db, app.state.r, app.state.settings = db, r, settings
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalida(request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"detail": "Requisição inválida"}, status_code=422)  # sem eco do corpo (senha)
 
     @app.post("/api/auth/login", status_code=204)
     async def login(body: LoginIn) -> Response:

@@ -64,12 +64,16 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
 async def run_cycle(db, r, engine: AlertEngine, settings: Settings, now: datetime, *,
                     fetch=routeros.fetch, ping=probes.ping,
                     reference_ok=probes.reference_ok) -> None:
-    await _emit(r, engine.observe_reference(await reference_ok(settings.reference_host), now))
+    # 2 tentativas: um blip isolado da referência não congela (nem zera os pendentes)
+    ok = await reference_ok(settings.reference_host) or await reference_ok(settings.reference_host)
+    await _emit(r, engine.observe_reference(ok, now))
     if not engine.frozen:
         mks = await store.list_mks(db)
         antes = await history.load_states(r)
-        for id in antes.keys() - {m["id"] for m in mks}:
+        ids = {m["id"] for m in mks}
+        for id in engine.mk_ids() - ids:  # a API pode já ter apagado a linha de estado
             engine.forget_mk(id)
+        for id in antes.keys() - ids:
             await history.delete_mk(r, id)
         sem = asyncio.Semaphore(10)
 
@@ -82,15 +86,25 @@ async def run_cycle(db, r, engine: AlertEngine, settings: Settings, now: datetim
 
         await asyncio.gather(*(um(m) for m in mks))
     await r.set("engine", json.dumps(engine.dump()))
+    await r.set("worker:vivo", now.isoformat(), ex=90)  # /api/status: dados_ok
+
+
+def load_engine(saved: str | None) -> AlertEngine:
+    if saved:
+        try:
+            return AlertEngine.load(json.loads(saved))
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            log.warning("estado do motor ilegível, começando vazio: %s", type(e).__name__)
+    return AlertEngine()
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # INFO loga a URL (webhook pode ter segredo)
     s = load_settings()
     r = redis.asyncio.Redis.from_url(s.redis_url, decode_responses=True)
     db = AsyncIOMotorClient(s.mongo_url).get_default_database("nodebeat")
-    saved = await r.get("engine")
-    engine = AlertEngine.load(json.loads(saved)) if saved else AlertEngine()
+    engine = load_engine(await r.get("engine"))
     async with httpx.AsyncClient(timeout=10) as client:
         # referência guardada: o loop só tem weakref das tasks; se o envio morrer, o processo cai
         sender = asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))

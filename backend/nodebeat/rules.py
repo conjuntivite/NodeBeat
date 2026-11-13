@@ -133,9 +133,12 @@ class AlertEngine:
     def observe_mk(self, mk: MkRef, obs: Observation, now: datetime) -> list[Event]:
         if self.frozen:
             return []
+        prefix = f"{mk.id}|"
+        for k, t in self._t.items():  # renomeada: eventos seguintes saem com o nome novo
+            if k.startswith(prefix):
+                t.mk = mk
         evs = self._step(f"{mk.id}|mk", obs.state != MkState.NO_AR, now,
                          obs.state.value, obs.detalhe, mk)
-        prefix = f"{mk.id}|"
         parallel = [k for k in self._t if k.startswith(prefix) and k != prefix + "mk"]
         if obs.state != MkState.NO_AR:
             # só fecha as paralelas quando a queda da MK é confirmada
@@ -160,6 +163,9 @@ class AlertEngine:
         ):
             evs += self._step(prefix + key, bad, now, tipo, det, mk)
         return evs
+
+    def mk_ids(self) -> set[str]:
+        return {k.split("|", 1)[0] for k in self._t if k != "sede"}
 
     def forget_mk(self, mk_id: str) -> None:
         for k in [k for k in self._t if k.startswith(f"{mk_id}|")]:

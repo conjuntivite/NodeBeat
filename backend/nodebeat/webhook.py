@@ -43,7 +43,7 @@ async def run_sender(r, client, url, token, sleep=asyncio.sleep) -> None:
             ok = await deliver_once(r, client, url, token)
             more = ok and await pending_count(r)
         except Exception as e:  # Redis fora, cabeça corrompida: nunca derruba o sender
-            log.warning("webhook sender: %s: %s", type(e).__name__, e)
+            log.warning("webhook sender: %s", type(e).__name__)  # str(e) pode trazer a URL
             ok = more = False
         if ok:
             delay = BASE

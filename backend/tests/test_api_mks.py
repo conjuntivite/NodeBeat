@@ -75,7 +75,7 @@ async def test_create_mk_rejects_bad_input(client, campo, valor):
 async def test_422_detail_per_field_without_echo(client):
     resp = await client.post("/api/mks", json={**MK, "ip_tunel": "8.8.8.8", "senha": "segredo-vazado"})
     assert resp.status_code == 422
-    assert resp.json()["detail"] == [{"loc": ["body", "ip_tunel"], "msg": "IP inválido"}]
+    assert resp.json()["detail"] == [{"loc": ["body", "ip_tunel"], "msg": "Use o IP privado do túnel"}]
     assert "segredo-vazado" not in resp.text and "8.8.8.8" not in resp.text and "input" not in resp.text
 
 
@@ -206,3 +206,38 @@ async def test_routes_require_auth(anon):
                  ("put", f"/api/mks/{id}/interfaces-vigiadas"), ("post", f"/api/mks/{id}/aceitar-certificado"),
                  ("get", f"/api/mks/{id}/historico")]:
         assert (await anon.request(m, p, json={})).status_code == 401, (m, p)
+
+
+async def test_status_dados_ok_follows_worker_heartbeat(client, r):
+    assert (await client.get("/api/status")).json()["dados_ok"] is False
+    await r.set("worker:vivo", "1", ex=90)
+    assert (await client.get("/api/status")).json()["dados_ok"] is True
+
+
+async def test_delete_via_api_makes_worker_forget_trackers(client, db, r):
+    from datetime import UTC, datetime, timedelta
+
+    from nodebeat.rules import AlertEngine
+    from nodebeat.worker import run_cycle
+
+    async def nao(_):
+        return False
+
+    async def sim(_):
+        return True
+
+    def falha(*a):
+        raise routeros.RouterOsError("sem resposta")
+
+    id = await criar(client)
+    eng, t0 = AlertEngine(), datetime(2026, 1, 1, tzinfo=UTC)
+    await run_cycle(db, r, eng, SET, t0, fetch=falha, ping=nao, reference_ok=sim)
+    assert eng.dump()["trackers"]
+    assert (await client.delete(f"/api/mks/{id}")).status_code == 204
+    await run_cycle(db, r, eng, SET, t0 + timedelta(seconds=30), fetch=falha, ping=nao, reference_ok=sim)
+    assert eng.dump()["trackers"] == {}
+
+
+async def test_422_public_ip_range_message(client):
+    resp = await client.post("/api/mks", json={**MK, "ip_publico": "192.168.0.1"})
+    assert resp.json()["detail"] == [{"loc": ["body", "ip_publico"], "msg": "Use o IP público fixo"}]

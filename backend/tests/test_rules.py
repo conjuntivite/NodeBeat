@@ -194,3 +194,34 @@ def test_missing_interface_detalhe():
     evs = [ev for s in (0, 30, 60, 90, 120) for ev in e.observe_mk(mk, obs, at(s))]
     assert {ev.detalhe for ev in evs} == {"Interface ether9 não encontrada na MK",
                                           "Interface ether1 caída"}
+
+
+def test_rename_mk_updates_name_on_return():
+    e, _ = fired()
+    novo = MkRef("1", "Cond. Beta")
+    for s in (150, 180):
+        assert e.observe_mk(novo, OK, at(s)) == []
+    (ev,) = e.observe_mk(novo, OK, at(210))
+    assert ev.evento == "retorno" and ev.mk == novo
+
+
+def test_open_alert_survives_reference_failure():
+    e, _ = fired()
+    evs = []
+    for s in (150, 180, 210, 240, 270):
+        evs += e.observe_reference(False, at(s))
+        evs += e.observe_mk(mk, OK, at(s))
+    evs += e.observe_reference(True, at(300))
+    assert [(x.evento, x.tipo) for x in evs] == [("queda", "falha_sede")]
+    evs = run(e, OK, (300, 330, 360))
+    assert [(x.evento, x.tipo, x.fim) for x in evs] == [("retorno", "offline", at(300))]
+
+
+def test_type_change_while_recovering():
+    e = AlertEngine()
+    vpn = Observation(MkState.VPN_CAIU, "vpn")
+    run(e, vpn, (0, 30, 60, 90, 120))
+    assert e.observe_mk(mk, OK, at(150)) == []
+    a, b = e.observe_mk(mk, OFF, at(180))
+    assert (a.evento, a.tipo, a.fim) == ("encerrado", "vpn_caiu", at(180))
+    assert (b.evento, b.tipo, b.inicio) == ("queda", "offline", at(0))

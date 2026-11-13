@@ -74,7 +74,7 @@ def _alertas(mk: dict, st: dict) -> list[str]:
 
 
 _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
-            "ip_tunel": "IP inválido", "ip_publico": "IP inválido"}
+            "ip_tunel": "Use o IP privado do túnel", "ip_publico": "Use o IP público fixo"}
 
 
 def create_app(db, r, settings) -> FastAPI:
@@ -147,7 +147,8 @@ def create_app(db, r, settings) -> FastAPI:
         linhas.sort(key=lambda x: (not x[1], not x[0]["alertas"], x[0]["nome"].casefold()))
         eng = await r.get("engine")
         return {"resumo": resumo, "fila_pendente": await webhook.pending_count(r),
-                "sede_ok": not (eng and json.loads(eng).get("frozen")), "mks": [x[0] for x in linhas]}
+                "sede_ok": not (eng and json.loads(eng).get("frozen")),
+                "dados_ok": bool(await r.exists("worker:vivo")), "mks": [x[0] for x in linhas]}
 
     @mks.post("/mks", status_code=201)
     async def criar(body: MkIn) -> dict:

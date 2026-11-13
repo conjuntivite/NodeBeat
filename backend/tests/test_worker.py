@@ -8,10 +8,10 @@ from mongomock_motor import AsyncMongoMockClient
 
 from nodebeat import config, crypto, history, store
 from nodebeat.config import Settings
-from nodebeat.routeros import RouterOsError, Snapshot
+from nodebeat.routeros import CertMismatch, RouterOsError, Snapshot
 from nodebeat.rules import AlertEngine
 from nodebeat.webhook import QUEUE
-from nodebeat.worker import run_cycle
+from nodebeat.worker import load_engine, run_cycle
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 KEY = Fernet.generate_key().decode()
@@ -123,3 +123,46 @@ def test_load_settings_missing_var(monkeypatch):
         config.load_settings()
     monkeypatch.setenv("NODEBEAT_SECRET_KEY", "x")
     assert config.load_settings().interval_s == 30
+
+
+async def test_reference_blip_retried_in_same_cycle(db, r):
+    await store.insert_mk(db, doc())
+    chamadas = []
+
+    async def ref(_):  # só a 1ª tentativa do ciclo 60 falha
+        chamadas.append(1)
+        return len(chamadas) != 3
+
+    eng = AlertEngine()
+    for s in range(0, 121, 30):
+        await run_cycle(db, r, eng, SET, T0 + timedelta(seconds=s), ping=sim_no,
+                        reference_ok=ref, fetch=fetch_fail)
+    fila = [json.loads(x) for x in await r.lrange(QUEUE, 0, -1)]
+    assert [(p["evento"], p["tipo"]) for p in fila] == [("queda", "offline")]
+
+
+async def test_cycle_marks_worker_alive(db, r):
+    await run_cycle(db, r, AlertEngine(), SET, T0, ping=sim_no, reference_ok=sim_no)
+    assert 0 < await r.ttl("worker:vivo") <= 90
+
+
+def test_load_engine_tolerates_corrupt_json(caplog):
+    assert load_engine(None).dump()["trackers"] == {}
+    assert load_engine('{"frozen": tru').dump()["trackers"] == {}
+    assert load_engine('{"x": 1}').dump()["trackers"] == {}
+    assert "tru" not in caplog.text
+    e = AlertEngine()
+    e.observe_reference(False, T0)
+    assert load_engine(json.dumps(e.dump())).frozen
+
+
+async def test_cert_mismatch_keeps_pin(db, r):
+    id = await store.insert_mk(db, doc(cert_sha256="ab" * 32))
+
+    def fetch_mismatch(*a):
+        raise CertMismatch()
+
+    await run_cycle(db, r, AlertEngine(), SET, T0, ping=sim_ok, reference_ok=sim_ok,
+                    fetch=fetch_mismatch)
+    assert (await store.get_mk(db, id))["cert_sha256"] == "ab" * 32
+    assert (await history.load_states(r))[id]["status"] == "erro_acesso"

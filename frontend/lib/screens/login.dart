@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: AutofillGroup(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        Text('// NODEBEAT', style: TradeType.eyebrow.copyWith(color: t.fgMuted)),
+                        Text('// NODEBEAT', style: TradeType.eyebrow.copyWith(color: t.fgSecondary)),
                         SizedBox(height: t.space1),
                         Text('Acesso ao painel', style: TradeType.heading2.copyWith(color: t.fgPrimary)),
                         SizedBox(height: t.space6),
@@ -88,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         if (_error != null) ...[
                           SizedBox(height: t.space3),
-                          Text(_error!, style: TradeType.bodySm.copyWith(color: t.negative)),
+                          Semantics(liveRegion: true, child: Text(_error!, style: TradeType.bodySm.copyWith(color: t.negative))),
                         ],
                         SizedBox(height: t.space6),
                         FilledButton(onPressed: _busy ? null : _submit, child: const Text('Entrar')),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -6,7 +8,12 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/main.dart';
 
 Future<void> _enter(WidgetTester t, int status) async {
-  final mock = MockClient((_) async => http.Response('', status));
+  final mock = MockClient((req) async {
+    expect(req.method, 'POST');
+    expect(req.url.path, '/api/auth/login');
+    expect(jsonDecode(req.body), {'usuario': 'admin', 'senha': 'senha'});
+    return http.Response('', status);
+  });
   await t.pumpWidget(NodeBeatApp(api: ApiClient(client: mock)));
   await t.enterText(find.byType(TextField).at(0), 'admin');
   await t.enterText(find.byType(TextField).at(1), 'senha');

@@ -148,6 +148,26 @@ void main() {
     h.dispose();
   });
 
+  testWidgets('painel não tem seta de voltar mesmo com rota por baixo', (t) async {
+    t.view.physicalSize = const Size(1400, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final api = ApiClient(client: MockClient((req) async => http.Response(jsonEncode(_status()), 200)));
+    await t.pumpWidget(MaterialApp(
+      theme: tradeTheme(Brightness.light),
+      home: Builder(
+          builder: (c) => TextButton(onPressed: () => Navigator.of(c).pushNamed('/painel'), child: const Text('IR'))),
+      onGenerateRoute: (s) => MaterialPageRoute(settings: s, builder: (_) => DashboardScreen(api: api)),
+    ));
+    await t.tap(find.text('IR'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.byType(DashboardScreen), findsOneWidget);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
   test('formatDateTime e formatDuration', () {
     expect(formatDateTime(null), '');
     expect(formatDateTime(DateTime(2026, 1, 2, 9, 5).toIso8601String()), '02/01/2026 09:05');

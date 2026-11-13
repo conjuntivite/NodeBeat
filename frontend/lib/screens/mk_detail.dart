@@ -21,6 +21,7 @@ class MkDetailScreen extends StatefulWidget {
 class _MkDetailScreenState extends State<MkDetailScreen> {
   MkDetail? _mk;
   List<HistEvent> _hist = const [];
+  List<String> _alertas = const []; // mesmas regras do painel: vêm de /status
   String? _error;
 
   @override
@@ -35,10 +36,12 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     try {
       final mk = await widget.api.mk(widget.id);
       final hist = await widget.api.history(widget.id);
+      final row = (await widget.api.status()).mks.where((m) => m.id == widget.id);
       if (mounted) {
         setState(() {
           _mk = mk;
           _hist = hist;
+          _alertas = row.isEmpty ? const [] : row.first.alertas;
           _error = null;
         });
       }
@@ -157,22 +160,29 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   Widget _header(BuildContext context, TradeTokens t, MkDetail mk) {
     final e = mk.estado;
     final status = e?.status ?? 'aguardando';
+    final alert = _alertas.isNotEmpty;
     final nums = dataStyle(context, TradeType.dataSm);
     Widget metric(String label, String value) => Padding(
           padding: EdgeInsets.only(right: t.space8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: TradeType.label.copyWith(color: t.fgSecondary)),
-            Text(value, style: nums),
+            Text(value.trim().isEmpty ? '—' : value, style: nums),
           ]),
         );
     return TradeCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Wrap(spacing: t.space4, runSpacing: t.space2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          StatusPill(status: status, alert: false, desde: e?.desde),
+          StatusPill(status: status, alert: alert, desde: e?.desde),
           if (e?.detalhe != null) Text(e!.detalhe!, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
         ]),
         SizedBox(height: t.space4),
-        HeartbeatLine(status: status, width: 240, height: 56),
+        if (alert)
+          Padding(
+            padding: EdgeInsets.only(top: t.space3),
+            child: Text(_alertas.join(' · '), style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
+          ),
+        SizedBox(height: t.space4),
+        HeartbeatLine(status: status, alert: alert, width: 240, height: 56),
         SizedBox(height: t.space4),
         Wrap(runSpacing: t.space3, children: [
           metric('CPU', e?.cpu == null ? '—' : '${e!.cpu!.round()}%'),

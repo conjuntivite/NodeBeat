@@ -36,6 +36,8 @@ class NodeBeatApp extends StatelessWidget {
           themeMode: mode,
           initialRoute: '/login',
           onGenerateRoute: _route,
+          // Recarregar em #/painel não deixa o /login por baixo.
+          onGenerateInitialRoutes: (name) => [_route(RouteSettings(name: name))!],
         ),
       );
 }

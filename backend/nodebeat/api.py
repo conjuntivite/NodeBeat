@@ -218,3 +218,15 @@ def create_app(db, r, settings) -> FastAPI:
 
     app.include_router(mks)
     return app
+
+
+def app_from_env() -> FastAPI:
+    """Fábrica para `uvicorn --factory nodebeat.api:app_from_env`."""
+    import redis.asyncio
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    from nodebeat.config import load_settings
+
+    s = load_settings()
+    db = AsyncIOMotorClient(s.mongo_url).get_default_database("nodebeat")
+    return create_app(db, redis.asyncio.Redis.from_url(s.redis_url, decode_responses=True), s)

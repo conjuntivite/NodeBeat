@@ -157,7 +157,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   Widget _header(BuildContext context, TradeTokens t, MkDetail mk) {
     final e = mk.estado;
     final status = e?.status ?? 'aguardando';
-    final nums = dataStyle(context).copyWith(fontSize: 14);
+    final nums = dataStyle(context, TradeType.dataSm);
     Widget metric(String label, String value) => Padding(
           padding: EdgeInsets.only(right: t.space8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -211,7 +211,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
           Padding(
             padding: EdgeInsets.symmetric(vertical: t.space1),
             child: Row(children: [
-              Expanded(child: Text(n, style: dataStyle(context).copyWith(fontSize: 14))),
+              Expanded(child: Text(n, style: dataStyle(context, TradeType.dataSm))),
               Text(
                 ifaces[n] == null ? 'sem leitura' : (ifaces[n]! ? 'de pé' : 'caída'),
                 style: TradeType.label.copyWith(color: ifaces[n] == null ? t.fgSecondary : (ifaces[n]! ? t.positive : t.negative)),
@@ -231,7 +231,13 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
             Padding(
               padding: EdgeInsets.symmetric(vertical: t.space1),
               child: Text(
-                [h.tipo, h.evento, if (h.detalhe != null) h.detalhe!, if (h.inicio != null) h.inicio!].join(' · '),
+                [
+                  h.tipo,
+                  h.evento,
+                  if (h.detalhe != null) h.detalhe!,
+                  formatDateTime(h.inicio),
+                  if (h.duracaoS != null) formatDuration(h.duracaoS!),
+                ].where((x) => x.isNotEmpty).join(' · '),
                 style: TradeType.bodyMd.copyWith(color: t.fgPrimary),
               ),
             ),

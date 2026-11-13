@@ -73,13 +73,19 @@ def _alertas(mk: dict, st: dict) -> list[str]:
     return out
 
 
+_MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
+            "ip_tunel": "IP inválido", "ip_publico": "IP inválido"}
+
+
 def create_app(db, r, settings) -> FastAPI:
     app = FastAPI()
     app.state.db, app.state.r, app.state.settings = db, r, settings
 
     @app.exception_handler(RequestValidationError)
     async def _invalida(request: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse({"detail": "Requisição inválida"}, status_code=422)  # sem eco do corpo (senha)
+        # Só loc + texto fixo: nunca "input"/"ctx" (eco do corpo vazaria a senha).
+        detail = [{"loc": list(e["loc"]), "msg": _MSG_422.get(str(e["loc"][-1]), "Valor inválido")} for e in exc.errors()]
+        return JSONResponse({"detail": detail}, status_code=422)
 
     @app.post("/api/auth/login", status_code=204)
     async def login(body: LoginIn) -> Response:
@@ -146,7 +152,7 @@ def create_app(db, r, settings) -> FastAPI:
     @mks.post("/mks", status_code=201)
     async def criar(body: MkIn) -> dict:
         if not body.senha:
-            raise HTTPException(422, "Requisição inválida")
+            raise HTTPException(422, [{"loc": ["body", "senha"], "msg": "Campo obrigatório"}])
         await _nome_livre(body.nome)
         doc = body.model_dump(exclude={"senha"}) | {
             "senha_cifrada": crypto.encrypt(body.senha, settings.secret_key),

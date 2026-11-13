@@ -101,15 +101,14 @@ class _HeartbeatLineState extends State<HeartbeatLine> with SingleTickerProvider
             : widget.alert
                 ? t.warning
                 : t.positive;
+    Widget line(double progress) => CustomPaint(
+          size: Size(widget.width, widget.height),
+          painter: HeartbeatPainter(isFlat: isFora(s), color: color, progress: progress),
+        );
+    // Linha parada (fora, aguardando, movimento reduzido) não reconstrói a cada quadro.
     final anim = widget.beat ?? _own;
     return ExcludeSemantics(
-      child: AnimatedBuilder(
-        animation: anim,
-        builder: (_, _) => CustomPaint(
-          size: Size(widget.width, widget.height),
-          painter: HeartbeatPainter(isFlat: isFora(s), color: color, progress: _moves ? anim.value : 0),
-        ),
-      ),
+      child: _moves ? AnimatedBuilder(animation: anim, builder: (_, _) => line(anim.value)) : line(0),
     );
   }
 }

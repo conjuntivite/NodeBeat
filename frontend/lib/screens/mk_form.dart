@@ -95,7 +95,8 @@ class _MkFormScreenState extends State<MkFormScreen> {
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
       setState(() {
-        _errors = e is ApiError ? e.fields : {};
+        const known = {'nome', 'ip_tunel', 'ip_publico', 'usuario', 'senha'};
+        _errors = e is ApiError ? {for (final k in e.fields.keys) if (known.contains(k)) k: e.fields[k]!} : {};
         _general = _errors.isEmpty ? errorText(e) : null;
       });
     } finally {

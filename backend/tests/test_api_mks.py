@@ -72,6 +72,18 @@ async def test_create_mk_rejects_bad_input(client, campo, valor):
     assert (await client.post("/api/mks", json={**MK, campo: valor})).status_code == 422
 
 
+async def test_422_detail_per_field_without_echo(client):
+    resp = await client.post("/api/mks", json={**MK, "ip_tunel": "8.8.8.8", "senha": "segredo-vazado"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == [{"loc": ["body", "ip_tunel"], "msg": "IP inválido"}]
+    assert "segredo-vazado" not in resp.text and "8.8.8.8" not in resp.text and "input" not in resp.text
+
+
+async def test_422_empty_password_on_create_names_the_field(client):
+    resp = await client.post("/api/mks", json={**MK, "senha": ""})
+    assert resp.json()["detail"] == [{"loc": ["body", "senha"], "msg": "Campo obrigatório"}]
+
+
 async def test_put_empty_password_keeps_old(client, db):
     id = await criar(client)
     antes = (await store.get_mk(db, id))["senha_cifrada"]

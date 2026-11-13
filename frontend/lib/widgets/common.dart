@@ -15,6 +15,25 @@ String relativo(String? iso, {DateTime? now}) {
   return '${m ~/ 1440} d';
 }
 
+String two(int n) => n.toString().padLeft(2, '0');
+
+/// ISO 8601 -> "dd/MM/yyyy HH:mm" no horário local.
+String formatDateTime(String? iso) {
+  final d = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+  if (d == null) return '';
+  return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+/// 45 -> "45 s", 3900 -> "1 h 5 min".
+String formatDuration(int s) {
+  if (s < 60) return '$s s';
+  final m = s ~/ 60;
+  if (m < 60) return '$m min';
+  final h = m ~/ 60;
+  if (h < 24) return m % 60 == 0 ? '$h h' : '$h h ${m % 60} min';
+  return h % 24 == 0 ? '${h ~/ 24} d' : '${h ~/ 24} d ${h % 24} h';
+}
+
 String statusLabel(String status, bool alert) => switch (status) {
       'no_ar' => alert ? 'Alerta' : 'No ar',
       'offline' => 'Offline',

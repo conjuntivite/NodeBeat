@@ -17,6 +17,7 @@ MonitorSound soundFor(StatusData s) {
 class SoundEngine {
   /// Chamar dentro de um clique: o navegador só libera áudio depois dele.
   void unlock() => impl.unlock();
+  bool get isSuspended => impl.isSuspended();
   void beep() => impl.beep();
   void startFlatline() => impl.startFlatline();
   void stop() => impl.stop();

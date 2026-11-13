@@ -9,7 +9,7 @@ TradeTokens tokensOf(BuildContext c) =>
     Theme.of(c).brightness == Brightness.dark ? TradeTokens.dark : TradeTokens.light;
 
 /// Valores numéricos: Space Mono com algarismos tabulares.
-TextStyle dataStyle(BuildContext c) => TradeType.dataMd.copyWith(
+TextStyle dataStyle(BuildContext c, [TextStyle base = TradeType.dataMd]) => base.copyWith(
       fontFamily: TradeType.monoFamily,
       color: tokensOf(c).fgPrimary,
       fontFeatures: const [FontFeature.tabularFigures()],

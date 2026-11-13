@@ -63,6 +63,22 @@ void main() {
     expect(sent!['nome'], 'cliente-v7');
   });
 
+  testWidgets('422 sem campo conhecido mostra a mensagem geral', (t) async {
+    await _show(
+        t,
+        MockClient((req) async => http.Response(
+            jsonEncode({'detail': [{'loc': ['body'], 'msg': 'Valor inválido'}]}), 422,
+            headers: {'content-type': 'application/json; charset=utf-8'})));
+    await t.enterText(_field('Condomínio'), 'cliente-v7');
+    await t.enterText(_field('IP no túnel'), '10.0.0.2');
+    await t.enterText(_field('IP público'), '203.0.113.9');
+    await t.enterText(_field('Usuário da API'), 'monitor');
+    await t.enterText(_field('Senha da API'), 'segredo');
+    await t.tap(find.text('Salvar'));
+    await t.pumpAndSettle();
+    expect(find.text('Requisição inválida'), findsOneWidget);
+  });
+
   test('MkInput sem senha → senha null', () {
     final i = MkInput(nome: 'a', ipTunel: '10.0.0.2', ipPublico: '203.0.113.9', usuario: 'u');
     expect(i.senha, isNull);

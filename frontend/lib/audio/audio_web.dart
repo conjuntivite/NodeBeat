@@ -8,6 +8,9 @@ web.AudioContext get _c => _ctx ??= web.AudioContext();
 
 void unlock() => _c.resume();
 
+/// Sem clique do usuário o navegador mantém o contexto suspenso (alarme mudo).
+bool isSuspended() => _ctx == null || _ctx!.state != 'running';
+
 web.OscillatorNode _osc(double hz, web.AudioNode to) {
   final o = _c.createOscillator()
     ..type = 'sine'

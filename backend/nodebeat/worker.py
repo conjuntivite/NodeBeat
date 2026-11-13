@@ -53,7 +53,9 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
     await _emit(r, engine.observe_mk(ref, obs, now))
     ok = obs.state == MkState.NO_AR
     ant = antes.get(mk["id"])
-    desde = ant["desde"] if ant and ant["status"] == obs.state.value else now.isoformat()
+    # entre tipos de queda (offline/vpn_caiu/erro_acesso) o relógio continua: conta desde que saiu do ar
+    mesmo = ant and (ant["status"] == obs.state.value or (ant["status"] != "no_ar" and not ok))
+    desde = ant["desde"] if mesmo else now.isoformat()
     await history.save_state(r, mk["id"], {
         "status": obs.state.value, "detalhe": obs.detalhe, "desde": desde,
         "cpu": obs.cpu if ok else None, "mem": obs.mem if ok else None,

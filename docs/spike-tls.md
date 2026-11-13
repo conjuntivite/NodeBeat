@@ -32,8 +32,8 @@ O script tenta o contexto padrão e, se falhar, `minimum_version=TLSv1` + `DEFAU
 
 | Roteador | RouterOS | TLS | Cifra | SHA-256 do cert | Config que funcionou | Login |
 |---|---|---|---|---|---|---|
-| <IP_MK_V6_TESTE> (v6, hEX, WAN `PPPoE - ALT`) | 6.49.17 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `a0e3dcc77313e5e14fa71d9e8687fc27c90b8c4a3bcdf3438d3dee9326dbc43c` (bate com o `fingerprint` do RouterOS) | default (`create_default_context`, `check_hostname=False`, `CERT_NONE`) | plain OK |
-| <IP_MK_V7_TESTE> (v7, cliente-v7, hEX, WAN `pppoe-out1`) | 7.24.4 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `952606fa6d5ebcdff6ff85b508c7969f6c287fbbb55820098d2ade4b5e5c3f10` (bate com `:put [/certificate get monitor-api fingerprint]`; o `/certificate print` da v7 nao mostra a coluna) | default | plain OK |
+| <IP_MK_V6_TESTE> (v6, hEX, WAN `<WAN_IFACE_V6>`) | 6.49.17 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `<SHA256_CERT_V6>` (bate com o `fingerprint` do RouterOS) | default (`create_default_context`, `check_hostname=False`, `CERT_NONE`) | plain OK |
+| <IP_MK_V7_TESTE> (v7, cliente-v7, hEX, WAN `<WAN_IFACE_V7>`) | 7.24.4 (stable) | TLSv1.2 | ECDHE-RSA-AES256-GCM-SHA384 | `<SHA256_CERT_V7>` (bate com `:put [/certificate get monitor-api fingerprint]`; o `/certificate print` da v7 nao mostra a coluna) | default | plain OK |
 
 O contexto legado nao foi necessario em nenhuma das duas.
 

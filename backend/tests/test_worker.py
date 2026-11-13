@@ -166,3 +166,15 @@ async def test_cert_mismatch_keeps_pin(db, r):
                     fetch=fetch_mismatch)
     assert (await store.get_mk(db, id))["cert_sha256"] == "ab" * 32
     assert (await history.load_states(r))[id]["status"] == "erro_acesso"
+
+
+async def test_desde_kept_across_down_types(db, r):
+    id = await store.insert_mk(db, doc())
+    eng = AlertEngine()
+    await ciclos(db, r, eng, [0], fetch=fetch_fail)
+    st0 = (await history.load_states(r))[id]
+    await run_cycle(db, r, eng, SET, T0 + timedelta(seconds=30),
+                    ping=sim_ok, reference_ok=sim_ok, fetch=fetch_fail)
+    st1 = (await history.load_states(r))[id]
+    assert st0["status"] != st1["status"] and st1["status"] != "no_ar"
+    assert st1["desde"] == T0.isoformat()

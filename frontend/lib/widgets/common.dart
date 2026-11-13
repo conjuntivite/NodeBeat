@@ -82,6 +82,16 @@ bool sessionExpired(BuildContext context, Object e) {
   return false;
 }
 
+/// Seta de voltar para telas que podem abrir por deep link: sem rota por baixo, vai ao painel.
+/// Com rota por baixo devolve null e o AppBar põe a seta padrão.
+Widget? backFallback(BuildContext context) => Navigator.of(context).canPop()
+    ? null
+    : IconButton(
+        tooltip: 'Voltar',
+        icon: const Icon(Icons.arrow_back, size: 20),
+        onPressed: () => Navigator.of(context).pushReplacementNamed('/painel'),
+      );
+
 String errorText(Object e) => e is ApiError ? e.message : 'Não foi possível conectar ao servidor';
 
 /// Cartão padrão: radius-xl, padding space-6.

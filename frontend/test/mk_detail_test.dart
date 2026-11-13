@@ -13,7 +13,8 @@ import 'package:nodebeat/widgets/heartbeat.dart';
 http.Response _json(Object o) =>
     http.Response(jsonEncode(o), 200, headers: {'content-type': 'application/json; charset=utf-8'});
 
-Future<void> _show(WidgetTester t, {required List<String> alertas, String ipPublico = '203.0.113.9'}) async {
+Future<void> _show(WidgetTester t,
+    {required List<String> alertas, String ipPublico = '203.0.113.9', int statusCode = 200}) async {
   t.view.physicalSize = const Size(1000, 1400);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -29,6 +30,7 @@ Future<void> _show(WidgetTester t, {required List<String> alertas, String ipPubl
       case '/api/mks/x/historico':
         return _json([]);
       default: // /api/status
+        if (statusCode != 200) return http.Response('', statusCode);
         return _json({
           'resumo': {'no_ar': 0, 'com_alerta': 1, 'fora': 0}, 'fila_pendente': 0, 'sede_ok': true,
           'mks': [
@@ -38,9 +40,11 @@ Future<void> _show(WidgetTester t, {required List<String> alertas, String ipPubl
         });
     }
   });
+  final api = ApiClient(client: mock);
   await t.pumpWidget(MaterialApp(
     theme: tradeTheme(Brightness.light),
-    home: MkDetailScreen(api: ApiClient(client: mock), id: 'x'),
+    home: MkDetailScreen(api: api, id: 'x'),
+    onGenerateRoute: (s) => MaterialPageRoute(settings: s, builder: (_) => Text('ROTA ${s.name}')),
   ));
   await t.pump();
   await t.pump();
@@ -65,6 +69,22 @@ void main() {
     expect(_painter(t).color, TradeTokens.light.positive);
     final ip = find.ancestor(of: find.text('IP público'), matching: find.byType(Column)).first;
     expect(find.descendant(of: ip, matching: find.text('—')), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('status() com 500: detalhe aparece, sem alertas', (t) async {
+    await _show(t, alertas: ['CPU alta (92%)'], statusCode: 500);
+    expect(find.textContaining('No ar'), findsOneWidget);
+    expect(find.text('Editar'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('deep link: seta de voltar leva ao painel', (t) async {
+    await _show(t, alertas: []);
+    await t.tap(find.byTooltip('Voltar'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('ROTA /painel'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 }

@@ -87,7 +87,11 @@ class _MkFormScreenState extends State<MkFormScreen> {
       final nav = Navigator.of(context);
       if (_edit) {
         await widget.api.updateMk(widget.id!, input);
-        nav.pop();
+        if (nav.canPop()) {
+          nav.pop();
+        } else {
+          nav.pushReplacementNamed('/mk/${widget.id}'); // deep link: nada por baixo
+        }
       } else {
         final id = await widget.api.createMk(input);
         nav.pushReplacementNamed('/mk/$id', arguments: true); // abre a escolha de interfaces
@@ -118,6 +122,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
     final t = tokensOf(context);
     return Scaffold(
       appBar: AppBar(
+        leading: backFallback(context),
         backgroundColor: t.bgPage,
         title: Text(_edit ? 'Editar MK' : 'Nova MK', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
         actions: [const ThemeToggle(), SizedBox(width: t.space2)],

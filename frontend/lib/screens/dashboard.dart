@@ -211,7 +211,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       onPointerDown: (_) => _onPointerDown(),
       child: Scaffold(
         appBar: AppBar(
-        automaticallyImplyLeading: false, // raiz da navegação logada: sem seta de voltar
+          automaticallyImplyLeading: false, // raiz da navegação logada: sem seta de voltar
           backgroundColor: t.bgPage,
           title: Text(
             'NodeBeat',

@@ -36,12 +36,17 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     try {
       final mk = await widget.api.mk(widget.id);
       final hist = await widget.api.history(widget.id);
-      final row = (await widget.api.status()).mks.where((m) => m.id == widget.id);
+      var alertas = const <String>[];
+      try {
+        alertas = (await widget.api.status()).mks.where((m) => m.id == widget.id).firstOrNull?.alertas ?? alertas;
+      } catch (e) {
+        if (e is ApiError && e.status == 401) rethrow; // outras falhas: detalhe sem alertas
+      }
       if (mounted) {
         setState(() {
           _mk = mk;
           _hist = hist;
-          _alertas = row.isEmpty ? const [] : row.first.alertas;
+          _alertas = alertas;
           _error = null;
         });
       }
@@ -138,6 +143,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     final mk = _mk;
     return Scaffold(
       appBar: AppBar(
+        leading: backFallback(context),
         backgroundColor: t.bgPage,
         title: Text(mk?.nome ?? 'MK', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
         actions: [const ThemeToggle(), SizedBox(width: t.space2)],

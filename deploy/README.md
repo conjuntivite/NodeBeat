@@ -8,6 +8,8 @@ Só o nginx (`web`) escuta fora; Mongo, Redis, API e worker ficam na rede intern
 1. Crie uma VM Linux com Docker e o plugin Compose, alcançável pelo SonicWall (IP `<IP_DA_VM>`).
 2. Clone o repositório na VM.
 3. `cp deploy/.env.example deploy/.env` e preencha tudo (a URL do Mongo inclui `/nodebeat` e usa a mesma senha de `MONGO_PASSWORD`; veja os comentários no arquivo). `NODEBEAT_BIND_IP` = `<IP_DA_VM>`.
+   `MONGO_PASSWORD` só vale na primeira inicialização do volume do Mongo (`MONGO_INITDB_*`): trocá-la depois quebra a autenticação, a menos que o usuário seja alterado dentro do Mongo.
+   A rede do compose usa a sub-rede fixa `172.30.0.0/24` (em `compose.yml`, junto com `--forwarded-allow-ips` da api); troque se colidir com a rede da VM.
    **Trocar a `NODEBEAT_SECRET_KEY` depois inutiliza as senhas de MK já guardadas** (é preciso recadastrá-las).
 4. Certificado autoassinado:
    ```sh

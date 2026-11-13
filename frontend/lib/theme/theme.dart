@@ -57,6 +57,17 @@ ThemeData tradeTheme(Brightness b) {
         padding: EdgeInsets.symmetric(horizontal: t.space4, vertical: t.space3),
       ),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: t.bgElevated,
+        foregroundColor: t.fgPrimary,
+        side: BorderSide(color: t.borderStrong),
+        disabledForegroundColor: t.fgMuted,
+        shape: pill,
+        textStyle: TradeType.label,
+        padding: EdgeInsets.symmetric(horizontal: t.space4, vertical: t.space3),
+      ),
+    ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(foregroundColor: t.fgPrimary, backgroundColor: t.bgElevated, shape: pill),
     ),

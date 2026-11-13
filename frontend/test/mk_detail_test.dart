@@ -87,4 +87,15 @@ void main() {
     expect(find.text('ROTA /painel'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
+
+  testWidgets('uma ação de marca: só "Editar" é FilledButton (fora o destrutivo)', (t) async {
+    await _show(t, alertas: []);
+    final filled = t.widgetList<FilledButton>(find.byType(FilledButton))
+        .where((b) => (b.child as Text).data != 'Remover')
+        .map((b) => (b.child as Text).data);
+    expect(filled, ['Editar']);
+    expect(find.widgetWithText(OutlinedButton, 'Escolher interfaces'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Aceitar novo certificado'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
 }

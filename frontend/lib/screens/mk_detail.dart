@@ -204,8 +204,8 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
           FilledButton(
               onPressed: () => Navigator.of(context).pushNamed('/mk/${mk.id}/editar').then((_) => _load()),
               child: const Text('Editar')),
-          FilledButton(onPressed: _pickInterfaces, child: const Text('Escolher interfaces')),
-          FilledButton(onPressed: _acceptCert, child: const Text('Aceitar novo certificado')),
+          OutlinedButton(onPressed: _pickInterfaces, child: const Text('Escolher interfaces')),
+          OutlinedButton(onPressed: _acceptCert, child: const Text('Aceitar novo certificado')),
           FilledButton(
               onPressed: _delete,
               style: FilledButton.styleFrom(backgroundColor: t.negative, foregroundColor: t.fgInverse),

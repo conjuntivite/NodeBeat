@@ -23,4 +23,16 @@ void main() {
       expect(contrast(t.fgPrimary, t.bgSurface), greaterThanOrEqualTo(4.5));
     }
   });
+
+  test('botão secundário (outlined): fgPrimary sobre bgElevated >= 4,5 e borda borderStrong', () {
+    for (final b in [Brightness.light, Brightness.dark]) {
+      final t = b == Brightness.light ? TradeTokens.light : TradeTokens.dark;
+      final st = tradeTheme(b).outlinedButtonTheme.style!;
+      final fg = st.foregroundColor!.resolve({})!, bg = st.backgroundColor!.resolve({})!;
+      expect(fg, t.fgPrimary);
+      expect(bg, t.bgElevated);
+      expect(st.side!.resolve({})!.color, t.borderStrong);
+      expect(contrast(fg, bg), greaterThanOrEqualTo(4.5));
+    }
+  });
 }

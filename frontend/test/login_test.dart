@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/main.dart';
+import 'package:nodebeat/screens/dashboard.dart';
 
 Future<void> _enter(WidgetTester t, int status) async {
   final mock = MockClient((req) async {
@@ -18,7 +19,8 @@ Future<void> _enter(WidgetTester t, int status) async {
   await t.enterText(find.byType(TextField).at(0), 'admin');
   await t.enterText(find.byType(TextField).at(1), 'senha');
   await t.tap(find.text('Entrar'));
-  await t.pumpAndSettle();
+  await t.pump(); // sem pumpAndSettle: o painel tem animação em loop
+  await t.pump(const Duration(milliseconds: 500));
 }
 
 void main() {
@@ -35,6 +37,7 @@ void main() {
 
   testWidgets('204 navega para /painel', (t) async {
     await _enter(t, 204);
-    expect(find.byKey(const Key('painel')), findsOneWidget);
+    expect(find.byType(DashboardScreen), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
   });
 }

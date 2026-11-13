@@ -3,9 +3,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiError implements Exception {
-  ApiError(this.message, [this.status]);
+  ApiError(this.message, [this.status, this.fields = const {}]);
   final String message;
   final int? status;
+
+  /// Erros 422 por campo (último item de `loc` -> mensagem), quando o servidor os envia.
+  final Map<String, String> fields;
   @override
   String toString() => message;
 }
@@ -81,10 +84,15 @@ class MkDetail {
 }
 
 class MkInput {
-  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.senha = ''});
-  final String nome, ipTunel, ipPublico, usuario, senha;
-  Map<String, dynamic> toJson() =>
-      {'nome': nome, 'ip_tunel': ipTunel, 'ip_publico': ipPublico, 'usuario': usuario, 'senha': senha};
+  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.senha});
+  final String nome, ipTunel, ipPublico, usuario;
+
+  /// null na edição = manter a senha atual (o campo não é enviado).
+  final String? senha;
+  Map<String, dynamic> toJson() => {
+        'nome': nome, 'ip_tunel': ipTunel, 'ip_publico': ipPublico, 'usuario': usuario,
+        if (senha != null) 'senha': senha,
+      };
 }
 
 class IfaceInfo {
@@ -128,7 +136,15 @@ class ApiClient {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return res.body.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
     }
-    throw ApiError(erros[res.statusCode] ?? _detail(res), res.statusCode);
+    throw ApiError(erros[res.statusCode] ?? _detail(res), res.statusCode, _fields(res));
+  }
+
+  Map<String, String> _fields(http.Response res) {
+    try {
+      final d = jsonDecode(utf8.decode(res.bodyBytes))['detail'];
+      if (d is List) return {for (final e in d) (e['loc'] as List).last.toString(): e['msg'].toString()};
+    } catch (_) {}
+    return const {};
   }
 
   String _detail(http.Response res) {
@@ -136,6 +152,7 @@ class ApiClient {
       final j = jsonDecode(utf8.decode(res.bodyBytes));
       final d = j['detail'] ?? j['detalhe'];
       if (d is String) return d;
+      if (d is List) return 'Requisição inválida';
     } catch (_) {}
     return 'Erro ${res.statusCode}';
   }

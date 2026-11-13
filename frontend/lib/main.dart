@@ -2,7 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'api/client.dart';
 import 'screens/login.dart';
-import 'screens/painel.dart';
+import 'screens/dashboard.dart';
+import 'screens/mk_detail.dart';
+import 'screens/mk_form.dart';
 import 'theme/theme.dart';
 
 void main() => runApp(NodeBeatApp(api: ApiClient()));
@@ -11,10 +13,13 @@ class NodeBeatApp extends StatelessWidget {
   const NodeBeatApp({super.key, required this.api});
   final ApiClient api;
 
-  // Rotas novas (/mk/:id, /mk/novo...) entram neste switch.
   Route<dynamic>? _route(RouteSettings s) {
-    final page = switch (s.name) {
-      '/painel' => const PainelScreen(),
+    final seg = Uri.parse(s.name ?? '').pathSegments;
+    final page = switch (seg) {
+      ['painel'] => DashboardScreen(api: api),
+      ['mk', 'novo'] => MkFormScreen(api: api),
+      ['mk', final id] => MkDetailScreen(api: api, id: id, chooseInterfaces: s.arguments == true),
+      ['mk', final id, 'editar'] => MkFormScreen(api: api, id: id),
       _ => LoginScreen(api: api),
     };
     return MaterialPageRoute(settings: s, builder: (_) => page);

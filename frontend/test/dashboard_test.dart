@@ -54,10 +54,11 @@ Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200,
   await t.pump();
 }
 
-Map<String, dynamic> _status({int fila = 0, bool sede = true}) => {
+Map<String, dynamic> _status({int fila = 0, bool sede = true, bool dados = true}) => {
       'resumo': {'no_ar': 1, 'com_alerta': 1, 'fora': 1},
       'fila_pendente': fila,
       'sede_ok': sede,
+      'dados_ok': dados,
       'mks': [
         _mk('a', 'cliente-v7', 'vpn_caiu'),
         _mk('b', 'cliente-b', 'no_ar', ['CPU alta (92%)']),
@@ -84,6 +85,15 @@ void main() {
     await _show(t, _status(sede: false));
     expect(find.text('Sem conexão da sede — dados congelados'), findsOneWidget);
     expect(find.textContaining('aguardando envio'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('worker parado → aviso de dados desatualizados', (t) async {
+    await _show(t, _status());
+    expect(find.text('Monitor parado — dados desatualizados'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    await _show(t, _status(dados: false));
+    expect(find.text('Monitor parado — dados desatualizados'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

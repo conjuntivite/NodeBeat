@@ -248,10 +248,10 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               padding: EdgeInsets.symmetric(vertical: t.space1),
               child: Text(
                 [
-                  h.tipo,
-                  h.evento,
+                  _tipos[h.tipo] ?? statusLabel(h.tipo, false),
+                  _eventos[h.evento] ?? h.evento,
                   if (h.detalhe != null) h.detalhe!,
-                  formatDateTime(h.inicio),
+                  formatDateTime(h.fim ?? h.inicio), // retorno/encerrado: quando acabou
                   if (h.duracaoS != null) formatDuration(h.duracaoS!),
                 ].where((x) => x.isNotEmpty).join(' · '),
                 style: TradeType.bodyMd.copyWith(color: t.fgPrimary),
@@ -260,3 +260,13 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
         ]),
       );
 }
+
+const _eventos = {'queda': 'Queda', 'retorno': 'Retorno', 'encerrado': 'Encerrado'};
+
+// Tipos que não são status de MK; os demais vêm de statusLabel.
+const _tipos = {
+  'cpu_alta': 'CPU alta',
+  'memoria_alta': 'Memória alta',
+  'interface_caida': 'Interface caída',
+  'falha_sede': 'Falha da sede',
+};

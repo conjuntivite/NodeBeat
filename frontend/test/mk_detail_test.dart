@@ -8,13 +8,17 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/mk_detail.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
+import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/heartbeat.dart';
 
 http.Response _json(Object o) =>
     http.Response(jsonEncode(o), 200, headers: {'content-type': 'application/json; charset=utf-8'});
 
 Future<void> _show(WidgetTester t,
-    {required List<String> alertas, String ipPublico = '203.0.113.9', int statusCode = 200}) async {
+    {required List<String> alertas,
+    String ipPublico = '203.0.113.9',
+    int statusCode = 200,
+    List<Map<String, dynamic>> hist = const []}) async {
   t.view.physicalSize = const Size(1000, 1400);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -28,11 +32,11 @@ Future<void> _show(WidgetTester t,
             'uptime': '1d', 'ifaces': {'ether1': false}, 'versao': '7.14', 'atualizado_em': null},
         });
       case '/api/mks/x/historico':
-        return _json([]);
+        return _json(hist);
       default: // /api/status
         if (statusCode != 200) return http.Response('', statusCode);
         return _json({
-          'resumo': {'no_ar': 0, 'com_alerta': 1, 'fora': 0}, 'fila_pendente': 0, 'sede_ok': true,
+          'resumo': {'no_ar': 0, 'com_alerta': 1, 'fora': 0}, 'fila_pendente': 0, 'sede_ok': true, 'dados_ok': true,
           'mks': [
             {'id': 'x', 'nome': 'cliente-v7', 'status': 'no_ar', 'desde': null, 'cpu': 92, 'mem': 40, 'uptime': '1d',
               'ifaces_ok': 0, 'ifaces_total': 1, 'alertas': alertas, 'versao': '7.14'},
@@ -69,6 +73,17 @@ void main() {
     expect(_painter(t).color, TradeTokens.light.positive);
     final ip = find.ancestor(of: find.text('IP público'), matching: find.byType(Column)).first;
     expect(find.descendant(of: ip, matching: find.text('—')), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('histórico em pt-BR; retorno mostra a data do fim', (t) async {
+    const ini = '2026-01-01T10:00:00-03:00', fim = '2026-01-01T10:30:00-03:00';
+    await _show(t, alertas: [], hist: [
+      {'evento': 'retorno', 'tipo': 'vpn_caiu', 'mk': null, 'detalhe': 'vpn', 'inicio': ini, 'fim': fim, 'duracao_s': 1800},
+      {'evento': 'queda', 'tipo': 'cpu_alta', 'mk': null, 'detalhe': '', 'inicio': ini, 'fim': null, 'duracao_s': null},
+    ]);
+    expect(find.text('VPN caiu · Retorno · vpn · ${formatDateTime(fim)} · 30 min'), findsOneWidget);
+    expect(find.text('CPU alta · Queda · ${formatDateTime(ini)}'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

@@ -3,11 +3,20 @@ import 'audio_stub.dart' if (dart.library.js_interop) 'audio_web.dart' as impl;
 
 enum MonitorSound { flatline, beep, silent }
 
-/// Um som só para o painel: alguma MK fora → apito; senão bip por batida.
-/// "aguardando" não conta como fora; lista vazia fica em silêncio.
-MonitorSound soundFor(StatusData s) {
-  if (s.mks.isEmpty) return MonitorSound.silent;
-  if (s.mks.any((m) => const {'offline', 'vpn_caiu', 'erro_acesso'}.contains(m.status))) {
+/// Mesma confirmação do worker: o apito não sai por uma amostra ruim só.
+const _confirma = Duration(seconds: 120);
+
+/// Um som só para o painel: alguma MK fora há ≥ 120 s → apito; senão bip por batida.
+/// Fora há menos, "aguardando" e lista vazia não apitam; worker parado ou sede fora → silêncio.
+MonitorSound soundFor(StatusData s, {DateTime? now}) {
+  if (s.mks.isEmpty || !s.dadosOk || !s.sedeOk) return MonitorSound.silent;
+  final t = now ?? DateTime.now();
+  bool confirmada(MkRow m) {
+    final d = m.desde == null ? null : DateTime.tryParse(m.desde!);
+    return d == null || t.difference(d) >= _confirma; // sem "desde": não dá para adiar
+  }
+
+  if (s.mks.any((m) => const {'offline', 'vpn_caiu', 'erro_acesso'}.contains(m.status) && confirmada(m))) {
     return MonitorSound.flatline;
   }
   return s.mks.any((m) => m.status == 'no_ar') ? MonitorSound.beep : MonitorSound.silent;

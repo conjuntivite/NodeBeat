@@ -7,6 +7,7 @@ void main() {
       'resumo': {'no_ar': 1, 'com_alerta': 1, 'fora': 0},
       'fila_pendente': 2,
       'sede_ok': false,
+      'dados_ok': true,
       'mks': [
         {
           'id': 'a', 'nome': 'Alfa', 'status': 'no_ar', 'desde': '2026-01-01T10:00:00-03:00',
@@ -20,6 +21,7 @@ void main() {
       ],
     });
     expect(s.sedeOk, false);
+    expect(s.dadosOk, true);
     expect(s.filaPendente, 2);
     expect(s.comAlerta, 1);
     expect(s.mks[0].cpu, 91.5);

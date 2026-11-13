@@ -263,6 +263,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             : ListView(
                 padding: EdgeInsets.all(t.space6),
                 children: [
+                  if (!d.dadosOk)
+                    _Banner(
+                      'Monitor parado — dados desatualizados',
+                      t.negative,
+                    ),
                   if (!d.sedeOk)
                     _Banner(
                       'Sem conexão da sede — dados congelados',

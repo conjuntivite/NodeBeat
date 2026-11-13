@@ -43,9 +43,13 @@ class StatusData {
         fora = j['resumo']['fora'],
         filaPendente = j['fila_pendente'],
         sedeOk = j['sede_ok'],
+        dadosOk = j['dados_ok'] == true,
         mks = [for (final m in j['mks']) MkRow.fromJson(m)];
   final int noAr, comAlerta, fora, filaPendente;
   final bool sedeOk;
+
+  /// false = worker parado (dados velhos).
+  final bool dadosOk;
   final List<MkRow> mks;
 }
 

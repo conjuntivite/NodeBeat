@@ -15,7 +15,7 @@ StatusData _s(List<Map<String, dynamic>> mks, {bool sede = true, bool dados = tr
       'fila_pendente': 0, 'sede_ok': sede, 'dados_ok': dados, 'mks': mks,
     });
 
-MonitorSound _som(StatusData s) => soundFor(s, now: _now);
+MonitorSound _som(StatusData s, {String? foco}) => soundFor(s, now: _now, foco: foco);
 
 void main() {
   test('1 MK fora entre 3 → apito', () {
@@ -37,5 +37,12 @@ void main() {
     final mks = [_mk('a', 'no_ar'), _mk('b', 'offline')];
     expect(_som(_s(mks, dados: false)), MonitorSound.silent);
     expect(_som(_s(mks, sede: false)), MonitorSound.silent);
+  });
+  test('foco numa MK: só ela conta', () {
+    final mks = [_mk('a', 'no_ar'), _mk('b', 'offline'), _mk('c', 'vpn_caiu', foraHa: 30)];
+    expect(_som(_s(mks), foco: 'a'), MonitorSound.beep); // outra fora não apita
+    expect(_som(_s(mks), foco: 'b'), MonitorSound.flatline);
+    expect(_som(_s(mks), foco: 'c'), MonitorSound.silent); // fora há menos de 120 s
+    expect(_som(_s(mks), foco: 'x'), MonitorSound.silent);
   });
 }

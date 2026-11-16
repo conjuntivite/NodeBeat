@@ -79,6 +79,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer?
   _beepTimer; // só com movimento reduzido: sem animação, o bip segue num timer
   bool _reduced = false;
+  String? _foco; // detalhe de uma MK aberto: o som segue só ela
+  Timer? _focoTimer; // painel coberto não anima: o bip da MK focada vai num timer
 
   @override
   void initState() {
@@ -97,7 +99,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (_reduced) {
       _beat.stop();
       _beepTimer = Timer.periodic(beatPeriod, (_) {
-        if (_soundOn && _sound == MonitorSound.beep) _engine.beep();
+        if (_foco == null && _soundOn && _sound == MonitorSound.beep) _engine.beep();
       });
     } else if (!_beat.isAnimating) {
       _beat.repeat();
@@ -107,6 +109,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     _beepTimer?.cancel();
+    _focoTimer?.cancel();
     _timer?.cancel();
     _beat.dispose();
     _engine.stop();
@@ -114,11 +117,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   MonitorSound get _sound =>
-      _data == null ? MonitorSound.silent : soundFor(_data!);
+      _data == null ? MonitorSound.silent : soundFor(_data!, foco: _foco);
 
   // O traçado reinicia a cada volta: o bip sai junto com o pico do batimento.
   void _onBeat() {
-    if (_beat.value < _lastBeat && _soundOn && _sound == MonitorSound.beep) {
+    if (_beat.value < _lastBeat && _foco == null && _soundOn && _sound == MonitorSound.beep) {
       _engine.beep();
     }
     _lastBeat = _beat.value;
@@ -149,6 +152,21 @@ class _DashboardScreenState extends State<DashboardScreen>
     } finally {
       _loading = false;
     }
+  }
+
+  Future<void> _abrir(MkRow m) async {
+    _foco = m.id;
+    _applySound();
+    _focoTimer = Timer.periodic(beatPeriod, (_) {
+      if (_soundOn && _sound == MonitorSound.beep) _engine.beep();
+    });
+    await Navigator.of(context).pushNamed('/mk/${m.id}');
+    _focoTimer?.cancel();
+    _focoTimer = null;
+    _foco = null;
+    if (!mounted) return;
+    _applySound();
+    _load();
   }
 
   void _toggleSound() {
@@ -392,8 +410,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final nums = dataStyle(context, TradeType.dataSm);
     return InkWell(
       key: ValueKey('row-${m.id}'),
-      onTap: () =>
-          Navigator.of(context).pushNamed('/mk/${m.id}').then((_) => _load()),
+      onTap: () => _abrir(m),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: t.space3),
         child: Row(

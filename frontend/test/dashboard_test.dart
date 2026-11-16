@@ -32,12 +32,14 @@ class _FakeEngine extends SoundEngine {
     suspended = false;
   }
 
+  int beeps = 0;
+  bool flat = false;
   @override
-  void beep() {}
+  void beep() => beeps++;
   @override
-  void startFlatline() {}
+  void startFlatline() => flat = true;
   @override
-  void stop() {}
+  void stop() => flat = false;
 }
 
 Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200, SoundEngine? sound}) async {
@@ -48,7 +50,12 @@ Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200,
   await t.pumpWidget(MaterialApp(
     theme: tradeTheme(Brightness.light),
     onGenerateRoute: (s) => MaterialPageRoute(
-        settings: s, builder: (_) => s.name == '/login' ? const Text('LOGIN') : DashboardScreen(api: api, sound: sound)),
+        settings: s,
+        builder: (_) => s.name == '/login'
+            ? const Text('LOGIN')
+            : s.name!.startsWith('/mk/')
+                ? Text('DETALHE ${s.name}')
+                : DashboardScreen(api: api, sound: sound)),
   ));
   await t.pump();
   await t.pump();
@@ -192,5 +199,34 @@ void main() {
     expect(relativo('2026-01-02T11:54:00Z', now: now), '6 min');
     expect(relativo('2026-01-02T09:00:00Z', now: now), '3 h');
     expect(relativo('2025-12-30T12:00:00Z', now: now), '3 d');
+  });
+  testWidgets('dentro da MK o som foca nela; ao voltar, volta ao painel todo', (t) async {
+    final e = _FakeEngine()..suspended = false;
+    await _show(t, _status(), sound: e);
+    expect(e.flat, isTrue); // cliente-v7 fora: apito no painel
+    await t.tap(find.byKey(const ValueKey('row-c')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('DETALHE /mk/c'), findsOneWidget);
+    expect(e.flat, isFalse); // cliente-c no ar: sem apito
+    final antes = e.beeps;
+    await t.pump(const Duration(milliseconds: 2500));
+    expect(e.beeps, greaterThan(antes)); // segue o bip da MK focada
+    Navigator.of(t.element(find.text('DETALHE /mk/c'))).pop();
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(e.flat, isTrue);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('MK focada fora: apito contínuo', (t) async {
+    final e = _FakeEngine()..suspended = false;
+    final body = _status()..['mks'] = [_mk('a', 'cliente-v7', 'vpn_caiu'), _mk('c', 'cliente-c', 'no_ar')];
+    await _show(t, body, sound: e);
+    await t.tap(find.byKey(const ValueKey('row-a')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(e.flat, isTrue);
+    await t.pumpWidget(const SizedBox());
   });
 }

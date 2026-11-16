@@ -8,18 +8,20 @@ const _confirma = Duration(seconds: 120);
 
 /// Um som só para o painel: alguma MK fora há ≥ 120 s → apito; senão bip por batida.
 /// Fora há menos, "aguardando" e lista vazia não apitam; worker parado ou sede fora → silêncio.
-MonitorSound soundFor(StatusData s, {DateTime? now}) {
-  if (s.mks.isEmpty || !s.dadosOk || !s.sedeOk) return MonitorSound.silent;
+/// Com `foco` (detalhe de uma MK aberto), só aquela MK conta.
+MonitorSound soundFor(StatusData s, {DateTime? now, String? foco}) {
+  final mks = foco == null ? s.mks : s.mks.where((m) => m.id == foco).toList();
+  if (mks.isEmpty || !s.dadosOk || !s.sedeOk) return MonitorSound.silent;
   final t = now ?? DateTime.now();
   bool confirmada(MkRow m) {
     final d = m.desde == null ? null : DateTime.tryParse(m.desde!);
     return d == null || t.difference(d) >= _confirma; // sem "desde": não dá para adiar
   }
 
-  if (s.mks.any((m) => const {'offline', 'vpn_caiu', 'erro_acesso'}.contains(m.status) && confirmada(m))) {
+  if (mks.any((m) => const {'offline', 'vpn_caiu', 'erro_acesso'}.contains(m.status) && confirmada(m))) {
     return MonitorSound.flatline;
   }
-  return s.mks.any((m) => m.status == 'no_ar') ? MonitorSound.beep : MonitorSound.silent;
+  return mks.any((m) => m.status == 'no_ar') ? MonitorSound.beep : MonitorSound.silent;
 }
 
 /// Gerador de tom (Web Audio no navegador, no-op fora dele).

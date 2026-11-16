@@ -56,7 +56,9 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "nodebeat.worker"]
     cap_drop: [ALL]
-    cap_add: [NET_RAW]
+    # ping ICMP sem privilégio (socket datagram): dispensa NET_RAW, que não chega ao usuário não-root num LXC
+    sysctls:
+      net.ipv4.ping_group_range: "0 65535"
     environment: *env
     depends_on:
       mongo: {condition: service_healthy}

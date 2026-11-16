@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 async def _emit(r, evs) -> None:
     for ev in evs:
         await history.record(r, ev)
-        if ev.evento in ("queda", "retorno"):
+        if ev.evento == "queda":  # o webhook abre ticket no sistema de chamados; o retorno fica só no histórico
             await webhook.enqueue(r, ev.to_payload())
 
 

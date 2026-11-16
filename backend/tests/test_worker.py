@@ -94,12 +94,14 @@ async def test_one_mk_exception_does_not_stop_others(db, r):
 
 
 async def test_engine_persisted_across_restart(db, r):
-    await store.insert_mk(db, doc())
+    id = await store.insert_mk(db, doc())
     await ciclos(db, r, AlertEngine(), range(0, 121, 30), fetch=fetch_fail)
     eng = AlertEngine.load(json.loads(await r.get("engine")))
     await ciclos(db, r, eng, [150, 180, 240], fetch=fetch_ok)
+    # webhook (ticket no sistema de chamados) só na queda; o retorno fica no histórico do painel
     fila = [json.loads(x) for x in await r.lrange(QUEUE, 0, -1)]
-    assert [p["evento"] for p in fila] == ["queda", "retorno"]
+    assert [p["evento"] for p in fila] == ["queda"]
+    assert "retorno" in [h["evento"] for h in await history.history(r, id, now=(T0 + timedelta(seconds=300)).timestamp())]
 
 
 async def test_removed_mk_is_forgotten(db, r):

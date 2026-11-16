@@ -62,6 +62,6 @@ Regra de saída: origem = `<IP_DA_VM>`, destino = redes dos condomínios, servi�
 - [ ] `docker compose ... ps`: os 5 serviços `running`.
 - [ ] Login em `https://<IP_DA_VM>` funciona; `http://` redireciona para `https://`.
 - [ ] Uma MK real cadastrada aparece "No ar" com CPU, memória e versão em até 60 s.
-- [ ] Com `NODEBEAT_WEBHOOK_URL` apontando para um endpoint de teste: bloqueie a 8729 da VM no SonicWall; em ~2,5 min chega `queda` (`erro_acesso` ou `vpn_caiu`); desbloqueie; ~1 min depois chega `retorno`.
+- [ ] Com `NODEBEAT_WEBHOOK_URL` apontando para um endpoint de teste: bloqueie a 8729 da VM no SonicWall; em ~2,5 min chega `queda` (`erro_acesso` ou `vpn_caiu`); desbloqueie; ~1 min depois o painel registra o retorno no histórico da MK (o webhook só envia a `queda`, que abre o ticket).
 - [ ] `ss -tlnp` na VM: só 80/443 no `<IP_DA_VM>` (mais SSH e afins do próprio host).
 - [ ] Os dois temas e o carregamento do app sem erros de CSP no console do navegador.

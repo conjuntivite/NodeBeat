@@ -16,7 +16,7 @@ Map<String, dynamic> _mk(String id, String nome, String rede, {bool desat = fals
       'redes': [{'rede': rede, 'origem': 'ether2', 'interface': 'ether2', 'tunel': tunel}],
     };
 
-Future<void> _show(WidgetTester t, {bool desat = false, Brightness b = Brightness.light, bool sobrepoe = false}) async {
+Future<void> _show(WidgetTester t, {bool desat = false, Brightness b = Brightness.light, bool sobrepoe = false, List<String> sede = const ['192.168.0.0/24']}) async {
   t.view.physicalSize = const Size(1000, 1600);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -24,7 +24,7 @@ Future<void> _show(WidgetTester t, {bool desat = false, Brightness b = Brightnes
     client: MockClient((req) async => switch (req.url.path) {
           '/api/faixas' => _json({
               'mks': [_mk('a', 'condo-alfa', '10.30.0.0/24', desat: desat), _mk('b', 'condo-beta', '10.31.0.0/24', tunel: true)],
-              'sede': ['192.168.0.0/24'],
+              'sede': sede,
               'sobreposicoes': sobrepoe
                   ? [{'a': 'condo-alfa', 'rede_a': '10.30.0.0/24', 'b': 'condo-beta', 'rede_b': '10.30.0.0/25'}]
                   : [],
@@ -91,5 +91,10 @@ void main() {
       expect(t.takeException(), isNull);
       expect(find.text('condo-alfa'), findsOneWidget);
     }
+  });
+
+  testWidgets('sede sem redes cadastradas', (t) async {
+    await _show(t, sede: []);
+    expect(find.text('Redes da sede não cadastradas'), findsOneWidget);
   });
 }

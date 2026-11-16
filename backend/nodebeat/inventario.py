@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from ipaddress import ip_address, ip_network
+from ipaddress import ip_address, ip_interface, ip_network
 
 LIMITE_LEITURA = timedelta(hours=2)
 DIAS_EM_USO = 15
@@ -42,18 +42,21 @@ def montar(raw: dict) -> dict:
 
     redes = []
 
-    def add(rede, origem, interface):
+    def add(rede, origem, interface, ip=None):
         redes.append({"rede": str(rede), "origem": origem, "interface": interface,
-                      "tunel": any(rede.subnet_of(s) for s in srcs)})
+                      "tunel": any(rede.subnet_of(s) for s in srcs), "ip": ip})
 
     for a in raw.get("address", []):
         if a.get("disabled") or a.get("dynamic"):
             continue
-        rede = ip_network(_s(a["address"]), strict=False)
-        if rede.prefixlen < 32:
-            add(rede, "address", _s(a.get("interface")))
+        iface = ip_interface(_s(a["address"]))
+        if iface.network.prefixlen < 32:
+            add(iface.network, "address", _s(a.get("interface")), str(iface.ip))
     for d in raw.get("dhcp_network", []):
         add(ip_network(_s(d["address"]), strict=False), "dhcp", None)
+    for s in dict.fromkeys(srcs):  # o src da policy é o que o túnel de fato reivindica, mesmo mais largo que a LAN
+        if not any(r["rede"] == str(s) for r in redes):
+            add(s, "ipsec", None)
 
     nat = []
     for n in raw.get("nat", []):
@@ -86,7 +89,7 @@ def ips_vistos(lease: list[dict], arp: list[dict], redes: list[str]) -> list[dic
     for fixo, linhas in ((False, arp), (True, lease)):  # lease sobrescreve arp
         for l in linhas:
             ip = _s(l.get("address"))
-            if not ip or not any(ip_address(ip) in n for n in nets):
+            if not ip or (not fixo and not _s(l.get("mac-address"))) or not any(ip_address(ip) in n for n in nets):
                 continue
             ant = vistos.get(ip, {})
             vistos[ip] = {
@@ -102,13 +105,13 @@ def desatualizado(lido_em: datetime | None, agora: datetime) -> bool:
 
 
 def sobreposicoes(mks: list[dict], sede: list[str]) -> list[dict]:
-    tuneis = [(m["nome"], r["rede"]) for m in mks for r in m["redes"] if r["tunel"]]
+    tuneis = [(m["id"], m["nome"], r["rede"]) for m in mks for r in m["redes"] if r["tunel"]]
     tuneis = list(dict.fromkeys(tuneis))  # mesma rede em address e dhcp
     out = []
-    for i, (a, ra) in enumerate(tuneis):
+    for i, (ia, a, ra) in enumerate(tuneis):
         na = ip_network(ra)
-        for b, rb in tuneis[i + 1:] + [("Sede", s) for s in sede]:
-            if a != b and na.overlaps(ip_network(rb)):
+        for ib, b, rb in tuneis[i + 1:] + [(None, "Sede", s) for s in sede]:
+            if ia != ib and na.overlaps(ip_network(rb)):
                 out.append({"a": a, "rede_a": ra, "b": b, "rede_b": rb})
     return out
 
@@ -142,8 +145,11 @@ def porta_em(spec: str | None, porta: int) -> bool:
         return True
     for parte in spec.split(","):
         a, _, b = parte.strip().partition("-")
-        if int(a) <= porta <= int(b or a):
-            return True
+        try:
+            if int(a) <= porta <= int(b or a):
+                return True
+        except ValueError:  # "!80", texto
+            continue
     return False
 
 
@@ -175,8 +181,18 @@ def ip_em_uso(visto: dict, agora: datetime) -> bool:
 def conferir_ip(ip: str, inv: dict, vistos: list[dict], agora: datetime) -> dict:
     addr = ip_address(ip.strip())  # ValueError se inválido
     base = {"ip": str(addr), "visto": None, "avisos": []}
-    if not any(addr in ip_network(r["rede"]) for r in inv["redes"]):
+    redes = [r for r in inv["redes"] if r.get("origem") != "ipsec"]  # ipsec: só bloqueia faixa
+    if not redes:
+        return {**base, "resultado": "sem_dados"}
+    dentro = [r for r in redes if addr in ip_network(r["rede"])]
+    if not dentro:
         return {**base, "resultado": "fora_da_faixa"}
+    if any(r.get("ip") == str(addr) for r in dentro):
+        return {**base, "resultado": "em_uso", "avisos": ["endereço da própria MK"]}
+    if any(ip_network(r["rede"]).prefixlen <= 30 and addr in (ip_network(r["rede"]).network_address,
+                                                              ip_network(r["rede"]).broadcast_address)
+           for r in dentro):
+        return {**base, "resultado": "em_uso", "avisos": ["endereço de rede/broadcast"]}
     achados = [v for v in vistos if v["ip"] == str(addr)]
     visto = max(achados, key=lambda v: v["ultimo_visto"], default=None)
     base["visto"] = visto

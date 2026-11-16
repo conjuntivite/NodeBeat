@@ -25,7 +25,7 @@ def test_montar_normaliza_e_marca_tunel():
         address=[{"address": "192.168.10.1/24", "interface": "bridge"}],
         ipsec_policy=[{"src-address": "192.168.10.0/24", "dst-address": "10.1.0.0/16"}],
     ))
-    assert inv["redes"] == [{"rede": "192.168.10.0/24", "origem": "address", "interface": "bridge", "tunel": True}]
+    assert inv["redes"] == [{"rede": "192.168.10.0/24", "origem": "address", "interface": "bridge", "tunel": True, "ip": "192.168.10.1"}]
     assert inv["ipsec"] == [{"src": "192.168.10.0/24", "dst": "10.1.0.0/16"}]
 
 
@@ -84,10 +84,10 @@ def test_ips_vistos_merge_e_filtra():
 
 def test_sobreposicao_so_tunel():
     mks = [
-        {"nome": "A", "redes": [rede("10.30.0.0/24", True)]},
-        {"nome": "B", "redes": [rede("10.30.0.0/24", True)]},
-        {"nome": "C", "redes": [rede("192.168.1.0/24")]},
-        {"nome": "D", "redes": [rede("192.168.1.0/24")]},
+        {"id": "a", "nome": "A", "redes": [rede("10.30.0.0/24", True)]},
+        {"id": "b", "nome": "B", "redes": [rede("10.30.0.0/24", True)]},
+        {"id": "c", "nome": "C", "redes": [rede("192.168.1.0/24")]},
+        {"id": "d", "nome": "D", "redes": [rede("192.168.1.0/24")]},
     ]
     assert sobreposicoes(mks, []) == [{"a": "A", "rede_a": "10.30.0.0/24", "b": "B", "rede_b": "10.30.0.0/24"}]
     s = sobreposicoes(mks[:1], ["10.30.0.0/16"])
@@ -95,7 +95,7 @@ def test_sobreposicao_so_tunel():
 
 
 def mk(nome, redes, lido=AGORA):
-    return {"nome": nome, "redes": redes, "lido_em": lido}
+    return {"id": nome.lower(), "nome": nome, "redes": redes, "lido_em": lido}
 
 
 def test_conferir_faixa_livre_em_uso_aviso():
@@ -210,3 +210,55 @@ def test_mesma_rede_em_address_e_dhcp_nao_duplica():
     r = conferir_faixa("10.30.0.0/25", mks[:1], [], AGORA)
     assert len(r["colisoes"]) == 1
     assert len(sobreposicoes(mks[:1], ["10.30.0.0/16"])) == 1
+
+
+def test_conferir_ip_endereco_da_propria_mk():
+    inv = montar(raw(address=[{"address": "192.168.10.1/24", "interface": "bridge"}]))
+    assert inv["redes"][0]["ip"] == "192.168.10.1"
+    r = conferir_ip("192.168.10.1", inv, [], AGORA)
+    assert r["resultado"] == "em_uso" and "endereço da própria MK" in r["avisos"]
+
+
+def test_conferir_ip_rede_e_broadcast():
+    inv = montar(raw(address=[{"address": "192.168.10.1/24", "interface": "bridge"}]))
+    for ip in ("192.168.10.0", "192.168.10.255"):
+        r = conferir_ip(ip, inv, [], AGORA)
+        assert r["resultado"] == "em_uso" and "endereço de rede/broadcast" in r["avisos"]
+    assert conferir_ip("192.168.10.2", inv, [], AGORA)["resultado"] == "livre"
+
+
+def test_conferir_ip_dhcp_sem_ip_proprio():
+    inv = montar(raw(dhcp_network=[{"address": "192.168.10.0/24"}]))
+    assert inv["redes"][0]["ip"] is None
+    assert conferir_ip("192.168.10.1", inv, [], AGORA)["resultado"] == "livre"
+
+
+def test_porta_em_ignora_partes_invalidas():
+    assert not porta_em("!80", 80)
+    assert porta_em("abc,443", 443)
+
+
+def test_sobreposicoes_compara_por_id():
+    mks = [{"id": "1", "nome": "Sede", "redes": [rede("10.30.0.0/24", True)]},
+           {"id": "2", "nome": "Sede", "redes": [rede("10.30.0.0/24", True)]}]
+    assert len(sobreposicoes(mks, [])) == 1
+
+
+def test_conferir_ip_sem_leitura_sem_dados():
+    assert conferir_ip("10.0.0.1", {"redes": [], "pools": []}, [], AGORA)["resultado"] == "sem_dados"
+
+
+def test_ips_vistos_ignora_arp_sem_mac():
+    r = ips_vistos([], [{"address": "192.168.10.9"}, {"address": "192.168.10.8", "mac-address": "AA:BB:CC:00:00:01"}],
+                   ["192.168.10.0/24"])
+    assert [v["ip"] for v in r] == ["192.168.10.8"]
+
+
+def test_ipsec_src_largo_bloqueia_faixa():
+    inv = montar(raw(
+        address=[{"address": "10.40.1.1/24", "interface": "b"}],
+        ipsec_policy=[{"src-address": "10.40.0.0/16", "dst-address": "10.1.0.0/16"}],
+    ))
+    assert {"rede": "10.40.0.0/16", "origem": "ipsec", "interface": None, "tunel": True, "ip": None} in inv["redes"]
+    r = conferir_faixa("10.40.9.0/24", [mk("A", inv["redes"])], [], AGORA)
+    assert r["resultado"] == "em_uso"

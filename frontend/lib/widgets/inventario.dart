@@ -50,6 +50,7 @@ class ResultadoConferencia extends StatelessWidget {
     final (texto, cor) = switch (c.resultado) {
       'em_uso' => ('Em uso', t.negative),
       'livre' => ('Livre', t.positive),
+      'sem_dados' => ('Sem dados', t.warning),
       _ => ('Fora da faixa', t.warning),
     };
     final mono = dataStyle(context, TradeType.dataSm);
@@ -177,6 +178,22 @@ Widget _linha(TradeTokens t, List<Widget> filhos) => Padding(
       child: Wrap(spacing: t.space3, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: filhos),
     );
 
+/// Estado da leitura no topo do cartão: "lido HH:mm", desatualizado e erro; "Sem leitura ainda" se nunca lida.
+Widget _leitura(TradeTokens t, InventarioMk? inv) {
+  if (inv == null) return const SizedBox.shrink();
+  final aviso = TradeType.label.copyWith(color: t.warning);
+  final hora = formatHora(inv.lidoEm);
+  return Padding(
+    padding: EdgeInsets.only(bottom: t.space3),
+    child: Wrap(spacing: t.space3, runSpacing: t.space1, children: [
+      if (inv.lidoEm == null) Text('Sem leitura ainda', style: aviso),
+      if (hora.isNotEmpty) Text('lido $hora', style: TradeType.label.copyWith(color: t.fgSecondary)),
+      if (inv.desatualizado && inv.lidoEm != null) Text('dados desatualizados', style: aviso),
+      if (inv.erro != null) Text(inv.erro!, style: aviso),
+    ]),
+  );
+}
+
 class PortasCard extends StatefulWidget {
   const PortasCard({super.key, required this.api, required this.id});
   final ApiClient api;
@@ -202,7 +219,9 @@ class _PortasCardState extends State<PortasCard> with _Carrega<PortasCard, Inven
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Portas', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
         SizedBox(height: t.space3),
-        if (inv == null || inv.nat.isEmpty) _vazio(t, erro, 'Nenhum redirecionamento de porta.'),
+        _leitura(t, inv),
+        if ((inv == null || inv.nat.isEmpty) && (erro != null || inv?.lidoEm != null))
+          _vazio(t, erro, 'Nenhum redirecionamento de porta.'),
         for (final n in inv?.nat ?? const <NatRegra>[])
           _linha(t, [
             Text('${n.dstPort ?? '—'} → ${n.toAddresses ?? '—'}:${n.toPorts ?? n.dstPort ?? '—'}', style: mono),
@@ -252,8 +271,18 @@ class IpsCard extends StatefulWidget {
 }
 
 class _IpsCardState extends State<IpsCard> with _Carrega<IpsCard, List<IpVisto>> {
+  InventarioMk? _inv;
+
   @override
-  Future<List<IpVisto>> buscar() => widget.api.ips(widget.id);
+  Future<List<IpVisto>> buscar() async {
+    final ips = await widget.api.ips(widget.id);
+    try {
+      _inv = await widget.api.inventario(widget.id);
+    } catch (_) {
+      _inv = null; // o estado da leitura é secundário; a lista de IPs já carregou
+    }
+    return ips;
+  }
 
   Future<void> _esquecer(IpVisto v) async {
     final ok = await showDialog<bool>(
@@ -287,7 +316,9 @@ class _IpsCardState extends State<IpsCard> with _Carrega<IpsCard, List<IpVisto>>
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('IPs', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
         SizedBox(height: t.space3),
-        if (lista == null || lista.isEmpty) _vazio(t, erro, 'Nenhum IP visto.'),
+        _leitura(t, _inv),
+        if ((lista == null || lista.isEmpty) && (erro != null || _inv?.lidoEm != null))
+          _vazio(t, erro, 'Nenhum IP visto.'),
         for (final v in lista ?? const <IpVisto>[])
           _linha(t, [
             SizedBox(width: 128, child: Text(v.ip, style: mono)),

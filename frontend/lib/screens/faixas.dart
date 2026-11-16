@@ -69,6 +69,7 @@ class _FaixasScreenState extends State<FaixasScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
       return;
     }
+    if (!mounted) return;
     setState(() => _atualizando = true);
     final fim = DateTime.now().add(widget.pollMax);
     _poll?.cancel();
@@ -123,7 +124,7 @@ class _FaixasScreenState extends State<FaixasScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Sede', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
                   SizedBox(height: t.space3),
-                  if (d.sede.isEmpty) Text('Sem redes lidas.', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+                  if (d.sede.isEmpty) Text('Redes da sede não cadastradas', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
                   for (final r in d.sede)
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: t.space1),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import httpx
@@ -18,6 +19,8 @@ from .rules import AlertEngine, MkRef, MkState
 log = logging.getLogger(__name__)
 
 PEDIDO_INVENTARIO = "inventario:pedido"
+# pool próprio: o inventário (até 10 s por MK offline) não pode ocupar as threads do ciclo de 30 s
+_POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="inventario")
 
 
 async def _emit(r, evs) -> None:
@@ -102,8 +105,8 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
         erro = "Senha cifrada inválida"
     else:
         try:
-            raw = await asyncio.to_thread(
-                fetch, mk["ip_tunel"], mk["usuario"], senha, mk.get("cert_sha256"))
+            raw = await asyncio.get_running_loop().run_in_executor(
+                _POOL_INVENTARIO, fetch, mk["ip_tunel"], mk["usuario"], senha, mk.get("cert_sha256"))
             doc = inventario.montar(raw)
             vistos = inventario.ips_vistos(
                 raw.get("lease", []), raw.get("arp", []), [r["rede"] for r in doc["redes"]])

@@ -179,7 +179,7 @@ class IpVisto {
   final bool fixo, emUso;
 }
 
-/// Resposta das conferências de faixa, porta e IP: `resultado` é em_uso | livre | fora_da_faixa.
+/// Resposta das conferências de faixa, porta e IP: `resultado` é em_uso | livre | fora_da_faixa | sem_dados.
 class Conferencia {
   Conferencia.fromJson(Map<String, dynamic> j)
       : resultado = j['resultado'],

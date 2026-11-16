@@ -27,12 +27,12 @@ Map<String, dynamic> _ip(String ip) => {
       'ultimo_visto': '2026-01-05T10:00:00+00:00', 'em_uso': true,
     };
 
-Future<List<http.Request>> _show(WidgetTester t, Widget Function(ApiClient) card, {Brightness b = Brightness.light}) async {
+Future<List<http.Request>> _show(WidgetTester t, Widget Function(ApiClient) card, {Brightness b = Brightness.light, Map<String, dynamic> inv = _inv, List<Map<String, dynamic>>? ipsIniciais, Map<String, dynamic>? conf}) async {
   t.view.physicalSize = const Size(1000, 1400);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final reqs = <http.Request>[];
-  var ips = [_ip('192.168.10.20')];
+  var ips = ipsIniciais ?? [_ip('192.168.10.20')];
   final api = ApiClient(
     client: MockClient((req) async {
       reqs.add(req);
@@ -41,11 +41,11 @@ Future<List<http.Request>> _show(WidgetTester t, Widget Function(ApiClient) card
         return http.Response('', 204);
       }
       return switch (req.url.path) {
-        '/api/mks/x/inventario' => _json(_inv),
+        '/api/mks/x/inventario' => _json(inv),
         '/api/mks/x/portas/conferir' =>
           _json({'porta': 9000, 'protocolo': 'tcp', 'resultado': 'livre', 'usos': [], 'avisos': [], 'desatualizado': false}),
         '/api/mks/x/ips' => _json(ips),
-        '/api/mks/x/ips/conferir' => _json({
+        '/api/mks/x/ips/conferir' => _json(conf ?? {
             'ip': '192.168.10.20', 'resultado': 'em_uso', 'visto': _ip('192.168.10.20'), 'avisos': [], 'desatualizado': false,
           }),
         _ => http.Response('', 404),
@@ -100,5 +100,43 @@ void main() {
     await t.pumpAndSettle();
     expect(reqs.any((r) => r.method == 'DELETE' && r.url.path == '/api/mks/x/ips/192.168.10.20'), isTrue);
     expect(find.text('Nenhum IP visto.'), findsOneWidget);
+  });
+
+  testWidgets('PortasCard: MK nunca lida mostra "Sem leitura ainda", não "Nenhum redirecionamento"', (t) async {
+    await _show(t, (api) => PortasCard(api: api, id: 'x'),
+        inv: {..._inv, 'lido_em': null, 'nat': [], 'servicos': [], 'desatualizado': true});
+    expect(find.text('Sem leitura ainda'), findsOneWidget);
+    expect(find.text('Nenhum redirecionamento de porta.'), findsNothing);
+  });
+
+  testWidgets('PortasCard: mostra hora, desatualizado e erro', (t) async {
+    await _show(t, (api) => PortasCard(api: api, id: 'x'),
+        inv: {..._inv, 'desatualizado': true, 'erro': 'VPN fora'});
+    expect(find.textContaining('lido '), findsOneWidget);
+    expect(find.text('dados desatualizados'), findsOneWidget);
+    expect(find.text('VPN fora'), findsOneWidget);
+  });
+
+  testWidgets('IpsCard: MK nunca lida mostra "Sem leitura ainda"', (t) async {
+    await _show(t, (api) => IpsCard(api: api, id: 'x'),
+        inv: {..._inv, 'lido_em': null, 'desatualizado': true}, ipsIniciais: []);
+    expect(find.text('Sem leitura ainda'), findsOneWidget);
+    expect(find.text('Nenhum IP visto.'), findsNothing);
+  });
+
+  testWidgets('IpsCard: IP erro mostra a mensagem do erro da leitura', (t) async {
+    await _show(t, (api) => IpsCard(api: api, id: 'x'), inv: {..._inv, 'erro': 'Falha de login'}, ipsIniciais: []);
+    expect(find.text('Falha de login'), findsOneWidget);
+    expect(find.text('Nenhum IP visto.'), findsOneWidget);
+  });
+
+  testWidgets('conferir IP sem leitura mostra "Sem dados"', (t) async {
+    await _show(t, (api) => IpsCard(api: api, id: 'x'),
+        conf: {'ip': '192.168.10.20', 'resultado': 'sem_dados', 'visto': null, 'avisos': [], 'desatualizado': true});
+    await t.enterText(find.byType(TextField), '192.168.10.20');
+    await t.tap(find.text('Conferir'));
+    await t.pump();
+    await t.pump();
+    expect(find.text('Sem dados'), findsOneWidget);
   });
 }

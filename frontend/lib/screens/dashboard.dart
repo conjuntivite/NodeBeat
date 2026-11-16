@@ -213,9 +213,22 @@ class _DashboardScreenState extends State<DashboardScreen>
         appBar: AppBar(
           automaticallyImplyLeading: false, // raiz da navegação logada: sem seta de voltar
           backgroundColor: t.bgPage,
-          title: Text(
-            'NodeBeat',
-            style: TradeType.heading3.copyWith(color: t.fgPrimary),
+          title: Row(
+            children: [
+              Image.asset(
+                Theme.of(context).brightness == Brightness.dark
+                    ? 'assets/brand/nodebeat-icon-dark.png'
+                    : 'assets/brand/nodebeat-icon-light.png',
+                width: 32,
+                height: 32,
+                excludeFromSemantics: true, // o nome vem logo ao lado
+              ),
+              SizedBox(width: t.space3),
+              Text(
+                'NodeBeat',
+                style: TradeType.heading3.copyWith(color: t.fgPrimary),
+              ),
+            ],
           ),
           actions: [
             if (_soundOn && _engine.isSuspended)

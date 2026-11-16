@@ -244,6 +244,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
               onPressed: _toggleSound,
             ),
+            IconButton(
+              tooltip: 'Faixas de IP',
+              icon: const Icon(Icons.lan_outlined, size: 20),
+              onPressed: () => Navigator.of(context).pushNamed('/faixas'),
+            ),
             const ThemeToggle(),
             IconButton(
               tooltip: 'Sair',

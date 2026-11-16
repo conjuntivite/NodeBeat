@@ -5,6 +5,7 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/heartbeat.dart';
+import '../widgets/inventario.dart';
 
 class MkDetailScreen extends StatefulWidget {
   const MkDetailScreen({super.key, required this.api, required this.id, this.chooseInterfaces = false});
@@ -23,6 +24,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   List<HistEvent> _hist = const [];
   List<String> _alertas = const []; // mesmas regras do painel: vêm de /status
   String? _error;
+  int _inv = 0; // muda ao atualizar o inventário: os cards recarregam
 
   @override
   void initState() {
@@ -126,6 +128,16 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     }
   }
 
+  Future<void> _atualizarInventario() async {
+    try {
+      await widget.api.atualizarInventario(widget.id);
+      if (mounted) setState(() => _inv++);
+    } catch (e) {
+      if (!mounted || sessionExpired(context, e)) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+    }
+  }
+
   Future<void> _delete() async {
     if (!await _confirm('Remover MK', 'Remover "${_mk!.nome}" do monitoramento?', 'Remover')) return;
     try {
@@ -157,6 +169,10 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               _header(context, t, mk),
               SizedBox(height: t.space4),
               _interfaces(context, t, mk),
+              SizedBox(height: t.space4),
+              PortasCard(key: ValueKey('p$_inv'), api: widget.api, id: widget.id),
+              SizedBox(height: t.space4),
+              IpsCard(key: ValueKey('i$_inv'), api: widget.api, id: widget.id),
               SizedBox(height: t.space4),
               _history(t),
             ]),
@@ -205,6 +221,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               onPressed: () => Navigator.of(context).pushNamed('/mk/${mk.id}/editar').then((_) => _load()),
               child: const Text('Editar')),
           OutlinedButton(onPressed: _pickInterfaces, child: const Text('Escolher interfaces')),
+          OutlinedButton(onPressed: _atualizarInventario, child: const Text('Atualizar inventário')),
           OutlinedButton(onPressed: _acceptCert, child: const Text('Aceitar novo certificado')),
           FilledButton(
               onPressed: _delete,

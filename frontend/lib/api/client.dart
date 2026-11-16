@@ -122,6 +122,116 @@ class HistEvent {
   final int? duracaoS;
 }
 
+class FaixaRede {
+  FaixaRede.fromJson(Map<String, dynamic> j)
+      : rede = j['rede'],
+        origem = j['origem'],
+        interface = j['interface'],
+        tunel = j['tunel'] == true;
+  final String rede;
+  final String? origem, interface;
+  final bool tunel;
+}
+
+class FaixaMk {
+  FaixaMk.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        nome = j['nome'],
+        lidoEm = j['lido_em'],
+        erro = j['erro'],
+        desatualizado = j['desatualizado'] == true,
+        redes = [for (final r in j['redes'] ?? []) FaixaRede.fromJson(r)];
+  final String id, nome;
+  final String? lidoEm, erro;
+  final bool desatualizado;
+  final List<FaixaRede> redes;
+}
+
+class Sobreposicao {
+  Sobreposicao.fromJson(Map<String, dynamic> j)
+      : a = j['a'],
+        redeA = j['rede_a'],
+        b = j['b'],
+        redeB = j['rede_b'];
+  final String a, redeA, b, redeB;
+}
+
+class FaixasData {
+  FaixasData.fromJson(Map<String, dynamic> j)
+      : mks = [for (final m in j['mks']) FaixaMk.fromJson(m)],
+        sede = List<String>.from(j['sede'] ?? []),
+        sobreposicoes = [for (final s in j['sobreposicoes'] ?? []) Sobreposicao.fromJson(s)];
+  final List<FaixaMk> mks;
+  final List<String> sede;
+  final List<Sobreposicao> sobreposicoes;
+}
+
+class IpVisto {
+  IpVisto.fromJson(Map<String, dynamic> j)
+      : ip = j['ip'],
+        mac = j['mac'],
+        hostName = j['host_name'],
+        fixo = j['fixo'] == true,
+        ultimoVisto = j['ultimo_visto'],
+        emUso = j['em_uso'] == true;
+  final String ip;
+  final String? mac, hostName, ultimoVisto;
+  final bool fixo, emUso;
+}
+
+/// Resposta das conferências de faixa, porta e IP: `resultado` é em_uso | livre | fora_da_faixa.
+class Conferencia {
+  Conferencia.fromJson(Map<String, dynamic> j)
+      : resultado = j['resultado'],
+        avisos = List<String>.from(j['avisos'] ?? []),
+        faltam = List<String>.from(j['faltam'] ?? []),
+        desatualizado = j['desatualizado'] == true,
+        colisoes = [for (final c in j['colisoes'] ?? []) '${c['nome']} (${c['rede']})'],
+        usos = List<String>.from(j['usos'] ?? []),
+        visto = j['visto'] == null ? null : IpVisto.fromJson(j['visto']);
+  final String resultado;
+  final List<String> avisos, faltam, colisoes, usos;
+  final bool desatualizado;
+  final IpVisto? visto;
+}
+
+class NatRegra {
+  NatRegra.fromJson(Map<String, dynamic> j)
+      : protocolo = j['protocolo'],
+        dstPort = j['dst_port'],
+        toAddresses = j['to_addresses'],
+        toPorts = j['to_ports'],
+        comentario = j['comentario'],
+        ativo = j['ativo'] != false,
+        aberto = j['aberto'] == true;
+  final String? protocolo, dstPort, toAddresses, toPorts, comentario;
+  final bool ativo, aberto;
+}
+
+class Servico {
+  Servico.fromJson(Map<String, dynamic> j)
+      : nome = j['nome'],
+        porta = j['porta'],
+        ativo = j['ativo'] != false,
+        aberto = j['aberto'] == true;
+  final String nome;
+  final Object? porta;
+  final bool ativo, aberto;
+}
+
+class InventarioMk {
+  InventarioMk.fromJson(Map<String, dynamic> j)
+      : lidoEm = j['lido_em'],
+        erro = j['erro'],
+        desatualizado = j['desatualizado'] == true,
+        nat = [for (final n in j['nat'] ?? []) NatRegra.fromJson(n)],
+        servicos = [for (final s in j['servicos'] ?? []) Servico.fromJson(s)];
+  final String? lidoEm, erro;
+  final bool desatualizado;
+  final List<NatRegra> nat;
+  final List<Servico> servicos;
+}
+
 class ApiClient {
   ApiClient({http.Client? client, this.base = '/api'}) : _http = client ?? http.Client();
   final http.Client _http;
@@ -187,4 +297,27 @@ class ApiClient {
 
   Future<List<HistEvent>> history(String id) async =>
       [for (final j in await _send('GET', '/mks/$id/historico')) HistEvent.fromJson(j)];
+
+  Future<FaixasData> faixas() async => FaixasData.fromJson(await _send('GET', '/faixas'));
+
+  Future<Conferencia> conferirFaixa(String cidr) async =>
+      Conferencia.fromJson(await _send('GET', '/faixas/conferir?cidr=${Uri.encodeQueryComponent(cidr)}'));
+
+  Future<void> pedirAtualizarFaixas() => _send('POST', '/faixas/atualizar');
+
+  Future<InventarioMk> inventario(String id) async => InventarioMk.fromJson(await _send('GET', '/mks/$id/inventario'));
+
+  Future<InventarioMk> atualizarInventario(String id) async =>
+      InventarioMk.fromJson(await _send('POST', '/mks/$id/inventario/atualizar'));
+
+  Future<Conferencia> conferirPorta(String id, int porta, String protocolo) async =>
+      Conferencia.fromJson(await _send('GET', '/mks/$id/portas/conferir?porta=$porta&protocolo=$protocolo'));
+
+  Future<List<IpVisto>> ips(String id) async =>
+      [for (final j in await _send('GET', '/mks/$id/ips')) IpVisto.fromJson(j)];
+
+  Future<Conferencia> conferirIp(String id, String ip) async =>
+      Conferencia.fromJson(await _send('GET', '/mks/$id/ips/conferir?ip=${Uri.encodeQueryComponent(ip)}'));
+
+  Future<void> esquecerIp(String id, String ip) => _send('DELETE', '/mks/$id/ips/$ip');
 }

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'api/client.dart';
 import 'screens/login.dart';
 import 'screens/dashboard.dart';
+import 'screens/faixas.dart';
 import 'screens/mk_detail.dart';
 import 'screens/mk_form.dart';
 import 'theme/theme.dart';
@@ -17,6 +18,7 @@ class NodeBeatApp extends StatelessWidget {
     final seg = Uri.parse(s.name ?? '').pathSegments;
     final page = switch (seg) {
       ['painel'] => DashboardScreen(api: api),
+      ['faixas'] => FaixasScreen(api: api),
       ['mk', 'novo'] => MkFormScreen(api: api),
       ['mk', final id] => MkDetailScreen(api: api, id: id, chooseInterfaces: s.arguments == true),
       ['mk', final id, 'editar'] => MkFormScreen(api: api, id: id),

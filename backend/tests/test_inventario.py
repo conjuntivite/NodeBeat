@@ -183,3 +183,30 @@ def test_conferir_ip():
     assert r["resultado"] == "livre" and r["avisos"]
     with pytest.raises(ValueError):
         conferir_ip("x", inv, [], AGORA)
+
+
+def test_montar_coage_tipos_do_librouteros():
+    inv = montar(raw(nat=[{"action": "dst-nat", "dst-port": 8081, "to-ports": 80, "to-addresses": "192.168.10.20",
+                           "protocol": "tcp", "comment": False}]))
+    n = inv["nat"][0]
+    assert n["dst_port"] == "8081" and n["to_ports"] == "80" and n["comentario"] == ""
+    assert conferir_porta(8081, "tcp", inv)["resultado"] == "em_uso"
+
+
+def test_ips_vistos_host_name_numerico():
+    r = ips_vistos([{"address": "192.168.10.20", "host-name": 1234, "dynamic": False}], [], ["192.168.10.0/24"])
+    assert r[0]["host_name"] == "1234"
+
+
+def test_mesma_rede_em_address_e_dhcp_nao_duplica():
+    inv = montar(raw(
+        address=[{"address": "10.30.0.1/24", "interface": "b"}],
+        dhcp_network=[{"address": "10.30.0.0/24"}],
+        ipsec_policy=[{"src-address": "10.30.0.0/24", "dst-address": "10.1.0.0/16"}],
+    ))
+    assert len(inv["redes"]) == 2
+    mks = [mk("A", inv["redes"]), mk("B", inv["redes"])]
+    assert len(sobreposicoes(mks, [])) == 1
+    r = conferir_faixa("10.30.0.0/25", mks[:1], [], AGORA)
+    assert len(r["colisoes"]) == 1
+    assert len(sobreposicoes(mks[:1], ["10.30.0.0/16"])) == 1

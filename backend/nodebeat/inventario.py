@@ -8,6 +8,11 @@ LIMITE_LEITURA = timedelta(hours=2)
 DIAS_EM_USO = 15
 
 
+def _s(v):
+    """librouteros converte "8081"->int e "yes"->bool; volta para texto."""
+    return None if v is None or v is False else str(v)
+
+
 def _faixa(p: str, q: str):
     return ip_address(p.strip()), ip_address(q.strip())
 
@@ -26,14 +31,14 @@ def _no_pool(ip, ranges: str) -> bool:
 def montar(raw: dict) -> dict:
     ipsec, srcs = [], []
     for p in raw.get("ipsec_policy", []):
-        src = p.get("src-address")
+        src = _s(p.get("src-address"))
         if p.get("template") or p.get("disabled") or not src:
             continue
         s = ip_network(src, strict=False)
         if s.prefixlen == 0:
             continue
         srcs.append(s)
-        ipsec.append({"src": str(s), "dst": str(ip_network(p.get("dst-address", "0.0.0.0/0"), strict=False))})
+        ipsec.append({"src": str(s), "dst": str(ip_network(_s(p.get("dst-address")) or "0.0.0.0/0", strict=False))})
 
     redes = []
 
@@ -44,11 +49,11 @@ def montar(raw: dict) -> dict:
     for a in raw.get("address", []):
         if a.get("disabled") or a.get("dynamic"):
             continue
-        rede = ip_network(a["address"], strict=False)
+        rede = ip_network(_s(a["address"]), strict=False)
         if rede.prefixlen < 32:
-            add(rede, "address", a.get("interface"))
+            add(rede, "address", _s(a.get("interface")))
     for d in raw.get("dhcp_network", []):
-        add(ip_network(d["address"], strict=False), "dhcp", None)
+        add(ip_network(_s(d["address"]), strict=False), "dhcp", None)
 
     nat = []
     for n in raw.get("nat", []):
@@ -56,21 +61,21 @@ def montar(raw: dict) -> dict:
             continue
         ativo = not n.get("disabled")
         nat.append({
-            "protocolo": n.get("protocol"), "dst_port": n.get("dst-port"),
-            "to_addresses": n.get("to-addresses"), "to_ports": n.get("to-ports"),
-            "comentario": n.get("comment") or "", "ativo": ativo,
+            "protocolo": _s(n.get("protocol")), "dst_port": _s(n.get("dst-port")),
+            "to_addresses": _s(n.get("to-addresses")), "to_ports": _s(n.get("to-ports")),
+            "comentario": _s(n.get("comment")) or "", "ativo": ativo,
             "aberto": ativo and not n.get("src-address") and not n.get("src-address-list"),
         })
 
     servicos = []
     for s in raw.get("service", []):
         ativo = not s.get("disabled")
-        servicos.append({"nome": s["name"], "porta": s["port"], "ativo": ativo,
+        servicos.append({"nome": str(s["name"]), "porta": int(s["port"]), "ativo": ativo,
                          "aberto": ativo and not s.get("address")})
 
     return {
         "redes": redes, "ipsec": ipsec,
-        "pools": [{"nome": p.get("name", ""), "ranges": p.get("ranges", "")} for p in raw.get("pool", [])],
+        "pools": [{"nome": _s(p.get("name")) or "", "ranges": _s(p.get("ranges")) or ""} for p in raw.get("pool", [])],
         "nat": nat, "servicos": servicos,
     }
 
@@ -80,13 +85,13 @@ def ips_vistos(lease: list[dict], arp: list[dict], redes: list[str]) -> list[dic
     vistos: dict[str, dict] = {}
     for fixo, linhas in ((False, arp), (True, lease)):  # lease sobrescreve arp
         for l in linhas:
-            ip = l.get("address")
+            ip = _s(l.get("address"))
             if not ip or not any(ip_address(ip) in n for n in nets):
                 continue
             ant = vistos.get(ip, {})
             vistos[ip] = {
-                "ip": ip, "mac": l.get("mac-address") or ant.get("mac"),
-                "host_name": l.get("host-name") or ant.get("host_name"),
+                "ip": ip, "mac": _s(l.get("mac-address")) or ant.get("mac"),
+                "host_name": _s(l.get("host-name")) or ant.get("host_name"),
                 "fixo": (not l.get("dynamic")) if fixo else ant.get("fixo", False),
             }
     return list(vistos.values())
@@ -98,6 +103,7 @@ def desatualizado(lido_em: datetime | None, agora: datetime) -> bool:
 
 def sobreposicoes(mks: list[dict], sede: list[str]) -> list[dict]:
     tuneis = [(m["nome"], r["rede"]) for m in mks for r in m["redes"] if r["tunel"]]
+    tuneis = list(dict.fromkeys(tuneis))  # mesma rede em address e dhcp
     out = []
     for i, (a, ra) in enumerate(tuneis):
         na = ip_network(ra)
@@ -125,7 +131,8 @@ def conferir_faixa(cidr: str, mks: list[dict], sede: list[str], agora: datetime)
         avisos.append("Redes da sede não cadastradas")
     return {
         "faixa": str(faixa), "resultado": "em_uso" if colisoes else "livre",
-        "colisoes": colisoes, "avisos": avisos,
+        "colisoes": list({(c["nome"], c["rede"]): c for c in colisoes}.values()),
+        "avisos": list(dict.fromkeys(avisos)),
         "faltam": [m["nome"] for m in mks if desatualizado(m.get("lido_em"), agora)],
     }
 

@@ -11,6 +11,7 @@ Só o nginx (`web`) escuta fora; Mongo, Redis, API e worker ficam na rede intern
    `MONGO_PASSWORD` só vale na primeira inicialização do volume do Mongo (`MONGO_INITDB_*`): trocá-la depois quebra a autenticação, a menos que o usuário seja alterado dentro do Mongo.
    A rede do compose usa a sub-rede fixa `172.30.0.0/24` (em `compose.yml`, junto com `--forwarded-allow-ips` da api); troque se colidir com a rede da VM.
    **Trocar a `NODEBEAT_SECRET_KEY` depois inutiliza as senhas de MK já guardadas** (é preciso recadastrá-las).
+   `NODEBEAT_SEDE_REDES` = redes da sede (CIDRs separados por vírgula): o inventário de rede avisa quando a faixa de uma MK sobrepõe uma delas. `NODEBEAT_INVENTARIO_S` (padrão 3600) é o intervalo da leitura das MKs.
 4. Certificado autoassinado:
    ```sh
    mkdir -p deploy/certs

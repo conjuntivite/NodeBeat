@@ -117,3 +117,17 @@ def fetch(host: str, user: str, password: str, pinned_sha256: str | None,
 def list_interfaces(host, user, password, pinned_sha256) -> list[tuple[str, bool]]:
     return _com_api(host, user, password, pinned_sha256, 5.0,
                     lambda api, seen: list(_ifaces(api).items()))
+
+
+_MENUS_INVENTARIO = {
+    "address": "/ip/address/print", "dhcp_network": "/ip/dhcp-server/network/print",
+    "pool": "/ip/pool/print", "ipsec_policy": "/ip/ipsec/policy/print",
+    "nat": "/ip/firewall/nat/print", "service": "/ip/service/print",
+    "lease": "/ip/dhcp-server/lease/print", "arp": "/ip/arp/print"}
+
+
+def fetch_inventario(host: str, user: str, password: str, pinned_sha256: str | None,
+                     timeout: float = 10.0) -> dict:
+    """Síncrono, só leitura: uma lista de linhas por menu, numa única sessão."""
+    return _com_api(host, user, password, pinned_sha256, timeout,
+                    lambda api, seen: {k: list(api(cmd)) for k, cmd in _MENUS_INVENTARIO.items()})

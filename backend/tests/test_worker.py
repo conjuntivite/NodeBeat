@@ -11,7 +11,7 @@ from nodebeat.config import Settings
 from nodebeat.routeros import CertMismatch, RouterOsError, Snapshot
 from nodebeat.rules import AlertEngine
 from nodebeat.webhook import QUEUE
-from nodebeat.worker import load_engine, run_cycle
+from nodebeat.worker import atualizar_mk, inventario_devido, load_engine, run_cycle, run_inventario
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 KEY = Fernet.generate_key().decode()
@@ -180,3 +180,97 @@ async def test_desde_kept_across_down_types(db, r):
     st1 = (await history.load_states(r))[id]
     assert st0["status"] != st1["status"] and st1["status"] != "no_ar"
     assert st1["desde"] == T0.isoformat()
+
+
+RAW = {"address": [], "dhcp_network": [], "pool": [], "ipsec_policy": [], "nat": [], "service": [],
+       "lease": [], "arp": []}
+
+
+def raw_com(ips):
+    return {**RAW, "address": [{"address": "192.0.2.1/24", "network": "192.0.2.0", "interface": "ether2"}],
+            "arp": [{"address": ip, "mac-address": "AA:BB:CC:00:00:01", "interface": "ether2"} for ip in ips]}
+
+
+def fetch_inv(ips):
+    return lambda *a, **k: raw_com(ips)
+
+
+async def mk_com_id(db, **kw):
+    d = doc(**kw)
+    d["id"] = await store.insert_mk(db, dict(d))
+    return d
+
+
+async def test_inventario_grava_e_mantem_em_falha(db):
+    mk = await mk_com_id(db)
+    assert await atualizar_mk(db, SET, mk, T0, fetch=fetch_inv(["192.0.2.5"])) is None
+    inv = await store.get_inventario(db, mk["id"])
+    assert inv["redes"][0]["rede"] == "192.0.2.0/24" and inv["erro"] is None
+    assert inv["lido_em"].tzinfo is not None
+    assert [i["ip"] for i in await store.listar_ips(db, mk["id"])] == ["192.0.2.5"]
+
+    def falha(*a, **k):
+        raise RouterOsError("API sem resposta (timeout)")
+    assert await atualizar_mk(db, SET, mk, T0 + timedelta(hours=1), fetch=falha) == "API sem resposta (timeout)"
+    inv2 = await store.get_inventario(db, mk["id"])
+    assert inv2["erro"] == "API sem resposta (timeout)"
+    assert inv2["redes"] == inv["redes"] and inv2["lido_em"] == inv["lido_em"]
+    assert "_id" not in inv2
+
+
+async def test_ip_nao_some_e_primeiro_visto_fixo(db):
+    mk = await mk_com_id(db)
+    await atualizar_mk(db, SET, mk, T0, fetch=fetch_inv(["192.0.2.5"]))
+    await atualizar_mk(db, SET, mk, T0 + timedelta(hours=1), fetch=fetch_inv([]))
+    (ip,) = await store.listar_ips(db, mk["id"])
+    assert ip["primeiro_visto"] == T0 and ip["ultimo_visto"] == T0 and ip["primeiro_visto"].tzinfo is not None
+    await atualizar_mk(db, SET, mk, T0 + timedelta(hours=2), fetch=fetch_inv(["192.0.2.5"]))
+    (ip,) = await store.listar_ips(db, mk["id"])
+    assert ip["primeiro_visto"] == T0 and ip["ultimo_visto"] == T0 + timedelta(hours=2)
+    assert await store.esquecer_ip(db, mk["id"], "192.0.2.5") and not await store.esquecer_ip(db, mk["id"], "192.0.2.5")
+
+
+async def test_inventario_uma_mk_falha_outras_gravam(db):
+    a = await mk_com_id(db, nome="a", ip="10.0.0.1")
+    b = await mk_com_id(db, nome="b", ip="10.0.0.2")
+
+    def fetch(host, *x):
+        if host == "10.0.0.1":
+            raise ValueError("senha=segredo")
+        return raw_com([])
+    await run_inventario(db, SET, T0, fetch=fetch)
+    assert (await store.get_inventario(db, a["id"]))["erro"] == "Resposta inesperada da API"
+    assert (await store.get_inventario(db, b["id"]))["erro"] is None
+    assert len(await store.listar_inventarios(db)) == 2
+    await store.apagar_inventario(db, a["id"])
+    assert await store.get_inventario(db, a["id"]) is None
+
+
+async def test_senha_invalida_no_inventario(db):
+    mk = await mk_com_id(db, senha_cifrada="lixo")
+    assert await atualizar_mk(db, SET, mk, T0, fetch=fetch_inv([])) == "Senha cifrada inválida"
+
+
+def test_inventario_devido():
+    assert inventario_devido(None, 0, 3600, False)
+    assert not inventario_devido(0, 100, 3600, False)
+    assert inventario_devido(0, 100, 3600, True)
+    assert inventario_devido(0, 3600, 3600, False)
+
+
+async def test_listar_ips_ordem_numerica(db):
+    await store.registrar_ips(db, "m1", [{"ip": ip, "mac": None, "host_name": None, "fixo": False}
+                                          for ip in ("192.168.10.10", "192.168.10.9")], T0)
+    assert [i["ip"] for i in await store.listar_ips(db, "m1")] == ["192.168.10.9", "192.168.10.10"]
+
+
+def test_sede_redes(monkeypatch):
+    for k in ("MONGO_URL", "REDIS_URL", "SECRET_KEY", "WEBHOOK_URL", "REFERENCE_HOST"):
+        monkeypatch.setenv(f"NODEBEAT_{k}", "x")
+    monkeypatch.delenv("NODEBEAT_SEDE_REDES", raising=False)
+    assert config.load_settings().sede_redes == [] and config.load_settings().inventario_s == 3600
+    monkeypatch.setenv("NODEBEAT_SEDE_REDES", "10.1.0.1/16, 10.2.0.0/24")
+    assert config.load_settings().sede_redes == ["10.1.0.0/16", "10.2.0.0/24"]
+    monkeypatch.setenv("NODEBEAT_SEDE_REDES", "xyz")
+    with pytest.raises(RuntimeError, match="NODEBEAT_SEDE_REDES inválida"):
+        config.load_settings()

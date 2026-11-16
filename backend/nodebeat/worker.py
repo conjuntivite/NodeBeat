@@ -10,12 +10,14 @@ import httpx
 import redis.asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from . import crypto, history, probes, routeros, store, webhook
+from . import crypto, history, inventario, probes, routeros, store, webhook
 from .classify import classify
 from .config import Settings, load_settings
 from .rules import AlertEngine, MkRef, MkState
 
 log = logging.getLogger(__name__)
+
+PEDIDO_INVENTARIO = "inventario:pedido"
 
 
 async def _emit(r, evs) -> None:
@@ -91,6 +93,50 @@ async def run_cycle(db, r, engine: AlertEngine, settings: Settings, now: datetim
     await r.set("worker:vivo", now.isoformat(), ex=90)  # /api/status: dados_ok
 
 
+async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fetch_inventario) -> str | None:
+    """Lê o inventário da MK e grava. None se ok; senão o detalhe do erro (já gravado)."""
+    # nunca logar args/str da exceção: podem conter a senha
+    try:
+        senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+    except ValueError:
+        erro = "Senha cifrada inválida"
+    else:
+        try:
+            raw = await asyncio.to_thread(
+                fetch, mk["ip_tunel"], mk["usuario"], senha, mk.get("cert_sha256"))
+            doc = inventario.montar(raw)
+            vistos = inventario.ips_vistos(
+                raw.get("lease", []), raw.get("arp", []), [r["rede"] for r in doc["redes"]])
+        except routeros.RouterOsError as e:
+            erro = e.detalhe
+        except Exception as e:
+            log.warning("mk %s: inventário falhou: %s", mk["id"], type(e).__name__)
+            erro = "Resposta inesperada da API"
+        else:
+            await store.salvar_inventario(db, mk["id"], doc, now)
+            await store.registrar_ips(db, mk["id"], vistos, now)
+            return None
+    await store.inventario_erro(db, mk["id"], erro)
+    return erro
+
+
+async def run_inventario(db, settings, now: datetime, *, fetch=routeros.fetch_inventario) -> None:
+    sem = asyncio.Semaphore(10)
+
+    async def um(mk):
+        async with sem:
+            try:
+                await atualizar_mk(db, settings, mk, now, fetch)
+            except Exception as e:
+                log.warning("mk %s: inventário: %s", mk.get("id"), type(e).__name__)
+
+    await asyncio.gather(*(um(m) for m in await store.list_mks(db)))
+
+
+def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido: bool) -> bool:
+    return pedido or ultimo is None or agora - ultimo >= intervalo
+
+
 def load_engine(saved: str | None) -> AlertEngine:
     if saved:
         try:
@@ -111,6 +157,7 @@ async def main() -> None:
         # referência guardada: o loop só tem weakref das tasks; se o envio morrer, o processo cai
         sender = asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))
         loop = asyncio.get_running_loop()
+        inv_task, ultimo_inv = None, None
         while True:
             if sender.done():
                 raise RuntimeError("envio do webhook parou") from sender.exception()
@@ -119,6 +166,13 @@ async def main() -> None:
                 await run_cycle(db, r, engine, s, datetime.now(UTC))
             except Exception as e:
                 log.warning("ciclo falhou: %s", type(e).__name__)
+            pedido = bool(await r.getdel(PEDIDO_INVENTARIO))
+            livre = not engine.frozen and (inv_task is None or inv_task.done())
+            if livre and inventario_devido(ultimo_inv, loop.time(), s.inventario_s, pedido):
+                inv_task = asyncio.create_task(run_inventario(db, s, datetime.now(UTC)))
+                ultimo_inv = loop.time()
+            elif pedido:  # não perder o pedido enquanto roda ou congelado
+                await r.set(PEDIDO_INVENTARIO, "1")
             await asyncio.sleep(max(0, s.interval_s - (loop.time() - t0)))
 
 

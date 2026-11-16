@@ -1,6 +1,7 @@
 """Coleção mks no MongoDB. Ids são str(ObjectId); id inválido -> None/False."""
 from __future__ import annotations
 
+import ipaddress
 from datetime import UTC, datetime
 
 from bson import ObjectId
@@ -58,3 +59,52 @@ async def insert_user(db, usuario: str, senha_hash: str) -> str:
     await db.users.create_index("usuario", unique=True)
     doc = {"usuario": usuario, "senha_hash": senha_hash, "criado_em": datetime.now(UTC)}
     return str((await db.users.insert_one(doc)).inserted_id)
+
+
+def _utc(d: dict) -> dict:
+    """Sem _id; datetimes do Mongo (naive, em UTC) viram aware."""
+    d = {k: v for k, v in d.items() if k != "_id"}
+    return {k: v.replace(tzinfo=UTC) if isinstance(v, datetime) and v.tzinfo is None else v
+            for k, v in d.items()}
+
+
+async def salvar_inventario(db, mk_id: str, doc: dict, lido_em: datetime) -> None:
+    await db.inventario.replace_one(
+        {"mk_id": mk_id}, {"mk_id": mk_id, **doc, "lido_em": lido_em, "erro": None}, upsert=True)
+
+
+async def inventario_erro(db, mk_id: str, detalhe: str) -> None:
+    await db.inventario.update_one({"mk_id": mk_id}, {"$set": {"erro": detalhe}}, upsert=True)
+
+
+async def get_inventario(db, mk_id: str) -> dict | None:
+    d = await db.inventario.find_one({"mk_id": mk_id})
+    return _utc(d) if d else None
+
+
+async def listar_inventarios(db) -> list[dict]:
+    return [_utc(d) async for d in db.inventario.find()]
+
+
+async def registrar_ips(db, mk_id: str, ips: list[dict], quando: datetime) -> None:
+    await db.inventario_ips.create_index([("mk_id", 1), ("ip", 1)], unique=True)
+    for i in ips:
+        await db.inventario_ips.update_one(
+            {"mk_id": mk_id, "ip": i["ip"]},
+            {"$set": {"mac": i.get("mac"), "host_name": i.get("host_name"),
+                      "fixo": i.get("fixo", False), "ultimo_visto": quando},
+             "$setOnInsert": {"primeiro_visto": quando}}, upsert=True)
+
+
+async def listar_ips(db, mk_id: str) -> list[dict]:
+    ips = [_utc(d) async for d in db.inventario_ips.find({"mk_id": mk_id})]
+    return sorted(ips, key=lambda d: ipaddress.ip_address(d["ip"]))
+
+
+async def esquecer_ip(db, mk_id: str, ip: str) -> bool:
+    return (await db.inventario_ips.delete_one({"mk_id": mk_id, "ip": ip})).deleted_count > 0
+
+
+async def apagar_inventario(db, mk_id: str) -> None:
+    await db.inventario.delete_many({"mk_id": mk_id})
+    await db.inventario_ips.delete_many({"mk_id": mk_id})

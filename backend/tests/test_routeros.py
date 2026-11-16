@@ -86,8 +86,8 @@ def test_pinned_wrap_mismatch_raises(tls_server):
 
 
 class FakeApi:
-    def __init__(self, login_reply=None, resource=None, ifaces=None):
-        self.login_reply, self.closed = login_reply or [], False
+    def __init__(self, login_reply=None, resource=None, ifaces=None, extra=None):
+        self.login_reply, self.closed, self.extra = login_reply or [], False, extra or {}
         self.resource = resource or [{"version": "6.49.17 (stable)", "cpu-load": 12,
                                       "free-memory": 25, "total-memory": 100, "uptime": "1d2h"}]
         self.ifaces = ifaces if ifaces is not None else [
@@ -97,7 +97,7 @@ class FakeApi:
         if cmd == "/login":
             return iter(self.login_reply)
         return iter({"/system/resource/print": self.resource,
-                     "/interface/print": self.ifaces}[cmd])
+                     "/interface/print": self.ifaces, **self.extra}[cmd])
 
     def close(self):
         self.closed = True
@@ -168,4 +168,16 @@ def test_closes_on_failure_after_connect(monkeypatch):
     _patch_connect(monkeypatch, api)
     with pytest.raises(KeyError):
         fetch("h", "u", "p", None)
+    assert api.closed
+
+
+def test_fetch_inventario_le_todos_os_menus(monkeypatch):
+    menus = {"address": "/ip/address/print", "dhcp_network": "/ip/dhcp-server/network/print",
+             "pool": "/ip/pool/print", "ipsec_policy": "/ip/ipsec/policy/print",
+             "nat": "/ip/firewall/nat/print", "service": "/ip/service/print",
+             "lease": "/ip/dhcp-server/lease/print", "arp": "/ip/arp/print"}
+    api = FakeApi(extra={cmd: [{"k": chave}] for chave, cmd in menus.items()})
+    _patch_connect(monkeypatch, api)
+    out = routeros.fetch_inventario("h", "u", "p", None)
+    assert out == {chave: [{"k": chave}] for chave in menus}
     assert api.closed

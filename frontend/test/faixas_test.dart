@@ -29,6 +29,9 @@ Future<void> _show(WidgetTester t, {bool desat = false, Brightness b = Brightnes
                   ? [{'a': 'condo-alfa', 'rede_a': '10.30.0.0/24', 'b': 'condo-beta', 'rede_b': '10.30.0.0/25'}]
                   : [],
             }),
+          '/api/faixas/conferir' when req.url.queryParameters['cidr'] == '10.99.0.0/24' => _json({
+              'faixa': '10.99.0.0/24', 'resultado': 'livre', 'colisoes': [], 'avisos': [], 'faltam': ['Condomínio X'],
+            }),
           '/api/faixas/conferir' => _json({
               'faixa': '10.30.0.0/24', 'resultado': 'em_uso',
               'colisoes': [{'nome': 'condo-alfa', 'rede': '10.30.0.0/24'}], 'avisos': [], 'faltam': [],
@@ -65,6 +68,16 @@ void main() {
     await t.pump();
     expect(find.text('Em uso'), findsOneWidget);
     expect(find.text('condo-alfa (10.30.0.0/24)'), findsOneWidget);
+  });
+
+  testWidgets('conferir faixa livre ainda avisa quais MKs faltam dados', (t) async {
+    await _show(t);
+    await t.enterText(find.byType(TextField), '10.99.0.0/24');
+    await t.tap(find.text('Conferir'));
+    await t.pump();
+    await t.pump();
+    expect(find.text('Livre'), findsOneWidget);
+    expect(find.text('Faltam dados de: Condomínio X'), findsOneWidget);
   });
 
   testWidgets('MK desatualizada mostra o aviso', (t) async {

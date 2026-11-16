@@ -63,7 +63,7 @@ class ResultadoConferencia extends StatelessWidget {
       Text(texto, style: TradeType.heading4.copyWith(color: cor)),
       for (final d in detalhes) Text(d, style: mono),
       if (c.faltam.isNotEmpty)
-        Text('Sem leitura: ${c.faltam.join(', ')}', style: TradeType.bodyMd.copyWith(color: t.warning)),
+        Text('Faltam dados de: ${c.faltam.join(', ')}', style: TradeType.bodyMd.copyWith(color: t.warning)),
       if (c.desatualizado) Text('Dados desatualizados', style: TradeType.bodyMd.copyWith(color: t.warning)),
       for (final a in c.avisos) Text(a, style: TradeType.bodyMd.copyWith(color: t.warning)),
     ]);

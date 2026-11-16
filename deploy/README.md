@@ -20,7 +20,7 @@ Só o nginx (`web`) escuta fora; Mongo, Redis, API e worker ficam na rede intern
    ```
    `deploy/certs/` é ignorado pelo git: nunca commite a chave.
 5. Suba: `docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build`
-   (o build do frontend baixa a imagem `ghcr.io/cirruslabs/flutter:3.50.0`; se a tag não existir, ajuste em `frontend/Dockerfile`).
+   (o build do frontend clona o Flutter 3.50.0 do GitHub; o primeiro build leva ~10 min).
 6. Primeiro usuário:
    `docker compose -f deploy/compose.yml --env-file deploy/.env exec api python -m nodebeat.cli create-user admin`
 7. Abra `https://<IP_DA_VM>` (aceite o certificado autoassinado) e entre.

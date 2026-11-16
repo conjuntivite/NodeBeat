@@ -1,5 +1,11 @@
-# Tag da imagem da Cirrus Labs = versão do Flutter (3.50.0). Confira que existe antes do primeiro build.
-FROM ghcr.io/cirruslabs/flutter:3.50.0 AS build
+# Não há imagem pronta com o Flutter 3.50.0: clona o SDK oficial na tag fixa (mesma versão do desenvolvimento).
+FROM debian:bookworm-slim AS build
+ARG FLUTTER_VERSION=3.50.0
+RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip xz-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch ${FLUTTER_VERSION} https://github.com/flutter/flutter.git /flutter
+ENV PATH="/flutter/bin:${PATH}"
+RUN flutter config --no-analytics --enable-web && flutter precache --web
 WORKDIR /app
 COPY pubspec.yaml pubspec.lock ./
 RUN flutter pub get

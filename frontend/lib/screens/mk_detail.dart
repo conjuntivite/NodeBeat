@@ -204,7 +204,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
             child: Text(_alertas.join(' · '), style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
           ),
         SizedBox(height: t.space4),
-        HeartbeatLine(status: status, alert: alert, width: 240, height: 56),
+        HeartbeatLine(status: status, alert: alert, width: double.infinity, height: 56),
         SizedBox(height: t.space4),
         Wrap(runSpacing: t.space3, children: [
           metric('CPU', e?.cpu == null ? '—' : '${e!.cpu!.round()}%'),

@@ -178,6 +178,12 @@ Widget _linha(TradeTokens t, List<Widget> filhos) => Padding(
       child: Wrap(spacing: t.space3, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: filhos),
     );
 
+/// Contador no rodapé do cartão.
+Widget _total(BuildContext context, TradeTokens t, String texto) => Padding(
+      padding: EdgeInsets.only(top: t.space4),
+      child: Text(texto, style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgSecondary)),
+    );
+
 /// Estado da leitura no topo do cartão: "lido HH:mm", desatualizado e erro; "Sem leitura ainda" se nunca lida.
 Widget _leitura(TradeTokens t, InventarioMk? inv) {
   if (inv == null) return const SizedBox.shrink();
@@ -256,6 +262,10 @@ class _PortasCardState extends State<PortasCard> with _Carrega<PortasCard, Inven
             ),
           ),
         ),
+        if (inv?.lidoEm != null) ...[
+          _total(context, t, 'Total de portas: ${inv!.nat.length}'),
+          _total(context, t, 'Total de serviços: ${servicos.length}'),
+        ],
       ]),
     );
   }
@@ -332,6 +342,8 @@ class _IpsCardState extends State<IpsCard> with _Carrega<IpsCard, List<IpVisto>>
           ]),
         SizedBox(height: t.space6),
         ConferirCampo(label: 'Conferir IP', conferir: (v) => widget.api.conferirIp(widget.id, v)),
+        if (lista != null)
+          _total(context, t, 'Total de IPs: ${lista.length} (${lista.where((v) => v.emUso).length} em uso)'),
       ]),
     );
   }

@@ -65,6 +65,8 @@ void main() {
     expect(find.text('desativada'), findsOneWidget);
     expect(find.text('aberto para qualquer IP (sem restrição na regra)'), findsOneWidget);
     expect(find.text('winbox 8291'), findsOneWidget);
+    expect(find.text('Total de portas: 2'), findsOneWidget);
+    expect(find.text('Total de serviços: 1'), findsOneWidget);
   });
 
   testWidgets('PortasCard: conferir porta mostra "Livre"', (t) async {
@@ -84,6 +86,7 @@ void main() {
     expect(find.text('192.168.10.20'), findsOneWidget);
     expect(find.text('em uso'), findsOneWidget);
     expect(find.text('visto 05/01'), findsOneWidget);
+    expect(find.text('Total de IPs: 1 (1 em uso)'), findsOneWidget);
     await t.enterText(find.byType(TextField), '192.168.10.20');
     await t.tap(find.text('Conferir'));
     await t.pump();

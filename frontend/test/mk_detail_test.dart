@@ -67,6 +67,14 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
+  testWidgets('batimento ocupa a largura inteira do card', (t) async {
+    await _show(t, alertas: []);
+    final card = find.ancestor(of: find.byType(HeartbeatLine), matching: find.byType(TradeCard));
+    final linha = t.getSize(find.byType(HeartbeatLine)).width;
+    expect(linha, greaterThan(t.getSize(card).width * 0.8));
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('sem alertas: No ar em positive; valor vazio vira "—"', (t) async {
     await _show(t, alertas: [], ipPublico: '');
     expect(find.textContaining('No ar'), findsOneWidget);

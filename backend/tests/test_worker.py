@@ -274,3 +274,10 @@ def test_sede_redes(monkeypatch):
     monkeypatch.setenv("NODEBEAT_SEDE_REDES", "xyz")
     with pytest.raises(RuntimeError, match="NODEBEAT_SEDE_REDES inválida"):
         config.load_settings()
+
+
+async def test_run_inventario_nao_levanta_se_list_mks_falha(db, monkeypatch):
+    async def boom(_):
+        raise RuntimeError("mongo fora")
+    monkeypatch.setattr(store, "list_mks", boom)
+    assert await run_inventario(db, SET, T0) is False

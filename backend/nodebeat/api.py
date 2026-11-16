@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from nodebeat import auth, crypto, history, routeros, store, webhook
+from nodebeat import auth, crypto, history, inventario, routeros, store, webhook, worker
 from nodebeat.rules import LIMITE, _pct
 
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
@@ -184,6 +185,7 @@ def create_app(db, r, settings) -> FastAPI:
     async def apagar(id: str) -> Response:
         await _achar(id)
         await store.delete_mk(db, id)
+        await store.apagar_inventario(db, id)
         await history.delete_mk(r, id)
         return Response(status_code=204)
 
@@ -216,6 +218,86 @@ def create_app(db, r, settings) -> FastAPI:
     async def historico(id: str) -> list[dict]:
         await _achar(id)
         return await history.history(r, id)
+
+    _VAZIO = {"lido_em": None, "erro": None, "redes": [], "pools": [], "nat": [], "servicos": []}
+
+    async def _inv(id: str) -> dict:
+        """Inventário da MK (campos da API) ou vazio; sempre com 'desatualizado'."""
+        inv = await store.get_inventario(db, id) or {}
+        out = {k: inv.get(k, v) for k, v in _VAZIO.items()}
+        out["desatualizado"] = inventario.desatualizado(out["lido_em"], datetime.now(UTC))
+        return out
+
+    @mks.get("/faixas")
+    async def faixas() -> dict:
+        invs = {i["mk_id"]: i for i in await store.listar_inventarios(db)}
+        agora = datetime.now(UTC)
+        linhas = []
+        for mk in sorted(await store.list_mks(db), key=lambda m: m["nome"].casefold()):
+            i = invs.get(mk["id"]) or {}
+            lido = i.get("lido_em")
+            linhas.append({"id": mk["id"], "nome": mk["nome"], "lido_em": lido, "erro": i.get("erro"),
+                           "desatualizado": inventario.desatualizado(lido, agora), "redes": i.get("redes", [])})
+        return {"mks": linhas, "sede": settings.sede_redes,
+                "sobreposicoes": inventario.sobreposicoes(linhas, settings.sede_redes)}
+
+    @mks.get("/faixas/conferir")
+    async def conferir_faixa(cidr: str) -> dict:
+        invs = {i["mk_id"]: i for i in await store.listar_inventarios(db)}
+        lista = [{"nome": m["nome"], "redes": (invs.get(m["id"]) or {}).get("redes", []),
+                  "lido_em": (invs.get(m["id"]) or {}).get("lido_em")} for m in await store.list_mks(db)]
+        try:
+            return inventario.conferir_faixa(cidr, lista, settings.sede_redes, datetime.now(UTC))
+        except ValueError:
+            raise HTTPException(422, "Faixa inválida")
+
+    @mks.post("/faixas/atualizar", status_code=202)
+    async def pedir_atualizacao() -> Response:
+        await r.set(worker.PEDIDO_INVENTARIO, "1")
+        return Response(status_code=202)
+
+    @mks.get("/mks/{id}/inventario")
+    async def inventario_mk(id: str) -> dict:
+        await _achar(id)
+        return await _inv(id)
+
+    @mks.post("/mks/{id}/inventario/atualizar")
+    async def atualizar_inventario(id: str):
+        mk = await _achar(id)
+        erro = await worker.atualizar_mk(db, settings, mk, datetime.now(UTC), fetch=routeros.fetch_inventario)
+        if erro:
+            return JSONResponse({"detalhe": erro}, status_code=502)
+        return await _inv(id)
+
+    @mks.get("/mks/{id}/portas/conferir")
+    async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),
+                             protocolo: str = Query("tcp", pattern="^(tcp|udp)$")) -> dict:
+        await _achar(id)
+        inv = await _inv(id)
+        return inventario.conferir_porta(porta, protocolo, inv) | {"desatualizado": inv["desatualizado"]}
+
+    @mks.get("/mks/{id}/ips")
+    async def ips(id: str) -> list[dict]:
+        await _achar(id)
+        agora = datetime.now(UTC)
+        return [v | {"em_uso": inventario.ip_em_uso(v, agora)} for v in await store.listar_ips(db, id)]
+
+    @mks.get("/mks/{id}/ips/conferir")
+    async def conferir_ip(id: str, ip: str) -> dict:
+        await _achar(id)
+        inv = await _inv(id)
+        try:
+            res = inventario.conferir_ip(ip, inv, await store.listar_ips(db, id), datetime.now(UTC))
+        except ValueError:
+            raise HTTPException(422, "IP inválido")
+        return res | {"desatualizado": inv["desatualizado"]}
+
+    @mks.delete("/mks/{id}/ips/{ip}", status_code=204)
+    async def esquecer_ip(id: str, ip: str) -> Response:
+        await _achar(id)
+        if not await store.esquecer_ip(db, id, ip):
+            raise HTTPException(404, "IP não encontrado")
+        return Response(status_code=204)
 
     app.include_router(mks)
     return app

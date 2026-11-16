@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip 
     && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 --branch ${FLUTTER_VERSION} https://github.com/flutter/flutter.git /flutter
 ENV PATH="/flutter/bin:${PATH}"
+# CT LXC sem privilégios: o tar como root não consegue aplicar uids altos dos pacotes do Flutter
+ENV TAR_OPTIONS=--no-same-owner
 RUN flutter config --no-analytics --enable-web && flutter precache --web
 WORKDIR /app
 COPY pubspec.yaml pubspec.lock ./

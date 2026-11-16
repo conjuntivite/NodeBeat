@@ -32,6 +32,9 @@ class SoundEngine {
   void beep() => impl.beep();
   void startFlatline() => impl.startFlatline();
   void stop() => impl.stop();
-  bool get savedOn => impl.loadPref();
-  set savedOn(bool v) => impl.savePref(v);
+  /// Preferências separadas: bip do batimento e apito de perda (MK fora).
+  bool get savedBip => impl.loadPref('bip');
+  set savedBip(bool v) => impl.savePref('bip', v);
+  bool get savedQueda => impl.loadPref('queda');
+  set savedQueda(bool v) => impl.savePref('queda', v);
 }

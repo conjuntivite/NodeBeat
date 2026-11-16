@@ -42,16 +42,18 @@ void stop() {
   _tone = null;
 }
 
-bool loadPref() {
+/// Sem a chave nova vale a antiga (`nodebeat.som`, liga/desliga tudo).
+bool loadPref(String tipo) {
   try {
-    return web.window.localStorage.getItem(_key) == '1';
+    final s = web.window.localStorage;
+    return (s.getItem('$_key.$tipo') ?? s.getItem(_key)) == '1';
   } catch (_) {
     return false;
   }
 }
 
-void savePref(bool on) {
+void savePref(String tipo, bool on) {
   try {
-    web.window.localStorage.setItem(_key, on ? '1' : '0');
+    web.window.localStorage.setItem('$_key.$tipo', on ? '1' : '0');
   } catch (_) {}
 }

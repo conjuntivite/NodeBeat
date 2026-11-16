@@ -71,7 +71,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   StatusData? _data;
   String? _error;
   bool _loading = false;
-  late bool _soundOn = _engine.savedOn;
+  late bool _bip = _engine.savedBip;
+  late bool _queda = _engine.savedQueda;
+  bool get _soundOn => _bip || _queda;
   double _lastBeat = 0;
   int? _sortCol;
   bool _asc = true;
@@ -99,7 +101,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (_reduced) {
       _beat.stop();
       _beepTimer = Timer.periodic(beatPeriod, (_) {
-        if (_foco == null && _soundOn && _sound == MonitorSound.beep) _engine.beep();
+        if (_foco == null && _bip && _sound == MonitorSound.beep) _engine.beep();
       });
     } else if (!_beat.isAnimating) {
       _beat.repeat();
@@ -121,14 +123,14 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // O traçado reinicia a cada volta: o bip sai junto com o pico do batimento.
   void _onBeat() {
-    if (_beat.value < _lastBeat && _foco == null && _soundOn && _sound == MonitorSound.beep) {
+    if (_beat.value < _lastBeat && _foco == null && _bip && _sound == MonitorSound.beep) {
       _engine.beep();
     }
     _lastBeat = _beat.value;
   }
 
   void _applySound() {
-    if (_soundOn && _sound == MonitorSound.flatline) {
+    if (_queda && _sound == MonitorSound.flatline) {
       _engine.startFlatline();
     } else {
       _engine.stop();
@@ -158,7 +160,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _foco = m.id;
     _applySound();
     _focoTimer = Timer.periodic(beatPeriod, (_) {
-      if (_soundOn && _sound == MonitorSound.beep) _engine.beep();
+      if (_bip && _sound == MonitorSound.beep) _engine.beep();
     });
     await Navigator.of(context).pushNamed('/mk/${m.id}');
     _focoTimer?.cancel();
@@ -169,18 +171,24 @@ class _DashboardScreenState extends State<DashboardScreen>
     _load();
   }
 
-  void _toggleSound() {
-    setState(() => _soundOn = !_soundOn);
-    _engine.savedOn = _soundOn;
+  void _toggleSound(String tipo) {
+    setState(() {
+      if (tipo == 'bip') {
+        _engine.savedBip = _bip = !_bip;
+      } else {
+        _engine.savedQueda = _queda = !_queda;
+      }
+    });
     if (_soundOn) {
       _engine.unlock(); // dentro do clique: libera o áudio no navegador
     }
     _applySound();
   }
 
-  // A preferência salva liga o som sem clique; o primeiro toque em qualquer lugar destrava.
+  // O navegador só libera áudio num clique: o primeiro toque em qualquer lugar (inclusive no
+  // botão do menu de som, antes de escolher a opção) destrava, mesmo com o som todo desligado.
   void _onPointerDown() {
-    if (!_soundOn || !_engine.isSuspended) return;
+    if (!_engine.isSuspended) return;
     _engine.unlock();
     Future.delayed(const Duration(milliseconds: 150), () {
       if (mounted) setState(() {});
@@ -254,13 +262,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                 'Clique para ativar o som',
                 style: TradeType.label.copyWith(color: t.warning),
               ),
-            IconButton(
-              tooltip: _soundOn ? 'Som ligado' : 'Som desligado',
+            PopupMenuButton<String>(
+              tooltip: 'Som',
               icon: Icon(
                 _soundOn ? Icons.volume_up_outlined : Icons.volume_off_outlined,
                 size: 20,
               ),
-              onPressed: _toggleSound,
+              onSelected: _toggleSound,
+              itemBuilder: (_) => [
+                CheckedPopupMenuItem(value: 'bip', checked: _bip, child: const Text('Som de batimento')),
+                CheckedPopupMenuItem(value: 'queda', checked: _queda, child: const Text('Som de perda')),
+              ],
             ),
             IconButton(
               tooltip: 'Faixas de IP',

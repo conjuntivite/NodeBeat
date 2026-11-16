@@ -20,10 +20,15 @@ class _FakeEngine extends SoundEngine {
   final bool on;
   bool suspended = true;
   int unlocks = 0;
+  late bool bip = on, queda = on;
   @override
-  bool get savedOn => on;
+  bool get savedBip => bip;
   @override
-  set savedOn(bool v) {}
+  set savedBip(bool v) => bip = v;
+  @override
+  bool get savedQueda => queda;
+  @override
+  set savedQueda(bool v) => queda = v;
   @override
   bool get isSuspended => suspended;
   @override
@@ -227,6 +232,39 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     expect(e.flat, isTrue);
+    await t.pumpWidget(const SizedBox());
+  });
+  testWidgets('menu do som: desligar "perda" para o apito e salva a escolha', (t) async {
+    final e = _FakeEngine()..suspended = false;
+    await _show(t, _status(), sound: e);
+    expect(e.flat, isTrue);
+    await t.tap(find.byTooltip('Som'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.text('Som de batimento'), findsOneWidget);
+    await t.tap(find.text('Som de perda'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    expect(e.flat, isFalse);
+    expect(e.queda, isFalse);
+    expect(e.bip, isTrue);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('menu do som: desligar "batimento" para o bip', (t) async {
+    final e = _FakeEngine()..suspended = false;
+    final body = _status()..['mks'] = [_mk('c', 'cliente-c', 'no_ar')];
+    await _show(t, body, sound: e);
+    await t.tap(find.byTooltip('Som'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    await t.tap(find.text('Som de batimento'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    final antes = e.beeps;
+    await t.pump(const Duration(milliseconds: 2500));
+    expect(e.beeps, antes);
+    expect(e.bip, isFalse);
     await t.pumpWidget(const SizedBox());
   });
 }

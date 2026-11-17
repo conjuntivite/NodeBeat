@@ -19,6 +19,8 @@ from .rules import AlertEngine, MkRef, MkState
 log = logging.getLogger(__name__)
 
 PEDIDO_INVENTARIO = "inventario:pedido"
+REINICIO = "reinicio:"  # + id da MK; TTL = janela sem alerta após reinício pelo painel
+JANELA_REINICIO = 300
 # pool próprio: o inventário (até 10 s por MK offline) não pode ocupar as threads do ciclo de 30 s
 _POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="inventario")
 
@@ -54,15 +56,20 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
     elif sha and not mk.get("cert_sha256"):
         await store.set_cert(db, mk["id"], sha)
     obs = classify(snap, api_error, tunel, publico, mk.get("interfaces_vigiadas") or [])
-    ref = MkRef(mk["id"], mk["nome"])
-    await _emit(r, engine.observe_mk(ref, obs, now))
     ok = obs.state == MkState.NO_AR
+    status = obs.state.value
+    # reinício pedido pelo painel: fora do motor (sem alerta nem ticket) até a janela expirar.
+    # Não apaga a janela quando responde: logo após o pedido a MK ainda responde enquanto desliga.
+    if not ok and await r.exists(REINICIO + mk["id"]):
+        status = "reiniciando"
+    if status != "reiniciando":
+        await _emit(r, engine.observe_mk(MkRef(mk["id"], mk["nome"]), obs, now))
     ant = antes.get(mk["id"])
     # entre tipos de queda (offline/vpn_caiu/erro_acesso) o relógio continua: conta desde que saiu do ar
-    mesmo = ant and (ant["status"] == obs.state.value or (ant["status"] != "no_ar" and not ok))
+    mesmo = ant and (ant["status"] == status or (ant["status"] != "no_ar" and not ok))
     desde = ant["desde"] if mesmo else now.isoformat()
     await history.save_state(r, mk["id"], {
-        "status": obs.state.value, "detalhe": obs.detalhe, "desde": desde,
+        "status": status, "detalhe": obs.detalhe, "desde": desde,
         "cpu": obs.cpu if ok else None, "mem": obs.mem if ok else None,
         "uptime": snap.uptime if ok else None, "ifaces": obs.ifaces if ok else {},
         "versao": snap.version if ok else None, "atualizado_em": now.isoformat()})

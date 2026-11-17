@@ -28,7 +28,7 @@ class MkRow {
         versao = j['versao'];
   final String id, nome;
 
-  /// no_ar | offline | vpn_caiu | erro_acesso | aguardando
+  /// no_ar | offline | vpn_caiu | erro_acesso | reiniciando | aguardando
   final String status;
   final String? desde, uptime, versao;
   final double? cpu, mem;
@@ -294,6 +294,8 @@ class ApiClient {
       _send('PUT', '/mks/$id/interfaces-vigiadas', body: {'interfaces': names});
 
   Future<void> acceptCert(String id) => _send('POST', '/mks/$id/aceitar-certificado');
+
+  Future<void> reiniciar(String id) => _send('POST', '/mks/$id/reiniciar');
 
   Future<List<HistEvent>> history(String id) async =>
       [for (final j in await _send('GET', '/mks/$id/historico')) HistEvent.fromJson(j)];

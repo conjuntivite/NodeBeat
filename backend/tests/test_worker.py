@@ -281,3 +281,16 @@ async def test_run_inventario_nao_levanta_se_list_mks_falha(db, monkeypatch):
         raise RuntimeError("mongo fora")
     monkeypatch.setattr(store, "list_mks", boom)
     assert await run_inventario(db, SET, T0) is False
+
+
+async def test_reinicio_solicitado_nao_alerta_e_expira(db, r):
+    id = await store.insert_mk(db, doc())
+    await r.set(f"reinicio:{id}", "ana", ex=300)
+    eng = AlertEngine()
+    await ciclos(db, r, eng, [0], fetch=fetch_ok)  # ainda desligando: responde, janela continua
+    await ciclos(db, r, eng, range(30, 241, 30), fetch=fetch_fail)
+    assert await r.lrange(QUEUE, 0, -1) == []
+    assert (await history.load_states(r))[id]["status"] == "reiniciando"
+    await r.delete(f"reinicio:{id}")  # janela expirou e não voltou: alerta normal
+    await ciclos(db, r, eng, range(270, 391, 30), fetch=fetch_fail)
+    assert [json.loads(x)["tipo"] for x in await r.lrange(QUEUE, 0, -1)] == ["offline"]

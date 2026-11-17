@@ -181,3 +181,26 @@ def test_fetch_inventario_le_todos_os_menus(monkeypatch):
     out = routeros.fetch_inventario("h", "u", "p", None)
     assert out == {chave: [{"k": chave}] for chave in menus}
     assert api.closed
+
+
+def _derruba(exc):
+    def gen():
+        raise exc
+        yield
+    return gen()
+
+
+def test_reboot_envia_comando_e_aceita_conexao_caindo(monkeypatch):
+    from librouteros.exceptions import ConnectionClosed
+    api = FakeApi(extra={"/system/reboot": _derruba(ConnectionClosed("fechou"))})
+    _patch_connect(monkeypatch, api)
+    routeros.reboot("h", "u", "p", None)  # a MK cai antes de responder: é sucesso
+    assert api.closed
+
+
+def test_reboot_sem_permissao(monkeypatch):
+    api = FakeApi(extra={"/system/reboot": _derruba(TrapError("not enough permissions (9)"))})
+    _patch_connect(monkeypatch, api)
+    with pytest.raises(RouterOsError) as e:
+        routeros.reboot("h", "u", "p", None)
+    assert e.value.detalhe == "Usuário da MK sem permissão de reinício"

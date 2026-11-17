@@ -98,12 +98,14 @@ class _HeartbeatLineState extends State<HeartbeatLine> with SingleTickerProvider
         ? t.negative
         : s == 'aguardando'
             ? t.fgMuted
+            : s == 'reiniciando'
+                ? t.info
             : widget.alert
                 ? t.warning
                 : t.positive;
     Widget line(double progress) => CustomPaint(
           size: Size(widget.width, widget.height),
-          painter: HeartbeatPainter(isFlat: isFora(s), color: color, progress: progress),
+          painter: HeartbeatPainter(isFlat: isFora(s) || s == 'reiniciando', color: color, progress: progress),
         );
     // Linha parada (fora, aguardando, movimento reduzido) não reconstrói a cada quadro.
     final anim = widget.beat ?? _own;

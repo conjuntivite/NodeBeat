@@ -148,6 +148,39 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     }
   }
 
+  Future<void> _reiniciar() async {
+    final nome = _mk!.nome;
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: const Text('Reiniciar MK'),
+            content: SizedBox(
+              width: 400,
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('A MK fica fora do ar enquanto reinicia e derruba os clientes dela. '
+                    'Por 5 minutos a queda não gera alerta nem chamado; se não voltar nesse tempo, alerta normal.'),
+                SizedBox(height: tokensOf(c).space4),
+                TextField(controller: ctrl, autofocus: true, decoration: InputDecoration(labelText: 'Digite "$nome" para confirmar')),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+              ListenableBuilder(
+                listenable: ctrl,
+                builder: (c, _) => FilledButton(
+                    onPressed: ctrl.text.trim() == nome ? () => Navigator.pop(c, true) : null,
+                    child: const Text('Reiniciar agora')),
+              ),
+            ],
+          ),
+        ) ??
+        false; // sem ctrl.dispose(): o diálogo ainda usa o controlador na animação de saída
+    if (!ok) return;
+    await _run(() => widget.api.reiniciar(widget.id));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reinício enviado à MK')));
+  }
+
   Future<void> _delete() async {
     if (!await _confirm('Remover MK', 'Remover "${_mk!.nome}" do monitoramento?', 'Remover')) return;
     try {
@@ -233,6 +266,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
           OutlinedButton(onPressed: _pickInterfaces, child: const Text('Escolher interfaces')),
           OutlinedButton(onPressed: _atualizarInventario, child: const Text('Atualizar inventário')),
           OutlinedButton(onPressed: _acceptCert, child: const Text('Aceitar novo certificado')),
+          OutlinedButton(onPressed: _reiniciar, child: const Text('Reiniciar')),
           FilledButton(
               onPressed: _delete,
               style: FilledButton.styleFrom(backgroundColor: t.negative, foregroundColor: t.fgInverse),
@@ -288,7 +322,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
       );
 }
 
-const _eventos = {'queda': 'Queda', 'retorno': 'Retorno', 'encerrado': 'Encerrado'};
+const _eventos = {'queda': 'Queda', 'retorno': 'Retorno', 'encerrado': 'Encerrado', 'reinicio': ''};
 
 // Tipos que não são status de MK; os demais vêm de statusLabel.
 const _tipos = {
@@ -296,4 +330,5 @@ const _tipos = {
   'memoria_alta': 'Memória alta',
   'interface_caida': 'Interface caída',
   'falha_sede': 'Falha da sede',
+  'reinicio': 'Reinício',
 };

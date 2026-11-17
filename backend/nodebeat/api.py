@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from nodebeat import auth, crypto, history, inventario, routeros, store, webhook, worker
-from nodebeat.rules import LIMITE, _pct
+from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
@@ -201,6 +201,21 @@ def create_app(db, r, settings) -> FastAPI:
         except Exception:  # nunca ecoar str(e): pode conter segredo
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         return [{"nome": n, "running": run} for n, run in rows]
+
+    @mks.post("/mks/{id}/reiniciar", status_code=204)
+    async def reiniciar(id: str, user: dict = Depends(auth.current_user)):
+        mk = await _achar(id)
+        try:
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            await asyncio.to_thread(routeros.reboot, mk["ip_tunel"], mk["usuario"], senha, mk.get("cert_sha256"))
+        except routeros.RouterOsError as e:
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        await r.set(worker.REINICIO + id, user["usuario"], ex=worker.JANELA_REINICIO)
+        await history.record(r, Event("reinicio", "reinicio", MkRef(id, mk["nome"]),
+                                      f"Solicitado por {user['usuario']}", datetime.now(UTC), None, None))
+        return Response(status_code=204)
 
     @mks.put("/mks/{id}/interfaces-vigiadas", status_code=204)
     async def vigiar(id: str, body: VigiadasIn) -> Response:

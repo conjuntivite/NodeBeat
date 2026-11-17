@@ -131,3 +131,17 @@ def fetch_inventario(host: str, user: str, password: str, pinned_sha256: str | N
     """Síncrono, só leitura: uma lista de linhas por menu, numa única sessão."""
     return _com_api(host, user, password, pinned_sha256, timeout,
                     lambda api, seen: {k: list(api(cmd)) for k, cmd in _MENUS_INVENTARIO.items()})
+
+
+def reboot(host: str, user: str, password: str, pinned_sha256: str | None) -> None:
+    """Síncrono. Exige a policy `reboot` no grupo do usuário (continua sem `write`)."""
+    def usar(api, seen):
+        try:
+            list(api("/system/reboot"))
+        except TrapError as e:
+            if "permission" in str(e):
+                raise RouterOsError("Usuário da MK sem permissão de reinício") from None
+            raise
+        except (OSError, LibRouterosError):
+            pass  # a MK derruba a conexão ao reiniciar, às vezes antes de responder
+    _com_api(host, user, password, pinned_sha256, 5.0, usar)

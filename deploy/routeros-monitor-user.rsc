@@ -1,4 +1,4 @@
-# Usuario read-only "monitor" + api-ssl. Aplicado MANUALMENTE pelo humano (v6 e v7).
+# Usuario "monitor" (leitura + reinicio) + api-ssl. Aplicado MANUALMENTE pelo humano (v6 e v7).
 # Preencha antes de aplicar (substitua nas linhas abaixo; nao ha IPs fixos no arquivo):
 #   <IP_VM>            IP de origem permitido na API (spike: <IP_PUBLICO_SEDE>; depois: IP do tunel da VM)
 #   <IP_PUBLICO_SEDE>  IP de origem permitido para ICMP (spike: <IP_PUBLICO_SEDE>)
@@ -21,7 +21,9 @@
 # Mantido "address=" porque funciona nas duas hoje; trocar para available-from quando a v6 sair de uso.
 /ip service set api-ssl certificate=monitor-api address=<IP_VM>/32 disabled=no
 
-/user group add name=monitor policy=read,api,!write,!policy,!ssh,!ftp,!winbox,!telnet,!web,!sensitive
+# reboot: so o botao "Reiniciar" do painel; sem write o usuario continua sem alterar nada.
+# MK ja existente: /user group set monitor policy=read,api,reboot,!write,!policy,!ssh,!ftp,!winbox,!telnet,!web,!sensitive
+/user group add name=monitor policy=read,api,reboot,!write,!policy,!ssh,!ftp,!winbox,!telnet,!web,!sensitive
 /user add name=monitor group=monitor password="<SENHA_MONITOR>" address=<IP_VM>/32
 
 # ICMP: place-before=0 poe a regra no topo da chain input, antes de qualquer drop.

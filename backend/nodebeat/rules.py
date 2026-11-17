@@ -36,7 +36,7 @@ class Observation:
 
 @dataclass(frozen=True)
 class Event:
-    evento: Literal["queda", "retorno", "encerrado"]  # "encerrado" só vai para o histórico
+    evento: Literal["queda", "retorno", "encerrado", "reinicio"]  # "encerrado" e "reinicio" só vão para o histórico
     tipo: str
     mk: MkRef | None
     detalhe: str

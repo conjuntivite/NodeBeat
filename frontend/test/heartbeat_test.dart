@@ -41,6 +41,12 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
+  testWidgets('reiniciando → reta em info', (t) async {
+    final p = await _paint(t, 'reiniciando');
+    expect(p.isFlat, true);
+    expect(p.color, TradeTokens.light.info);
+  });
+
   testWidgets('aguardando → traçado parado em fgMuted', (t) async {
     final p = await _paint(t, 'aguardando');
     expect(p.isFlat, false);

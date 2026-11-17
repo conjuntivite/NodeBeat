@@ -241,3 +241,27 @@ async def test_delete_via_api_makes_worker_forget_trackers(client, db, r):
 async def test_422_public_ip_range_message(client):
     resp = await client.post("/api/mks", json={**MK, "ip_publico": "192.168.0.1"})
     assert resp.json()["detail"] == [{"loc": ["body", "ip_publico"], "msg": "Use o IP público fixo"}]
+
+
+async def test_reiniciar_chama_a_mk_e_registra(client, r, monkeypatch):
+    id = await criar(client)
+    visto = {}
+    monkeypatch.setattr(routeros, "reboot", lambda *a: visto.setdefault("args", a))
+    resp = await client.post(f"/api/mks/{id}/reiniciar")
+    assert resp.status_code == 204
+    assert visto["args"] == ("10.8.0.2", "admin", "segredo-mk", None)
+    assert 0 < await r.ttl(f"reinicio:{id}") <= 300
+    [h] = await history.history(r, id)
+    assert h["evento"] == "reinicio" and h["detalhe"] == "Solicitado por ana"
+
+
+async def test_reiniciar_falha_devolve_502_sem_janela(client, r, monkeypatch):
+    id = await criar(client)
+
+    def falha(*a):
+        raise routeros.RouterOsError("Usuário da MK sem permissão de reinício")
+
+    monkeypatch.setattr(routeros, "reboot", falha)
+    resp = await client.post(f"/api/mks/{id}/reiniciar")
+    assert resp.status_code == 502 and resp.json() == {"detalhe": "Usuário da MK sem permissão de reinício"}
+    assert not await r.exists(f"reinicio:{id}")

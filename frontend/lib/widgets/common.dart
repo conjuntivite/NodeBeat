@@ -39,12 +39,14 @@ String statusLabel(String status, bool alert) => switch (status) {
       'offline' => 'Offline',
       'vpn_caiu' => 'VPN caiu',
       'erro_acesso' => 'Erro de acesso',
+      'reiniciando' => 'Reiniciando',
       _ => 'Aguardando',
     };
 
 Color statusColor(TradeTokens t, String status, bool alert) => switch (status) {
       'no_ar' => alert ? t.warning : t.positive,
       'aguardando' => t.fgSecondary,
+      'reiniciando' => t.info,
       _ => t.negative,
     };
 

@@ -51,13 +51,13 @@ const _modelo = r'''{
 :if ([:len $rotas] > 1) do={:error "Mais de uma rota padrao ativa (duas WANs): nao deu para escolher a WAN. Nada foi alterado."}
 :local rota [:pick $rotas 0]
 :local wan ""
-# gateway que ja e uma interface (PPPoE, inclusive com espaco no nome) vale inteiro
-:local gw [:tostr [/ip route get $rota gateway]]
-:local pg [:find $gw "%"]
-:if ([:typeof $pg] = "num") do={
-  :set wan [:pick $gw ($pg + 1) [:len $gw]]
-} else={
-  :if ([:len [/interface find where name=$gw]] > 0) do={:set wan $gw}
+# gateway que ja e uma interface (PPPoE, inclusive com espaco no nome) vale inteiro;
+# a rota pode ter varios gateways (ex.: pppoe-out1,*7): vale o primeiro que for interface existente
+:foreach g in=[/ip route get $rota gateway] do={
+  :local gw [:tostr $g]
+  :local pg [:find $gw "%"]
+  :if ([:typeof $pg] = "num") do={:set gw [:pick $gw ($pg + 1) [:len $gw]]}
+  :if ([:len $wan] = 0 && [:len [/interface find where name=$gw]] > 0) do={:set wan $gw}
 }
 # gateway por IP: a interface vem de immediate-gw (v7) ou gateway-status (v6)
 :if ([:len $wan] = 0) do={

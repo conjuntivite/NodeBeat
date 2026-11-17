@@ -116,8 +116,12 @@ void main() {
   });
 
   test('WAN com espaço no nome (ex.: "PPPoE - ALT"): gateway que já é interface vale inteiro', () {
-    expect(s, contains(r':local gw [:tostr [/ip route get $rota gateway]]'));
     expect(s, contains(r'/interface find where name=$gw'));
     expect(s.indexOf(r'/interface find where name=$gw'), lessThan(s.indexOf('gateway-status')));
+  });
+
+  test('rota com vários gateways (ex.: "pppoe-out1,*7"): olha um a um, não a lista junta', () {
+    expect(s, contains(r':foreach g in=[/ip route get $rota gateway] do={'));
+    expect(s, isNot(contains(r'[:tostr [/ip route get $rota gateway]]')));
   });
 }

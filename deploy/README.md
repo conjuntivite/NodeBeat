@@ -35,6 +35,7 @@ Funciona num CT Debian 12 sem privilégios, com estes ajustes:
 - **Faixa do Docker**: se alguma rede de MK cair em `172.17.0.0/16` (padrão do `docker0`), troque em `/etc/docker/daemon.json`, por exemplo `{"bip":"10.250.0.1/24","default-address-pools":[{"base":"10.251.0.0/16","size":24}]}`.
 - **Origem coberta pelo IPsec**: se os túneis das MKs só aceitam uma rede da sede (ex.: `<REDE_SEDE_IPSEC>`), dê ao CT uma 2ª placa nessa rede (`<IP_CT_IPSEC>`) e um serviço no boot com rotas para as redes das MKs saindo com essa origem, mais SNAT dos containers (o MASQUERADE do Docker usaria o IP da outra placa):
   ```sh
+  # + cada rede de NODEBEAT_REDES_TUNEL_EXTRA (LAN de MK fora da faixa privada)
   for n in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
     ip route replace $n via <GATEWAY_SEDE> dev eth0 src <IP_CT_IPSEC>
     iptables -t nat -C POSTROUTING -o eth0 -d $n -j SNAT --to-source <IP_CT_IPSEC> 2>/dev/null \

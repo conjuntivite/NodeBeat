@@ -282,3 +282,20 @@ async def test_preparar_mk_sem_env_devolve_null(client):
 
 async def test_preparar_mk_exige_login(anon):
     assert (await anon.get("/api/preparar-mk")).status_code == 401
+
+
+async def test_ip_tunel_fora_da_faixa_privada_so_nas_redes_extra(db, r):
+    from dataclasses import replace
+    app = create_app(db, r, replace(SET, redes_tunel_extra=["172.32.0.0/22"]))
+    await store.insert_user(db, "ana", auth.hash_password(SENHA))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        await c.post("/api/auth/login", json={"usuario": "ana", "senha": SENHA})
+        resp = await c.post("/api/mks", json={**MK, "ip_tunel": "172.32.0.1"})
+        assert resp.status_code == 201
+        id = resp.json()["id"]
+        assert (await c.put(f"/api/mks/{id}", json={**MK, "ip_tunel": "172.32.3.254"})).status_code == 204
+        for ruim in ("172.32.4.1", "8.8.8.8"):
+            for resp in (await c.post("/api/mks", json={**MK, "nome": "Outra", "ip_tunel": ruim}),
+                         await c.put(f"/api/mks/{id}", json={**MK, "ip_tunel": ruim})):
+                assert resp.status_code == 422
+                assert resp.json()["detail"] == [{"loc": ["body", "ip_tunel"], "msg": "Use o IP privado do túnel"}]

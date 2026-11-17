@@ -41,8 +41,8 @@ class MkIn(BaseModel):
     @classmethod
     def _ip(cls, v: str, info) -> str:
         ip = ipaddress.IPv4Address(v)  # ValueError -> 422
-        if info.field_name == "ip_tunel":
-            ok = ip.is_private and not (ip.is_loopback or ip.is_link_local or ip.is_unspecified)
+        if info.field_name == "ip_tunel":  # faixa privada (ou redes extra) é checada no handler, que tem o settings
+            ok = not (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast)
         else:
             ok = ip.is_global
         if not ok:
@@ -151,8 +151,16 @@ def create_app(db, r, settings) -> FastAPI:
                 "sede_ok": not (eng and json.loads(eng).get("frozen")),
                 "dados_ok": bool(await r.exists("worker:vivo")), "mks": [x[0] for x in linhas]}
 
+    extras = [ipaddress.ip_network(n) for n in settings.redes_tunel_extra]
+
+    def _tunel_ok(ip_tunel: str) -> None:
+        ip = ipaddress.IPv4Address(ip_tunel)
+        if not (ip.is_private or any(ip in n for n in extras)):
+            raise HTTPException(422, [{"loc": ["body", "ip_tunel"], "msg": _MSG_422["ip_tunel"]}])
+
     @mks.post("/mks", status_code=201)
     async def criar(body: MkIn) -> dict:
+        _tunel_ok(body.ip_tunel)
         if not body.senha:
             raise HTTPException(422, [{"loc": ["body", "senha"], "msg": "Campo obrigatório"}])
         await _nome_livre(body.nome)
@@ -171,6 +179,7 @@ def create_app(db, r, settings) -> FastAPI:
 
     @mks.put("/mks/{id}", status_code=204)
     async def alterar(id: str, body: MkIn) -> Response:
+        _tunel_ok(body.ip_tunel)
         antigo = await _achar(id)
         await _nome_livre(body.nome, id)
         campos = body.model_dump(exclude={"senha"})

@@ -41,3 +41,16 @@ def test_ip_origem_invalido_falha(monkeypatch):
     monkeypatch.setenv("NODEBEAT_IP_ORIGEM", "abc")
     with pytest.raises(RuntimeError, match="NODEBEAT_IP_ORIGEM inválida"):
         load_settings()
+
+
+def test_redes_tunel_extra(monkeypatch):
+    import pytest
+
+    from nodebeat.config import load_settings
+    _env_base(monkeypatch)
+    assert load_settings().redes_tunel_extra == []
+    monkeypatch.setenv("NODEBEAT_REDES_TUNEL_EXTRA", "172.32.0.1/22, 100.64.0.0/10")
+    assert load_settings().redes_tunel_extra == ["172.32.0.0/22", "100.64.0.0/10"]
+    monkeypatch.setenv("NODEBEAT_REDES_TUNEL_EXTRA", "x")
+    with pytest.raises(RuntimeError, match="NODEBEAT_REDES_TUNEL_EXTRA inválida"):
+        load_settings()

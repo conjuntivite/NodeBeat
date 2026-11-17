@@ -19,6 +19,7 @@ class Settings:
     sede_redes: list[str] = field(default_factory=list)
     ip_origem: str | None = None  # IP com que o NodeBeat chega na MK (script do Preparar MK)
     ips_publicos_sede: list[str] = field(default_factory=list)  # saídas da sede (load balance): regra de ICMP do script
+    redes_tunel_extra: list[str] = field(default_factory=list)  # LANs de MK fora da faixa privada aceitas como IP do túnel
 
 
 def _req(nome: str) -> str:
@@ -28,12 +29,12 @@ def _req(nome: str) -> str:
     return v
 
 
-def _sede_redes() -> list[str]:
+def _redes(nome: str) -> list[str]:
     try:
         return [str(ipaddress.ip_network(c.strip(), strict=False))
-                for c in (os.environ.get("NODEBEAT_SEDE_REDES") or "").split(",") if c.strip()]
+                for c in (os.environ.get(nome) or "").split(",") if c.strip()]
     except ValueError:
-        raise RuntimeError("NODEBEAT_SEDE_REDES inválida") from None
+        raise RuntimeError(f"{nome} inválida") from None
 
 
 def _ip_opcional(nome: str) -> str | None:
@@ -58,5 +59,5 @@ def load_settings() -> Settings:
         _req("NODEBEAT_MONGO_URL"), _req("NODEBEAT_REDIS_URL"), _req("NODEBEAT_SECRET_KEY"),
         _req("NODEBEAT_WEBHOOK_URL"), os.environ.get("NODEBEAT_WEBHOOK_TOKEN") or None,
         _req("NODEBEAT_REFERENCE_HOST"), int(os.environ.get("NODEBEAT_INTERVAL_S") or 30),
-        int(os.environ.get("NODEBEAT_INVENTARIO_S") or 3600), _sede_redes(),
-        _ip_opcional("NODEBEAT_IP_ORIGEM"), _ips("NODEBEAT_IPS_PUBLICOS_SEDE"))
+        int(os.environ.get("NODEBEAT_INVENTARIO_S") or 3600), _redes("NODEBEAT_SEDE_REDES"),
+        _ip_opcional("NODEBEAT_IP_ORIGEM"), _ips("NODEBEAT_IPS_PUBLICOS_SEDE"), _redes("NODEBEAT_REDES_TUNEL_EXTRA"))

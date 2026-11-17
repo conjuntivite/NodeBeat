@@ -64,7 +64,7 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
                   'Cole no terminal da MK (logado como admin). Só acrescenta a permissão de reinício ao usuário monitor.',
                   scriptLiberarReinicio, 'copiar-reinicio', 'Comando copiado'),
               SizedBox(height: t.space4),
-              _card(t, 'Desfazer tudo', 'Remove da MK o usuário, o grupo, os certificados e a regra de ping, e desliga a api-ssl.',
+              _card(t, 'Desfazer tudo', 'Remove da MK o usuário, o grupo, os certificados e as regras de firewall, e desliga a api-ssl.',
                   scriptDesfazer, 'copiar-desfazer', 'Comando copiado'),
             ]),
     );

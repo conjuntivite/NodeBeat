@@ -92,6 +92,16 @@ void main() {
     expect(scriptDesfazer, contains('list="nodebeat-sede"'));
   });
 
+  test('firewall que bloqueia a WAN: libera a 8729 só para o NodeBeat via IPsec, no topo; Desfazer remove', () {
+    expect(s, contains(r'/ip firewall filter remove [find where comment="monitor-api"]'));
+    expect(
+        s,
+        contains(r'/ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem '
+            r'ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"'));
+    expect(s.indexOf('comment="monitor-api"'), greaterThan(s.indexOf('comment="monitor-icmp"\n')));
+    expect(scriptDesfazer, contains('[find where comment="monitor-api"]'));
+  });
+
   test('regra no topo: antes da 1a regra estática da input, sem índice fixo', () {
     expect(s, contains('chain=input && !dynamic'));
     expect(s, contains(r'place-before=[:pick $alvo 0]'));

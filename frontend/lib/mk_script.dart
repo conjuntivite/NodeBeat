@@ -22,6 +22,7 @@ String scriptPreparar({required String ipOrigem, required List<String> ipsSede, 
 const scriptLiberarReinicio = '/user group set monitor policy=read,api,reboot';
 
 const scriptDesfazer = r'''/ip firewall filter remove [find where comment="monitor-icmp"]
+/ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall address-list remove [find where list="nodebeat-sede"]
 /user remove [find where name="monitor"]
 /user group remove [find where name="monitor"]
@@ -164,6 +165,9 @@ const _modelo = r'''{
 } else={
   /ip firewall filter add chain=input protocol=icmp in-interface=$wan src-address-list=nodebeat-sede action=accept comment="monitor-icmp"
 }
+# firewall que bloqueia a WAN derruba a api-ssl que chega pelo tunel: libera so o NodeBeat, so via IPsec
+/ip firewall filter remove [find where comment="monitor-api"]
+/ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
 
 # 3) Resultado.
 :local modo "address"

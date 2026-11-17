@@ -48,11 +48,11 @@ Funciona num CT Debian 12 sem privilégios, com estes ajustes:
 
 ## 2. Cada MikroTik
 
-Aplique `deploy/routeros-monitor-user.rsc` (instruções e placeholders no topo do arquivo), com `<IP_VM>` = o IP de origem com que a VM chega na MK (o do túnel). Cadastre a MK no painel.
+No painel, abra **Preparar MK** (ícone de terminal no topo) e siga o passo a passo: copie o script e cole no terminal da MK (Winbox → New Terminal, logado como admin). Ele descobre sozinho a versão, a WAN, o IP público e o IP do túnel, cria o usuário `monitor` (grupo `read,api,reboot`), libera a `api-ssl` e o ping só para o NodeBeat e, no fim, mostra os dados do cadastro. Se algo não bater (sem rota padrão, duas WANs), para antes de alterar qualquer coisa.
 
-- **IP do túnel** no cadastro = o IP da LAN da MK dentro da rede do IPsec (`/ip ipsec policy print` → `SRC-ADDRESS`; `/ip address print` → o endereço da MK nessa rede, em geral o da `bridge`).
-- **IP público** = o IP fixo da WAN (para distinguir "VPN caiu" de "Offline").
-- No RouterOS ≥ 7.24 o parâmetro `address` do `/ip service` virou `available-from` (o antigo ainda funciona, com aviso).
+- A página precisa de `NODEBEAT_IP_ORIGEM` (IP com que o NodeBeat chega na MK pelo túnel) e `NODEBEAT_IPS_PUBLICOS_SEDE` (IPs públicos de saída da sede, separados por vírgula, para a regra de ping) no `deploy/.env`.
+- **IP do túnel** no cadastro = o IP da LAN da MK dentro da rede do IPsec; **IP público** = o IP fixo da WAN (para distinguir "VPN caiu" de "Offline"). O script mostra os dois.
+- MK já cadastrada antes do botão Reiniciar: a página tem o comando de uma linha que só libera o reinício.
 
 ## 3. SonicWall
 

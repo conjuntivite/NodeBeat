@@ -265,3 +265,20 @@ async def test_reiniciar_falha_devolve_502_sem_janela(client, r, monkeypatch):
     resp = await client.post(f"/api/mks/{id}/reiniciar")
     assert resp.status_code == 502 and resp.json() == {"detalhe": "Usuário da MK sem permissão de reinício"}
     assert not await r.exists(f"reinicio:{id}")
+
+
+async def test_preparar_mk_devolve_ips(db, r):
+    from dataclasses import replace
+    app = create_app(db, r, replace(SET, ip_origem="10.9.9.9", ips_publicos_sede=["203.0.113.5", "198.51.100.7"]))
+    await store.insert_user(db, "ana", auth.hash_password(SENHA))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        await c.post("/api/auth/login", json={"usuario": "ana", "senha": SENHA})
+        assert (await c.get("/api/preparar-mk")).json() == {"ip_origem": "10.9.9.9", "ips_publicos_sede": ["203.0.113.5", "198.51.100.7"]}
+
+
+async def test_preparar_mk_sem_env_devolve_null(client):
+    assert (await client.get("/api/preparar-mk")).json() == {"ip_origem": None, "ips_publicos_sede": []}
+
+
+async def test_preparar_mk_exige_login(anon):
+    assert (await anon.get("/api/preparar-mk")).status_code == 401

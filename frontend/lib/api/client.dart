@@ -122,6 +122,14 @@ class HistEvent {
   final int? duracaoS;
 }
 
+class PrepararMkInfo {
+  PrepararMkInfo.fromJson(Map<String, dynamic> j)
+      : ipOrigem = j['ip_origem'],
+        ipsSede = List<String>.from(j['ips_publicos_sede'] ?? const []);
+  final String? ipOrigem;
+  final List<String> ipsSede;
+}
+
 class FaixaRede {
   FaixaRede.fromJson(Map<String, dynamic> j)
       : rede = j['rede'],
@@ -306,6 +314,8 @@ class ApiClient {
       Conferencia.fromJson(await _send('GET', '/faixas/conferir?cidr=${Uri.encodeQueryComponent(cidr)}'));
 
   Future<void> pedirAtualizarFaixas() => _send('POST', '/faixas/atualizar');
+
+  Future<PrepararMkInfo> prepararMk() async => PrepararMkInfo.fromJson(await _send('GET', '/preparar-mk'));
 
   Future<InventarioMk> inventario(String id) async => InventarioMk.fromJson(await _send('GET', '/mks/$id/inventario'));
 

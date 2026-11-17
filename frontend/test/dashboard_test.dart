@@ -58,6 +58,8 @@ Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200,
         settings: s,
         builder: (_) => s.name == '/login'
             ? const Text('LOGIN')
+            : s.name == '/preparar-mk'
+            ? const Text('PREPARAR')
             : s.name!.startsWith('/mk/')
                 ? Text('DETALHE ${s.name}')
                 : DashboardScreen(api: api, sound: sound, abrir: abrir)),
@@ -90,6 +92,15 @@ void main() {
     expect(find.text('3 eventos aguardando envio'), findsOneWidget);
     expect(find.text('Sem conexão da sede — dados congelados'), findsNothing);
     expect(find.text('2/3'), findsNWidgets(3));
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('ícone "Preparar MK" abre a página do script', (t) async {
+    await _show(t, _status());
+    await t.tap(find.byTooltip('Preparar MK'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('PREPARAR'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

@@ -266,6 +266,10 @@ def create_app(db, r, settings) -> FastAPI:
         except ValueError:
             raise HTTPException(422, "Faixa inválida")
 
+    @mks.get("/preparar-mk")
+    async def preparar_mk() -> dict:
+        return {"ip_origem": settings.ip_origem, "ips_publicos_sede": settings.ips_publicos_sede}
+
     @mks.post("/faixas/atualizar", status_code=202)
     async def pedir_atualizacao() -> Response:
         await r.set(worker.PEDIDO_INVENTARIO, "1")

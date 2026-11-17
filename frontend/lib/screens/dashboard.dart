@@ -52,9 +52,12 @@ final _cols = <_Col>[
 ];
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, required this.api, this.sound});
+  const DashboardScreen({super.key, required this.api, this.sound, this.abrir});
   final ApiClient api;
   final SoundEngine? sound;
+
+  /// Página recarregada dentro de uma MK: o painel fica por baixo (som e voltar) e reabre ela.
+  final String? abrir;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -90,6 +93,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     _beat.addListener(_onBeat);
     _load();
     _timer = Timer.periodic(_refresh, (_) => _load());
+    final id = widget.abrir;
+    if (id != null) WidgetsBinding.instance.addPostFrameCallback((_) => _abrir(id));
   }
 
   @override
@@ -156,13 +161,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Future<void> _abrir(MkRow m) async {
-    _foco = m.id;
+  Future<void> _abrir(String id) async {
+    _foco = id;
     _applySound();
     _focoTimer = Timer.periodic(beatPeriod, (_) {
       if (_bip && _sound == MonitorSound.beep) _engine.beep();
     });
-    await Navigator.of(context).pushNamed('/mk/${m.id}');
+    await Navigator.of(context).pushNamed('/mk/$id');
     _focoTimer?.cancel();
     _focoTimer = null;
     _foco = null;
@@ -422,7 +427,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final nums = dataStyle(context, TradeType.dataSm);
     return InkWell(
       key: ValueKey('row-${m.id}'),
-      onTap: () => _abrir(m),
+      onTap: () => _abrir(m.id),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: t.space3),
         child: Row(

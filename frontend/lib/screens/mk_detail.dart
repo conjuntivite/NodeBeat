@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
@@ -25,13 +27,21 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   List<String> _alertas = const []; // mesmas regras do painel: vêm de /status
   String? _error;
   int _inv = 0; // muda ao atualizar o inventário: os cards recarregam
+  Timer? _timer; // mesmo ritmo do painel: status, interfaces e histórico se atualizam sozinhos
 
   @override
   void initState() {
     super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _load());
     _load().then((_) {
       if (mounted && widget.chooseInterfaces && _mk != null) _pickInterfaces();
     });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

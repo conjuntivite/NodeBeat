@@ -38,8 +38,14 @@ class NodeBeatApp extends StatelessWidget {
           themeMode: mode,
           initialRoute: '/login',
           onGenerateRoute: _route,
-          // Recarregar em #/painel não deixa o /login por baixo.
-          onGenerateInitialRoutes: (name) => [_route(RouteSettings(name: name))!],
+          // Recarregar em #/painel não deixa o /login por baixo; em #/mk/<id> o painel fica por
+          // baixo e reabre a MK (sem ele não há som nem voltar).
+          onGenerateInitialRoutes: (name) => switch (Uri.parse(name).pathSegments) {
+            ['mk', final id] when id != 'novo' => [
+                MaterialPageRoute(settings: const RouteSettings(name: '/painel'), builder: (_) => DashboardScreen(api: api, abrir: id)),
+              ],
+            _ => [_route(RouteSettings(name: name))!],
+          },
         ),
       );
 }

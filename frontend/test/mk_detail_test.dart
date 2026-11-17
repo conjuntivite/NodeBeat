@@ -11,6 +11,8 @@ import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/heartbeat.dart';
 
+var _estado = 'no_ar'; // o servidor muda o estado no meio do teste
+
 http.Response _json(Object o) =>
     http.Response(jsonEncode(o), 200, headers: {'content-type': 'application/json; charset=utf-8'});
 
@@ -28,7 +30,7 @@ Future<void> _show(WidgetTester t,
         return _json({
           'id': 'x', 'nome': 'cliente-v7', 'ip_tunel': '10.0.0.2', 'ip_publico': ipPublico, 'usuario': 'monitor',
           'interfaces_vigiadas': ['ether1'], 'cert_sha256': null,
-          'estado': {'status': 'no_ar', 'detalhe': null, 'desde': '2026-01-01T10:00:00-03:00', 'cpu': 92, 'mem': 40,
+          'estado': {'status': _estado, 'detalhe': null, 'desde': '2026-01-01T10:00:00-03:00', 'cpu': 92, 'mem': 40,
             'uptime': '1d', 'ifaces': {'ether1': false}, 'versao': '7.14', 'atualizado_em': null},
         });
       case '/api/mks/x/historico':
@@ -119,6 +121,18 @@ void main() {
     expect(filled, ['Editar']);
     expect(find.widgetWithText(OutlinedButton, 'Escolher interfaces'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Aceitar novo certificado'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('detalhe se atualiza sozinho: VPN cai e a pílula muda sem recarregar', (t) async {
+    _estado = 'no_ar';
+    addTearDown(() => _estado = 'no_ar');
+    await _show(t, alertas: []);
+    expect(find.textContaining('No ar'), findsOneWidget);
+    _estado = 'vpn_caiu';
+    await t.pump(const Duration(seconds: 16));
+    await t.pump();
+    expect(find.textContaining('VPN caiu'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 }

@@ -47,7 +47,7 @@ class _FakeEngine extends SoundEngine {
   void stop() => flat = false;
 }
 
-Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200, SoundEngine? sound}) async {
+Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200, SoundEngine? sound, String? abrir}) async {
   t.view.physicalSize = const Size(1400, 900);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -60,7 +60,7 @@ Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200,
             ? const Text('LOGIN')
             : s.name!.startsWith('/mk/')
                 ? Text('DETALHE ${s.name}')
-                : DashboardScreen(api: api, sound: sound)),
+                : DashboardScreen(api: api, sound: sound, abrir: abrir)),
   ));
   await t.pump();
   await t.pump();
@@ -265,6 +265,20 @@ void main() {
     await t.pump(const Duration(milliseconds: 2500));
     expect(e.beeps, antes);
     expect(e.bip, isFalse);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('recarregar dentro da MK: painel por baixo, som focado nela e voltar cai no painel', (t) async {
+    final e = _FakeEngine()..suspended = false;
+    final body = _status()..['mks'] = [_mk('a', 'cliente-v7', 'vpn_caiu'), _mk('c', 'cliente-c', 'no_ar')];
+    await _show(t, body, sound: e, abrir: 'a');
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('DETALHE /mk/a'), findsOneWidget);
+    expect(e.flat, isTrue);
+    Navigator.of(t.element(find.text('DETALHE /mk/a'))).pop();
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.byKey(const ValueKey('row-c')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 }

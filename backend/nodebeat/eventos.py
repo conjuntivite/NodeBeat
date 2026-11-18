@@ -11,7 +11,8 @@ TIPOS = ("login", "login_falha", "logout", "config", "interface", "ipsec",
          "dhcp", "pppoe", "reboot", "erro", "outro")
 
 _MAX_BYTES = 2048
-_TOPICOS = re.compile(r"^[a-z0-9-]+(,[a-z0-9-]+)*$")
+_TOPICOS = re.compile(r"[a-z0-9-]+(,[a-z0-9-]+)+")  # ao menos 2: tópico + severidade
+_IPV4 = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
 _PPPOE = re.compile(r"^(?P<interface>[^\s:]+): (?P<estado>\S+)")
 _CONFIG = re.compile(
     r"^(?P<objeto>.+?) (?P<acao>added|changed|removed) by "
@@ -36,7 +37,7 @@ def _campos(m: re.Match) -> dict:
 def parse(dado: bytes) -> dict:
     texto = dado[:_MAX_BYTES].decode("utf-8", errors="replace").strip()
     primeiro, _, resto = texto.partition(" ")
-    if _TOPICOS.match(primeiro):
+    if _TOPICOS.fullmatch(primeiro):
         topicos, mensagem = primeiro.split(","), resto.strip()
     else:
         topicos, mensagem = [], texto
@@ -48,7 +49,8 @@ def parse(dado: bytes) -> dict:
 
 def classificar(topicos: list[str], mensagem: str, severidade: str) -> tuple[str, dict]:
     if "ipsec" in topicos:
-        return "ipsec", {}
+        m = _IPV4.search(mensagem)
+        return "ipsec", {"peer": m.group()} if m else {}
     if "pppoe" in topicos or "ppp" in topicos:
         m = _PPPOE.match(mensagem)
         return "pppoe", _campos(m) if m else {}

@@ -40,7 +40,8 @@ def test_classificar(msg, tipo, campos):
     assert classificar(["system", "info"], msg, "info") == (tipo, campos)
 
 def test_ipsec_e_pppoe_por_topico():
-    assert classificar(["ipsec", "error"], "phase1 negotiation failed due to time up 198.51.100.7[500]", "err")[0] == "ipsec"
+    assert classificar(["ipsec", "error"], "phase1 negotiation failed due to time up 198.51.100.7[500]", "err") == ("ipsec", {"peer": "198.51.100.7"})
+    assert classificar(["ipsec", "info"], "phase1 negotiation failed", "info") == ("ipsec", {})
     assert classificar(["pppoe", "ppp", "info"], "pppoe-out1: connected", "info") == ("pppoe", {"interface": "pppoe-out1", "estado": "connected"})
 
 def test_erro_e_outro():
@@ -56,3 +57,7 @@ def test_amostras_reais_classificam():  # Task 0: cada linha tem o tipo esperado
     for linha in open("tests/amostras_syslog.txt", encoding="utf-8").read().splitlines():
         cru, esperado = linha.rsplit(" ## ", 1)
         assert evento(cru.encode(), "mk1", datetime.now(UTC))["tipo"] == esperado, cru
+
+def test_linha_sem_virgula_nao_tem_topico():
+    assert parse(b"router rebooted") == {"severidade": "info", "topicos": [], "mensagem": "router rebooted"}
+    assert classificar([], "router rebooted", "info")[0] == "reboot"

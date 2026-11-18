@@ -204,3 +204,23 @@ def test_reboot_sem_permissao(monkeypatch):
     with pytest.raises(RouterOsError) as e:
         routeros.reboot("h", "u", "p", None)
     assert e.value.detalhe == "Usuário da MK sem permissão de reinício"
+
+
+@pytest.mark.parametrize("exc,sem_conexao", [
+    (TimeoutError(), True),
+    (ConnectionRefusedError(), True),
+    (TrapError("cannot log in"), False),
+    (ssl.SSLError(1, "boom"), False),
+])
+def test_sem_conexao_so_para_falha_de_rede(monkeypatch, exc, sem_conexao):
+    monkeypatch.setattr(routeros.librouteros, "connect", _raising(exc))
+    with pytest.raises(RouterOsError) as e:
+        routeros.reboot("h", "u", "p", None)
+    assert isinstance(e.value, routeros.SemConexao) is sem_conexao
+
+
+def test_cert_mismatch_nao_e_sem_conexao(monkeypatch):
+    monkeypatch.setattr(routeros.librouteros, "connect", _raising(CertMismatch()))
+    with pytest.raises(CertMismatch) as e:
+        routeros.reboot("h", "u", "p", "0" * 64)
+    assert not isinstance(e.value, routeros.SemConexao)

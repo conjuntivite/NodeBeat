@@ -24,6 +24,10 @@ class RouterOsError(Exception):
         self.detalhe = detalhe
 
 
+class SemConexao(RouterOsError):
+    """Falha de rede (timeout, conexão recusada): outro caminho até a MK pode funcionar."""
+
+
 class CertMismatch(RouterOsError):
     def __init__(self):
         super().__init__("certificado mudou")
@@ -65,11 +69,11 @@ def _erro(e: Exception, logando: bool) -> RouterOsError:
     if isinstance(e, TrapError):
         return RouterOsError("Login recusado (usuário ou senha)" if logando else f"Erro da API: {e}")
     if isinstance(e, TimeoutError):
-        return RouterOsError("API sem resposta (timeout)")
+        return SemConexao("API sem resposta (timeout)")
     if isinstance(e, ssl.SSLError):
         return RouterOsError(f"Falha no TLS: {getattr(e, "reason", None) or e.args[-1]}")
     if isinstance(e, (OSError, LibRouterosError)):
-        return RouterOsError("Conexão com a API recusada")
+        return SemConexao("Conexão com a API recusada")
     raise e
 
 

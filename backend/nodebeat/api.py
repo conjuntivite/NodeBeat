@@ -219,20 +219,35 @@ def create_app(db, r, settings) -> FastAPI:
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         return [{"nome": n, "running": run} for n, run in rows]
 
-    @mks.post("/mks/{id}/reiniciar", status_code=204)
+    @mks.post("/mks/{id}/reiniciar")
     async def reiniciar(id: str, user: dict = Depends(auth.current_user)):
         mk = await _achar(id)
-        try:
+
+        async def _reboot(host: str) -> None:
             senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
-            await asyncio.to_thread(routeros.reboot, mk["ip_tunel"], mk["usuario"], senha, mk.get("cert_sha256"))
+            await asyncio.to_thread(routeros.reboot, host, mk["usuario"], senha, mk.get("cert_sha256"))
+
+        via = "tunel"
+        try:
+            try:
+                await _reboot(mk["ip_tunel"])
+            except routeros.SemConexao as e:  # túnel caído: tenta pela internet (só falha de rede, não login/TLS)
+                if not mk.get("ip_publico"):
+                    raise
+                via = "publico"
+                try:
+                    await _reboot(mk["ip_publico"])
+                except routeros.RouterOsError as e2:
+                    raise routeros.RouterOsError(f"Túnel: {e.detalhe}. IP público: {e2.detalhe}") from None
         except routeros.RouterOsError as e:
             return JSONResponse({"detalhe": e.detalhe}, status_code=502)
         except Exception:  # nunca ecoar str(e): pode conter segredo
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         await r.set(worker.REINICIO + id, user["usuario"], ex=worker.JANELA_REINICIO)
-        await history.record(r, Event("reinicio", "reinicio", MkRef(id, mk["nome"]),
-                                      f"Solicitado por {user['usuario']}", datetime.now(UTC), None, None))
-        return Response(status_code=204)
+        detalhe = f"Solicitado por {user['usuario']}" + (" pelo IP público" if via == "publico" else "")
+        await history.record(r, Event("reinicio", "reinicio", MkRef(id, mk["nome"]), detalhe,
+                                      datetime.now(UTC), None, None))
+        return {"via": via}
 
     @mks.put("/mks/{id}/interfaces-vigiadas", status_code=204)
     async def vigiar(id: str, body: VigiadasIn) -> Response:

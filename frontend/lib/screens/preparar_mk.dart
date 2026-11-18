@@ -140,7 +140,8 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
         t,
         titulo,
         'Cole no terminal da MK (logado como admin). A api-ssl passa a aceitar também os IPs públicos da sede, para o '
-            'botão Reiniciar funcionar com o túnel caído. Não troca a senha do usuário monitor.',
+            'botão Reiniciar funcionar com o túnel caído. Substitui os IPs permitidos na api-ssl e no usuário monitor (outra '
+            'ferramenta que use a api-ssl perde o acesso). Não troca a senha do usuário monitor.',
         scriptLiberarReinicioPublico(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
         'copiar-reinicio-publico',
         'Script copiado');

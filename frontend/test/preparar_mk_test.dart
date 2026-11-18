@@ -79,6 +79,7 @@ void main() {
   testWidgets('liberar reinício pelo IP público tem seu Copiar', (t) async {
     final copiado = await _show(t);
     expect(find.text('MK já cadastrada: liberar o reinício pelo IP público'), findsOneWidget);
+    expect(find.textContaining('Substitui os IPs permitidos na api-ssl'), findsOneWidget);
     await t.tap(find.byKey(const Key('copiar-reinicio-publico')));
     await t.pump();
     expect(copiado, [scriptLiberarReinicioPublico(ipOrigem: '10.9.9.9', ipsSede: ['203.0.113.5'])]);

@@ -272,6 +272,18 @@ void main() {
       expect(completo, isNot(contains('/32")]]')));
     });
 
+    test('Preparar diz no fim que a sede também tem acesso', () {
+      expect(completo, contains('liberada para " . \$ipOrigem . " e para a lista nodebeat-sede'));
+      expect(completo, isNot(contains('liberada so para')));
+    });
+
+    test('script curto para antes de mexer se a MK não tem o usuário monitor', () {
+      final guarda = curto.indexOf(':if ([:len [/user find where name="monitor"]] = 0) do={');
+      expect(guarda, greaterThan(0));
+      expect(curto, contains(':error "Usuario monitor nao existe: rode o Preparar MK primeiro"'));
+      expect(guarda, lessThan(curto.indexOf('/ip service set api-ssl')));
+    });
+
     test('Desfazer remove monitor-api-wan', () {
       expect(scriptDesfazer, contains('/ip firewall filter remove [find where comment="monitor-api-wan"]'));
     });

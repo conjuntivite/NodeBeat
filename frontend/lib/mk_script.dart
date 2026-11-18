@@ -74,6 +74,9 @@ const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-ap
 /// o túnel não responde). Mexe só nas três travas: serviço, usuário monitor (sem trocar a senha) e firewall.
 /// available-from só existe a partir da 7.24 (e nunca na v6): tenta e, se a MK recusar, usa address.
 String scriptLiberarReinicioPublico({required String ipOrigem, required List<String> ipsSede}) => '''{
+:if ([:len [/user find where name="monitor"]] = 0) do={
+  :error "Usuario monitor nao existe: rode o Preparar MK primeiro"
+}
 ${_lista(ipOrigem, ipsSede)}
 :do {
   [[:parse ("/ip service set api-ssl available-from=" . \$lista)]]
@@ -258,7 +261,7 @@ const _modelo = r'''{
 :local modo "address"
 :if ($novo) do={:set modo "available-from"}
 :put ""
-:put ("OK. API-SSL (" . $modo . ") liberada so para " . $ipOrigem . " | ping liberado para a lista nodebeat-sede")
+:put ("OK. API-SSL (" . $modo . ") liberada para " . $ipOrigem . " e para a lista nodebeat-sede | ping liberado para a lista nodebeat-sede")
 :if ($trocou) do={:put "ATENCAO: o usuario monitor ja existia e a senha foi trocada. Se a MK ja esta no NodeBeat, atualize a senha no cadastro (Editar)."}
 }
 '''; // a linha em branco no fim é o Enter: o terminal só executa o bloco quando recebe a "}" com Enter

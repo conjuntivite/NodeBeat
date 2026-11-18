@@ -1,5 +1,5 @@
 # Uso: docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build
-# Só o `web` publica portas; mongo/redis/api/worker ficam só na rede interna do compose.
+# Só o `web` (80/443) e o `syslog` (UDP 514) publicam portas; mongo/redis/api/worker ficam só na rede interna do compose.
 name: nodebeat
 
 x-env: &env
@@ -15,6 +15,7 @@ x-env: &env
   NODEBEAT_IP_ORIGEM: ${NODEBEAT_IP_ORIGEM:-}
   NODEBEAT_IPS_PUBLICOS_SEDE: ${NODEBEAT_IPS_PUBLICOS_SEDE:-}
   NODEBEAT_REDES_TUNEL_EXTRA: ${NODEBEAT_REDES_TUNEL_EXTRA:-}
+  NODEBEAT_SYSLOG_DIAS: ${NODEBEAT_SYSLOG_DIAS:-30}
 
 services:
   mongo:
@@ -68,6 +69,22 @@ services:
     depends_on:
       mongo: {condition: service_healthy}
       redis: {condition: service_healthy}
+
+  syslog:
+    build: ../backend
+    restart: unless-stopped
+    command: ["python", "-m", "nodebeat.syslog"]
+    cap_drop: [ALL]
+    environment: *env
+    depends_on:
+      mongo: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    ports: ["${NODEBEAT_SYSLOG_BIND_IP:?}:514:5514/udp"]
+    # IP fixo: conntrack velho continua mandando o fluxo UDP ao destino anterior após recriar o container
+    # (docs/spike-syslog.md); depois de subir/recriar, rode `conntrack -D -p udp --dport 514` no host.
+    networks:
+      default:
+        ipv4_address: 172.30.0.50
 
   web:
     build: ../frontend

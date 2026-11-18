@@ -59,6 +59,21 @@ No painel, abra **Preparar MK** (ícone de terminal no topo) e siga o passo a pa
 
 Regra de saída: origem = `<IP_DA_VM>`, destino = redes dos condomínios, serviços TCP 8729 + ICMP. Nada mais.
 
+## Eventos (syslog)
+
+O serviço `syslog` recebe o syslog UDP das MKs (host 514 -> container 5514) no IP `NODEBEAT_SYSLOG_BIND_IP` (o IP do NodeBeat no túnel). Ele tem IP fixo `172.30.0.50` na rede do compose. Depois de subir ou recriar o `syslog`, limpe o conntrack no host, senão fluxos antigos continuam indo ao destino anterior (veja `docs/spike-syslog.md`):
+
+```
+conntrack -D -p udp --dport 514
+```
+
+Conferência:
+
+```
+docker compose logs syslog
+docker compose exec mongo mongosh ... db.eventos.countDocuments()
+```
+
 ## 4. Checklist de verificação (manual)
 
 - [ ] `docker compose ... ps`: os 5 serviços `running`.

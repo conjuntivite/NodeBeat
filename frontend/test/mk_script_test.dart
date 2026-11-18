@@ -165,6 +165,13 @@ void main() {
       expect(s.codeUnits.every((c) => c < 128), isTrue);
     });
 
+    test(':parse com a string entre parênteses (o "." só concatena dentro de expressão)', () {
+      expect(e, contains('[[:parse ("/system logging action add'));
+      expect(e, contains('src-address=10.9.0.1 remote-log-format=default")]]'));
+      expect(s, contains(r'src-address=" . $ipTunel . " remote-log-format=default")]]'));
+      expect(s, contains('[[:parse ("/system logging action add'));
+    });
+
     test('desfazer remove regras e action nodebeat', () {
       expect(scriptDesfazer, contains('/system logging remove [find where action="nodebeat"]'));
       expect(scriptDesfazer, contains('/system logging action remove [find where name="nodebeat"]'));

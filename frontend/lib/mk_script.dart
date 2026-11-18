@@ -36,7 +36,7 @@ $_eventos}
 const _eventos = r'''/system logging remove [find where action="nodebeat"]
 /system logging action remove [find where name="nodebeat"]
 :if ($maior >= 7) do={
-  [[:parse "/system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL_STR@ remote-log-format=default"]]
+  [[:parse ("/system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL_STR@ remote-log-format=default")]]
 } else={
   /system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL@ bsd-syslog=no
 }

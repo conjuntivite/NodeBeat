@@ -75,7 +75,8 @@ def _alertas(mk: dict, st: dict) -> list[str]:
 
 
 _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
-            "ip_tunel": "Use o IP privado do túnel", "ip_publico": "Use o IP público fixo"}
+            "ip_tunel": "Use o IP privado do túnel",
+            "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo"}
 
 
 def create_app(db, r, settings) -> FastAPI:
@@ -126,6 +127,10 @@ def create_app(db, r, settings) -> FastAPI:
         if any(m["nome"].casefold() == nome.casefold() and m["id"] != ignorar for m in await store.list_mks(db)):
             raise HTTPException(409, "Já existe uma MK com esse nome")
 
+    async def _tunel_livre(ip: str, ignorar: str | None = None) -> None:
+        if any(m["ip_tunel"] == ip and m["id"] != ignorar for m in await store.list_mks(db)):
+            raise HTTPException(422, [{"loc": ["body", "ip_tunel"], "msg": _MSG_422["ip_tunel_repetido"]}])
+
     @mks.get("/status")
     async def status() -> dict:
         estados = await history.load_states(r)
@@ -164,6 +169,7 @@ def create_app(db, r, settings) -> FastAPI:
         if not body.senha:
             raise HTTPException(422, [{"loc": ["body", "senha"], "msg": "Campo obrigatório"}])
         await _nome_livre(body.nome)
+        await _tunel_livre(body.ip_tunel)
         doc = body.model_dump(exclude={"senha"}) | {
             "senha_cifrada": crypto.encrypt(body.senha, settings.secret_key),
             "cert_sha256": None, "interfaces_vigiadas": []}
@@ -182,6 +188,7 @@ def create_app(db, r, settings) -> FastAPI:
         _tunel_ok(body.ip_tunel)
         antigo = await _achar(id)
         await _nome_livre(body.nome, id)
+        await _tunel_livre(body.ip_tunel, id)
         campos = body.model_dump(exclude={"senha"})
         if body.senha:
             campos["senha_cifrada"] = crypto.encrypt(body.senha, settings.secret_key)
@@ -195,6 +202,7 @@ def create_app(db, r, settings) -> FastAPI:
         await _achar(id)
         await store.delete_mk(db, id)
         await store.apagar_inventario(db, id)
+        await store.apagar_eventos(db, id)
         await history.delete_mk(r, id)
         return Response(status_code=204)
 

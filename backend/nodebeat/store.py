@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from datetime import UTC, datetime
 
 from bson import ObjectId
@@ -108,3 +109,39 @@ async def esquecer_ip(db, mk_id: str, ip: str) -> bool:
 async def apagar_inventario(db, mk_id: str) -> None:
     await db.inventario.delete_many({"mk_id": mk_id})
     await db.inventario_ips.delete_many({"mk_id": mk_id})
+
+
+async def garantir_indices_eventos(db, dias: int) -> None:
+    await db.eventos.create_index([("mk_id", 1), ("recebido_em", -1)])
+    segundos = dias * 86400
+    info = await db.eventos.index_information()
+    if info.get("ttl_recebido_em", {}).get("expireAfterSeconds") not in (None, segundos):
+        # ponytail: drop+create deixa a coleção alguns ms sem TTL, o que não importa
+        await db.eventos.drop_index("ttl_recebido_em")
+    await db.eventos.create_index("recebido_em", name="ttl_recebido_em", expireAfterSeconds=segundos)
+
+
+async def inserir_eventos(db, docs: list[dict]) -> None:
+    if docs:
+        await db.eventos.insert_many(docs)
+
+
+async def listar_eventos(db, mk_id: str, *, tipos: list[str] | None = None, desde: datetime | None = None,
+                         ate: datetime | None = None, q: str | None = None, limite: int = 200) -> list[dict]:
+    f: dict = {"mk_id": mk_id}
+    if tipos:
+        f["tipo"] = {"$in": tipos}
+    if desde or ate:
+        f["recebido_em"] = {**({"$gte": desde} if desde else {}), **({"$lt": ate} if ate else {})}
+    if q:
+        f["mensagem"] = {"$regex": re.escape(q), "$options": "i"}
+    return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", -1).limit(limite)]
+
+
+async def ultimo_evento(db, mk_id: str) -> datetime | None:
+    d = await db.eventos.find_one({"mk_id": mk_id}, sort=[("recebido_em", -1)])
+    return _utc(d)["recebido_em"] if d else None
+
+
+async def apagar_eventos(db, mk_id: str) -> None:
+    await db.eventos.delete_many({"mk_id": mk_id})

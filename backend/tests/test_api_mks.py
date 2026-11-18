@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import json
 
 import fakeredis
@@ -105,10 +107,10 @@ async def test_put_new_tunnel_ip_clears_pin(client, db):
 
 
 async def test_status_summary_and_order(client, r):
-    a = await criar(client, nome="Alfa")
-    b = await criar(client, nome="bravo")
-    c = await criar(client, nome="Charlie")
-    d = await criar(client, nome="Delta")
+    a = await criar(client, nome="Alfa", ip_tunel="10.8.1.1")
+    b = await criar(client, nome="bravo", ip_tunel="10.8.1.2")
+    c = await criar(client, nome="Charlie", ip_tunel="10.8.1.3")
+    d = await criar(client, nome="Delta", ip_tunel="10.8.1.4")
     await client.put(f"/api/mks/{b}/interfaces-vigiadas", json={"interfaces": ["ether1", "ether2", "ether1"]})
     ok = {"detalhe": "", "desde": "2026-01-01T00:00:00+00:00", "uptime": "1d", "versao": "7.1"}
     await history.save_state(r, a, {**ok, "status": "no_ar", "cpu": 10, "mem": 20, "ifaces": {}})
@@ -186,7 +188,7 @@ async def test_duplicate_name_409(client):
     id = await criar(client, nome="Alfa")
     resp = await client.post("/api/mks", json={**MK, "nome": " alfa "})
     assert resp.status_code == 409 and resp.json() == {"detail": "Já existe uma MK com esse nome"}
-    outro = await criar(client, nome="Beta")
+    outro = await criar(client, nome="Beta", ip_tunel="10.8.0.3")
     assert (await client.put(f"/api/mks/{outro}", json={**MK, "nome": "ALFA"})).status_code == 409
     assert (await client.put(f"/api/mks/{id}", json={**MK, "nome": "ALFA"})).status_code == 204
 
@@ -299,3 +301,22 @@ async def test_ip_tunel_fora_da_faixa_privada_so_nas_redes_extra(db, r):
                          await c.put(f"/api/mks/{id}", json={**MK, "ip_tunel": ruim})):
                 assert resp.status_code == 422
                 assert resp.json()["detail"] == [{"loc": ["body", "ip_tunel"], "msg": "Use o IP privado do túnel"}]
+
+
+async def test_ip_tunel_repetido_recusado(client):
+    a = await criar(client)
+    b = await criar(client, nome="MK Sul", ip_tunel="10.8.0.3")
+    esperado = [{"loc": ["body", "ip_tunel"], "msg": "Já existe uma MK com esse IP do túnel"}]
+    resp = await client.post("/api/mks", json={**MK, "nome": "Outra"})
+    assert resp.status_code == 422 and resp.json()["detail"] == esperado
+    resp = await client.put(f"/api/mks/{b}", json={**MK, "nome": "MK Sul"})
+    assert resp.status_code == 422 and resp.json()["detail"] == esperado
+    assert (await client.put(f"/api/mks/{a}", json=MK)).status_code == 204
+
+
+async def test_apagar_mk_apaga_eventos(client, db):
+    id = await criar(client)
+    await store.inserir_eventos(db, [{"mk_id": id, "recebido_em": datetime(2026, 1, 1, tzinfo=UTC),
+                                      "severidade": "info", "topicos": [], "tipo": "x", "campos": {}, "mensagem": "m"}])
+    assert (await client.delete(f"/api/mks/{id}")).status_code == 204
+    assert await store.listar_eventos(db, id) == []

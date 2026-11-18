@@ -61,7 +61,9 @@ Regra de saída: origem = `<IP_DA_VM>`, destino = redes dos condomínios, servi�
 
 ## Eventos (syslog)
 
-O serviço `syslog` recebe o syslog UDP das MKs (host 514 -> container 5514) no IP `NODEBEAT_SYSLOG_BIND_IP` (o IP do NodeBeat no túnel). Ele tem IP fixo `172.30.0.50` na rede do compose. Depois de subir ou recriar o `syslog`, limpe o conntrack no host, senão fluxos antigos continuam indo ao destino anterior (veja `docs/spike-syslog.md`):
+**Atenção:** acrescente `NODEBEAT_SYSLOG_BIND_IP` ao `deploy/.env` ANTES de rodar qualquer `docker compose` com o compose novo. O compose usa `${NODEBEAT_SYSLOG_BIND_IP:?}`, então sem a variável todo comando falha, inclusive para api, worker e rollback.
+
+O serviço `syslog` recebe o syslog UDP das MKs (host 514 -> container 5514) no IP `NODEBEAT_SYSLOG_BIND_IP` (o IP do NodeBeat no túnel). Ele tem IP fixo `172.30.0.50` na rede do compose. Depois de cada `up -d --build` (ou recriação do `syslog`), limpe o conntrack no host, senão fluxos antigos continuam indo ao destino anterior (veja `docs/spike-syslog.md`):
 
 ```
 conntrack -D -p udp --dport 514

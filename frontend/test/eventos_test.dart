@@ -60,6 +60,8 @@ void main() {
     await _show(t);
     expect(find.text('login failure for user admin'), findsOneWidget);
     expect(find.text('config changed'), findsOneWidget);
+    expect(find.text('Falha de login'), findsOneWidget);
+    expect(find.text('login_falha'), findsNothing);
     final d = DateTime.parse('2026-03-05T13:04:05+00:00').toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     expect(find.text('${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}:${two(d.second)}'), findsOneWidget);

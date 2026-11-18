@@ -54,3 +54,17 @@ def test_redes_tunel_extra(monkeypatch):
     monkeypatch.setenv("NODEBEAT_REDES_TUNEL_EXTRA", "x")
     with pytest.raises(RuntimeError, match="NODEBEAT_REDES_TUNEL_EXTRA inválida"):
         load_settings()
+
+
+def test_syslog_dias_minimo_1(monkeypatch):
+    import pytest
+
+    from nodebeat.config import load_settings
+    _env_base(monkeypatch)
+    assert load_settings().syslog_dias == 30
+    monkeypatch.setenv("NODEBEAT_SYSLOG_DIAS", "7")
+    assert load_settings().syslog_dias == 7
+    for ruim in ("0", "-5", "x"):
+        monkeypatch.setenv("NODEBEAT_SYSLOG_DIAS", ruim)
+        with pytest.raises(RuntimeError, match="NODEBEAT_SYSLOG_DIAS inválida"):
+            load_settings()

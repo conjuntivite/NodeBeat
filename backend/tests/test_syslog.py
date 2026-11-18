@@ -133,3 +133,14 @@ async def test_gravador_sobrevive_erro_do_mongo(db, monkeypatch):
     await asyncio.sleep(0.2)
     task.cancel()
     assert await db.eventos.count_documents({}) == 1
+
+
+def test_desconhecidos_com_teto_por_minuto():
+    rec = syslog.Receptor({}, asyncio.Queue(), Mock())
+    for i in range(syslog.MAX_DESCONHECIDOS + 10):
+        rec.datagram_received(MSG, (f"192.0.2.{i}", 1))
+    rec.datagram_received(MSG, ("192.0.2.0", 1))  # já contado: continua na própria chave
+    desc = [k for k in rec.descartes if k[0] == "desconhecido"]
+    assert len(desc) == syslog.MAX_DESCONHECIDOS + 1
+    assert rec.descartes["desconhecido", "outros"] == 10
+    assert rec.descartes["desconhecido", "192.0.2.0"] == 2

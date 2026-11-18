@@ -165,10 +165,32 @@ void main() {
       expect(s.codeUnits.every((c) => c < 128), isTrue);
     });
 
+    test('bsd-syslog e remote-log-format só dentro de [:parse (, escolhidos por :do/on-error', () {
+      for (final x in [e, s]) {
+        for (final l in x.split('\n')) {
+          if (l.contains('bsd-syslog') || l.contains('remote-log-format')) expect(l, contains('[:parse ('));
+        }
+        expect(x, contains(':do {[[:parse ("/system logging action add'));
+        expect(x, contains('} on-error={[[:parse ("/system logging action add'));
+      }
+      expect(e, isNot(contains(r'$maior')));
+    });
+
+    test('preparar: passo de eventos dentro de :do com on-error (falha não aborta o script)', () {
+      final i = s.indexOf(':do {\n:if ([:typeof [:toip \$ipTunel]]');
+      final f = s.indexOf('} on-error={:put "Eventos nao ligados', i);
+      expect(i, greaterThan(-1));
+      expect(f, greaterThan(i));
+      expect(s.indexOf('action="nodebeat"'), inInclusiveRange(i, f));
+      expect(f, lessThan(s.indexOf('# 3) Resultado')));
+    });
+
     test(':parse com a string entre parênteses (o "." só concatena dentro de expressão)', () {
       expect(e, contains('[[:parse ("/system logging action add'));
       expect(e, contains('src-address=10.9.0.1 remote-log-format=default")]]'));
+      expect(e, contains('src-address=10.9.0.1 bsd-syslog=no")]]'));
       expect(s, contains(r'src-address=" . $ipTunel . " remote-log-format=default")]]'));
+      expect(s, contains(r'src-address=" . $ipTunel . " bsd-syslog=no")]]'));
       expect(s, contains('[[:parse ("/system logging action add'));
     });
 

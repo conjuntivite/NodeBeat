@@ -17,6 +17,7 @@ from .eventos import evento, ruido
 
 log = logging.getLogger(__name__)
 
+MAX_DESCONHECIDOS = 50  # IPs distintos contados por minuto; o resto vai para "outros"
 PORTA = 5514  # o compose publica 514 -> 5514 (container não-root, sem cap)
 
 
@@ -47,7 +48,11 @@ class Receptor(asyncio.DatagramProtocol):
             return
         ip = addr[0]
         if ip not in self.mapa:
-            self.descartes["desconhecido", ip] += 1
+            # ponytail: varre as chaves (<= 51); contador à parte se a varredura pesar. Teto contra origem forjada.
+            chave = ("desconhecido", ip)
+            if chave not in self.descartes and sum(1 for k in self.descartes if k[0] == "desconhecido") >= MAX_DESCONHECIDOS:
+                chave = ("desconhecido", "outros")
+            self.descartes[chave] += 1
             self.pedir_recarga()
             return
         mk_id = self.mapa[ip]

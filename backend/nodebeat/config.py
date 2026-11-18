@@ -55,6 +55,16 @@ def _ips(nome: str) -> list[str]:
         raise RuntimeError(f"{nome} inválida") from None
 
 
+def _dias(nome: str, padrao: int) -> int:
+    try:
+        v = int(os.environ.get(nome) or padrao)
+    except ValueError:
+        raise RuntimeError(f"{nome} inválida") from None
+    if v < 1:  # 0 ou negativo faria o Mongo apagar os eventos na hora
+        raise RuntimeError(f"{nome} inválida")
+    return v
+
+
 def load_settings() -> Settings:
     return Settings(
         _req("NODEBEAT_MONGO_URL"), _req("NODEBEAT_REDIS_URL"), _req("NODEBEAT_SECRET_KEY"),
@@ -62,4 +72,4 @@ def load_settings() -> Settings:
         _req("NODEBEAT_REFERENCE_HOST"), int(os.environ.get("NODEBEAT_INTERVAL_S") or 30),
         int(os.environ.get("NODEBEAT_INVENTARIO_S") or 3600), _redes("NODEBEAT_SEDE_REDES"),
         _ip_opcional("NODEBEAT_IP_ORIGEM"), _ips("NODEBEAT_IPS_PUBLICOS_SEDE"), _redes("NODEBEAT_REDES_TUNEL_EXTRA"),
-        int(os.environ.get("NODEBEAT_SYSLOG_DIAS") or 30))
+        _dias("NODEBEAT_SYSLOG_DIAS", 30))

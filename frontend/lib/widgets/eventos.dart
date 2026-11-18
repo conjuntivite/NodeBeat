@@ -21,6 +21,21 @@ const _filtros = [
   ('Erros', 'erro'),
 ];
 
+/// Rótulo do selo de cada tipo (o id cru fica só na API).
+const _rotulos = {
+  'login': 'Login',
+  'login_falha': 'Falha de login',
+  'logout': 'Logout',
+  'config': 'Configuração',
+  'interface': 'Interface',
+  'ipsec': 'IPsec',
+  'dhcp': 'DHCP',
+  'pppoe': 'PPPoE',
+  'reboot': 'Reboot',
+  'erro': 'Erro',
+  'outro': 'Outro',
+};
+
 const _periodos = [('24 h', Duration(hours: 24)), ('7 dias', Duration(days: 7)), ('30 dias', Duration(days: 30))];
 
 const _limite = 200;
@@ -162,7 +177,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
           for (var i = 0; i < _periodos.length; i++)
             ChoiceChip(label: Text(_periodos[i].$1), selected: _periodo == i, onSelected: (_) => _filtrar(() => _periodo = i)),
           SizedBox(
-            width: 240,
+            width: t.space16 * 4,
             child: TextField(
               controller: _busca,
               decoration: const InputDecoration(labelText: 'Buscar'),
@@ -185,7 +200,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
             padding: EdgeInsets.symmetric(vertical: t.space1),
             child: Wrap(spacing: t.space3, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
               Text(formatEventoHora(e.recebidoEm), style: dataStyle(context, TradeType.dataSm)),
-              Selo(e.tipo, _corSelo(t, e.tipo)),
+              Selo(_rotulos[e.tipo] ?? e.tipo, _corSelo(t, e.tipo)),
               Text(e.mensagem, style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
             ]),
           ),

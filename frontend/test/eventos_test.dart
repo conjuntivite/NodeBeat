@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -111,6 +112,67 @@ void main() {
     await t.pumpAndSettle();
     expect(find.textContaining('Configure NODEBEAT_IP_ORIGEM no servidor'), findsOneWidget);
     expect(find.text('Copiar'), findsNothing);
+  });
+
+  testWidgets('botão atualizar refaz a busca', (t) async {
+    final urls = await _show(t);
+    final n = urls.length;
+    await t.tap(find.byTooltip('Atualizar'));
+    await t.pump();
+    await t.pump();
+    expect(urls.length, n + 1);
+  });
+
+  Future<List<Completer<http.Response>>> lento(WidgetTester t, {int pageSize = 200}) async {
+    t.view.physicalSize = const Size(1000, 1600);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final pend = <Completer<http.Response>>[];
+    final api = ApiClient(
+      client: MockClient((req) {
+        final c = Completer<http.Response>();
+        pend.add(c);
+        return c.future;
+      }),
+    );
+    await t.pumpWidget(MaterialApp(
+        theme: tradeTheme(Brightness.light),
+        home: Scaffold(body: SingleChildScrollView(child: EventosCard(api: api, id: 'x', ipTunel: '198.51.100.7')))));
+    return pend;
+  }
+
+  http.Response resp(List<Map<String, dynamic>> l) => _json({'eventos': l, 'syslog_ativo': true});
+
+  testWidgets('resposta antiga não sobrescreve a nova', (t) async {
+    final pend = await lento(t);
+    await t.pump(); // pedido 0 (sem filtro) pendente
+    await t.tap(find.text('Falhas de login'));
+    await t.pump(); // pedido 1
+    pend[1].complete(resp([_ev('2026-03-05T13:00:00+00:00', 'login_falha', 'nova')]));
+    await t.pump();
+    pend[0].complete(resp([_ev('2026-03-05T12:00:00+00:00', 'login', 'antiga')]));
+    await t.pump();
+    await t.pump();
+    expect(find.text('nova'), findsOneWidget);
+    expect(find.text('antiga'), findsNothing);
+  });
+
+  testWidgets('duplo toque em Mostrar mais faz uma busca só', (t) async {
+    final pend = await lento(t);
+    await t.pump();
+    pend[0].complete(resp([for (var i = 0; i < 200; i++) _ev('2026-03-05T13:00:00+00:00', 'login', 'm$i')]));
+    await t.pump();
+    await t.pump();
+    await t.ensureVisible(find.text('Mostrar mais'));
+    await t.tap(find.text('Mostrar mais'));
+    await t.pump();
+    await t.tap(find.text('Mostrar mais'), warnIfMissed: false);
+    await t.pump();
+    expect(pend.length, 2);
+    pend[1].complete(resp([_ev('2026-03-05T12:00:00+00:00', 'login', 'extra')]));
+    await t.pump();
+    await t.pump();
+    expect(find.text('extra'), findsOneWidget);
   });
 
   for (final b in Brightness.values) {

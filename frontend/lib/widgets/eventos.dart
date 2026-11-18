@@ -69,26 +69,51 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
         limite: _limite,
       );
 
-  @override
-  Future<EventosPagina> buscar() async {
-    final p = await _pedir();
-    _extra.clear();
-    _temMais = p.eventos.length >= _limite;
-    return p;
-  }
+  int _seq = 0; // respostas de uma geração anterior são descartadas
+  bool _buscandoMais = false;
 
-  Future<void> _maisAntigos() async {
-    final todos = [...?dados?.eventos, ..._extra];
+  @override
+  Future<EventosPagina> buscar() => _pedir();
+
+  /// Recarrega a primeira página; só a última chamada vale.
+  @override
+  Future<void> carregar() async {
+    final s = ++_seq;
+    _buscandoMais = false;
     try {
-      final p = await _pedir(ate: todos.last.recebidoEm);
-      if (!mounted) return;
+      final p = await buscar();
+      if (!mounted || s != _seq) return;
       setState(() {
-        _extra.addAll(p.eventos);
+        dados = p;
+        erro = null;
+        _extra.clear();
         _temMais = p.eventos.length >= _limite;
       });
     } catch (e) {
-      if (!mounted || sessionExpired(context, e)) return;
+      if (!mounted || s != _seq || sessionExpired(context, e)) return;
       setState(() => erro = errorText(e));
+    }
+  }
+
+  Future<void> _maisAntigos() async {
+    if (_buscandoMais) return;
+    final s = _seq;
+    final todos = [...?dados?.eventos, ..._extra];
+    setState(() => _buscandoMais = true);
+    try {
+      final p = await _pedir(ate: todos.last.recebidoEm);
+      if (!mounted || s != _seq) return;
+      setState(() {
+        _extra.addAll(p.eventos);
+        _temMais = p.eventos.length >= _limite;
+        _buscandoMais = false;
+      });
+    } catch (e) {
+      if (!mounted || s != _seq || sessionExpired(context, e)) return;
+      setState(() {
+        erro = errorText(e);
+        _buscandoMais = false;
+      });
     }
   }
 
@@ -123,7 +148,10 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
     final eventos = [...?p?.eventos, ..._extra];
     return TradeCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Eventos', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
+        Row(children: [
+          Expanded(child: Text('Eventos', style: TradeType.heading4.copyWith(color: t.fgPrimary))),
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Atualizar', onPressed: carregar),
+        ]),
         SizedBox(height: t.space3),
         Wrap(spacing: t.space2, runSpacing: t.space2, children: [
           for (final (nome, tipo) in _filtros)
@@ -164,7 +192,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
         if (_temMais)
           Padding(
             padding: EdgeInsets.only(top: t.space3),
-            child: OutlinedButton(onPressed: _maisAntigos, child: const Text('Mostrar mais')),
+            child: OutlinedButton(onPressed: _buscandoMais ? null : _maisAntigos, child: const Text('Mostrar mais')),
           ),
       ]),
     );

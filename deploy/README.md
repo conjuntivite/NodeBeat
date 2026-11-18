@@ -69,6 +69,8 @@ O serviço `syslog` recebe o syslog UDP das MKs (host 514 -> container 5514) no 
 conntrack -D -p udp --dport 514
 ```
 
+Rode **depois que o `syslog` já estiver de pé** (uns 10 s após o `up`). Se o log do `syslog` mostrar descartes `('desconhecido', '172.30.0.1')` (gateway do compose no lugar do IP da MK), rode de novo.
+
 Conferência:
 
 ```

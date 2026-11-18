@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -61,6 +62,28 @@ HeartbeatPainter _painter(WidgetTester t) =>
         as HeartbeatPainter;
 
 void main() {
+  testWidgets('ícones copiam o IP no túnel e o IP público', (t) async {
+    final copiado = <String>[];
+    t.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copiado.add((call.arguments as Map)['text'] as String);
+      return null;
+    });
+    addTearDown(() => t.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await _show(t, alertas: []);
+    await t.tap(find.byTooltip('Copiar IP no túnel'));
+    await t.pump();
+    await t.tap(find.byTooltip('Copiar IP público'));
+    await t.pump();
+    expect(copiado, ['10.0.0.2', '203.0.113.9']);
+    expect(find.text('IP copiado'), findsWidgets);
+  });
+
+  testWidgets('IP público vazio: sem ícone de copiar', (t) async {
+    await _show(t, alertas: [], ipPublico: '');
+    expect(find.byTooltip('Copiar IP público'), findsNothing);
+    expect(find.byTooltip('Copiar IP no túnel'), findsOneWidget);
+  });
+
   testWidgets('MK com alerta: pílula "Alerta", batimento em warning e textos dos alertas', (t) async {
     await _show(t, alertas: ['CPU alta (92%)', 'Interface ether1 caída']);
     expect(find.textContaining('Alerta'), findsOneWidget);

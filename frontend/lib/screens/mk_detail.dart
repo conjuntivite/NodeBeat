@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
@@ -233,11 +234,30 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
     final status = e?.status ?? 'aguardando';
     final alert = _alertas.isNotEmpty;
     final nums = dataStyle(context, TradeType.dataSm);
-    Widget metric(String label, String value) => Padding(
+    // copiavel: ícone (só, com tooltip) ao lado do valor, para colar o IP em outro lugar
+    Widget metric(String label, String value, {bool copiavel = false}) => Padding(
           padding: EdgeInsets.only(right: t.space8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: TradeType.label.copyWith(color: t.fgSecondary)),
-            Text(value.trim().isEmpty ? '—' : value, style: nums),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(value.trim().isEmpty ? '—' : value, style: nums),
+              if (copiavel && value.trim().isNotEmpty) ...[
+                SizedBox(width: t.space1),
+                IconButton(
+                  tooltip: 'Copiar $label',
+                  icon: const Icon(Icons.copy, size: 16),
+                  color: t.fgSecondary,
+                  style: IconButton.styleFrom(
+                      minimumSize: Size.zero, padding: EdgeInsets.all(t.space1), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: value.trim()));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('IP copiado')));
+                    }
+                  },
+                ),
+              ],
+            ]),
           ]),
         );
     return TradeCard(
@@ -260,8 +280,8 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
           metric('Memória', e?.mem == null ? '—' : '${e!.mem!.round()}%'),
           metric('Uptime', e?.uptime ?? '—'),
           metric('Versão', e?.versao ?? '—'),
-          metric('IP no túnel', mk.ipTunel),
-          metric('IP público', mk.ipPublico),
+          metric('IP no túnel', mk.ipTunel, copiavel: true),
+          metric('IP público', mk.ipPublico, copiavel: true),
           metric('Usuário', mk.usuario),
         ]),
         SizedBox(height: t.space6),

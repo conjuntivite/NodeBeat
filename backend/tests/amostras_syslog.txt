@@ -1,0 +1,9 @@
+system,info,account user admin logged in from 203.0.113.10 via winbox ## login
+system,info,account user admin logged out from 203.0.113.10 via winbox ## logout
+system,info,account user admin logged out from 203.0.113.10 via telnet ## logout
+system,error,critical login failure for user admin from 203.0.113.10 via winbox ## login_falha
+system,info log rule added by admin ## config
+system,info log rule removed by admin ## config
+system,info log action changed by admin ## config
+system,info log rule added by tcp-msg(winbox):admin@203.0.113.10/terminal (*9 = /system logging add action=nodebeat topics=account) ## config
+system,info log action changed by tcp-msg(winbox):admin@203.0.113.10/terminal/action:2 () ## config

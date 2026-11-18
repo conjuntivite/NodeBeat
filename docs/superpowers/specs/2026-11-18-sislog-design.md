@@ -50,10 +50,13 @@ MK (src-address = ip_tunel, a LAN da MK)
 
 - O `src-address` da action remota **tem que ser o IP da LAN da MK** (o `ip_tunel` do cadastro). É isso que faz o pacote casar com a policy IPsec e o que identifica a MK no receptor.
 - No container, o processo roda como o usuário `nodebeat` (sem root), por isso ouve em **5514**. O compose mapeia a 514 do host para ela.
-- **A confirmar na 1ª tarefa (spike numa MK v7 de teste):**
-  - (a) O Docker preserva o IP de origem do UDP publicado. O DNAT do iptables preserva. O `userland-proxy` não preserva, mas só entra em tráfego que sai do próprio host.
-  - (b) O SonicWall deixa passar UDP 514 do túnel até o <IP_NODEBEAT_TUNEL>. O esperado é que sim, pelas regras VPN↔LAN que o SonicWall cria sozinho para cada túnel. Só se o teste mostrar bloqueio o usuário cria uma regra.
-  - (c) **Rota assimétrica:** o pacote entra pela eth1, mas a rota de volta para 10/8, 172.16/12 e 192.168/16 sai pela eth0 (`rotas-tunel.sh`). Com `rp_filter=1` (estrito), o kernel descarta o pacote antes do Docker. Se for o caso, a correção (chamada do designer) é `net.ipv4.conf.eth1.rp_filter=2` (modo frouxo) no CT, persistido em `/etc/sysctl.d/` e anotado no `deploy/README.md`.
+- **Confirmado no spike** (`docs/spike-syslog.md`):
+  - o pacote chega sem regra nova no SonicWall;
+  - o `rp_filter` do CT já é frouxo;
+  - o Docker preserva o IP de origem pelo DNAT.
+- **Armadilha do conntrack:** um fluxo UDP antigo continua indo para o destino anterior, e a MK nunca para de mandar. Por isso:
+  - o container `syslog` tem **IP fixo** na rede do compose;
+  - o deploy roda `conntrack -D -p udp --dport 514` depois de subir ou recriar o serviço (o pacote `conntrack` já está no CT).
 
 ## Receptor (`backend/nodebeat/syslog.py`, `python -m nodebeat.syslog`)
 
@@ -65,6 +68,9 @@ MK (src-address = ip_tunel, a LAN da MK)
 - **IP → MK:** um dicionário `ip_tunel → mk_id`, carregado do Mongo ao subir e recarregado a cada 60 s. Também recarrega na hora quando chega um IP desconhecido, no máximo uma vez a cada 10 s. Isso cobre MK recém-cadastrada sem martelar o Mongo. IP que continua desconhecido é descartado e contado. A contagem vai para o log do container, uma linha por minuto no máximo, com os IPs.
 - **Gravação em lote:** os eventos vão para uma fila em memória e entram com `insert_many` a cada 1 s ou a cada 500 eventos. A fila tem teto de 10 000. Acima disso o evento é descartado e contado, para o processo não estourar a memória se o Mongo travar.
 - **Limite por MK:** no máximo 50 eventos/s por MK, numa janela simples de 1 s. O excedente é descartado e contado no mesmo log. `ponytail:` janela fixa; troque por token bucket se aparecer rajada legítima perdida.
+- **Descartes de ruído (spike):** antes da fila, sem contar como evento:
+  - linha com o tópico `debug`;
+  - `login`/`logout` do usuário `monitor` vindo de `NODEBEAT_IP_ORIGEM`, que é o próprio NodeBeat a cada 30 s. Gera ≈ 2 880 linhas por dia por MK.
 - **Saúde:** grava `syslog:vivo` no Redis com TTL de 90 s a cada 30 s, no mesmo padrão do `worker:vivo`. O `/api/status` **não** passa a depender disso nesta fase. Fica só para consulta e para o MCP depois.
 - O receptor não fala com o worker nem com a API. Se ele cair, o resto segue igual (`restart: unless-stopped`).
 
@@ -72,9 +78,9 @@ MK (src-address = ip_tunel, a LAN da MK)
 
 Entrada: bytes do datagrama. Saída: dicionário do evento.
 
-1. `<PRI>` → `severidade` (PRI mod 8 → `emerg…debug`). Sem PRI, fica `info`.
-2. Com `bsd-syslog=yes`, a linha traz `Mmm dd hh:mm:ss host`. O parser aceita a linha com ou sem esse cabeçalho e guarda o horário da MK cru em `hora_mk` (texto). **A data de verdade é `recebido_em`**, a hora do NodeBeat, porque relógio de MK deriva.
-3. Prefixo de tópicos do RouterOS (`system,info,account `) → `topicos: ["system","info","account"]`. O resto é `mensagem`. **A confirmar no spike:** se o RouterOS manda o prefixo de tópicos no syslog remoto em v6 e v7, com e sem `bsd-syslog`. Se não mandar, a classificação cai só nas regras de texto abaixo, e `topicos` fica a partir da severidade.
+1. **Formato (spike):** v6 com `bsd-syslog=no` e v7 com `remote-log-format=default` mandam só `topicos mensagem`, sem PRI, sem hora e sem nome da MK. Ex.: `system,error,critical login failure for user admin from 203.0.113.10 via winbox`. **A data é `recebido_em`**, a hora do NodeBeat.
+2. **Tópicos:** o 1º token, separado por vírgula → `topicos: ["system","error","critical"]`. O resto é `mensagem`. Uma linha cujo 1º token não parece lista de tópicos (`[a-z0-9-]+(,[a-z0-9-]+)*`) fica com `topicos: []` e `mensagem` inteira. Isso é tolerância a MK mal configurada.
+3. **Severidade pelos tópicos:** `critical` → `crit`, `error` → `err`, `warning` → `warning`, `debug` → `debug`, senão `info`.
 4. `tipo` + `campos` por uma tabela de regex, avaliadas em ordem e parando na primeira que casar:
 
 | tipo | exemplo de mensagem (RouterOS) | campos |
@@ -82,7 +88,7 @@ Entrada: bytes do datagrama. Saída: dicionário do evento.
 | `login` | `user admin logged in from 10.0.0.5 via winbox` | `usuario`, `ip`, `via` |
 | `login_falha` | `login failure for user admin from 10.0.0.5 via ssh` | `usuario`, `ip`, `via` |
 | `logout` | `user admin logged out from 10.0.0.5 via winbox` | `usuario`, `ip`, `via` |
-| `config` | `address added by admin`, `... changed by admin` | `usuario`, `objeto` |
+| `config` | v6 `log rule added by admin`. v7 `log rule added by tcp-msg(winbox):admin@203.0.113.10/terminal (*9 = ...)` | `usuario`, `objeto` (`log rule`), `acao` (`added`/`changed`/`removed`), e na v7 `via` e `ip` |
 | `interface` | `ether1 link down`, `ether1 link up (speed 1G, full duplex)` | `interface`, `estado` (`up`/`down`) |
 | `ipsec` | tópico `ipsec` (ex.: `phase1 negotiation failed`) | `peer` quando houver IP |
 | `dhcp` | `dhcp1 assigned 192.168.88.10 to AA:BB:CC:DD:EE:FF` | `servidor`, `ip`, `mac` |
@@ -91,12 +97,12 @@ Entrada: bytes do datagrama. Saída: dicionário do evento.
 | `erro` | severidade ≤ `err` ou tópico `critical`/`error` sem regra acima | — |
 | `outro` | o resto | — |
 
-As regex finais saem de **amostras reais** colhidas no spike (uma MK v7 e uma MK v6 de teste), que viram os casos de teste. A tabela acima é o ponto de partida.
+As amostras reais do spike (anonimizadas) estão em `backend/tests/amostras_syslog.txt` e viram casos de teste. Os exemplos de `interface`, `dhcp`, `pppoe`, `ipsec` e `reboot` não apareceram no spike e seguem o formato do manual. Ajustar quando aparecerem em produção.
 
 ## Armazenamento (coleção `eventos`)
 
 ```
-{ mk_id: str, recebido_em: datetime(UTC), hora_mk: str|null, severidade: str,
+{ mk_id: str, recebido_em: datetime(UTC), severidade: str,
   topicos: [str], tipo: str, campos: {..}, mensagem: str }
 ```
 
@@ -124,19 +130,22 @@ As regex finais saem de **amostras reais** colhidas no spike (uma MK v7 e uma MK
 - **O `src-address` sai do cadastro, não da descoberta.** O `ip_tunel` cadastrado é o que o receptor usa para identificar a MK, então é ele que vai na MK. Chamada do designer:
   - **Script curto "Ligar eventos" por MK:** fica no detail da MK (botão no cartão Eventos), gerado no Flutter a partir do `ip_tunel` da MK. O `NODEBEAT_IP_ORIGEM` vem do `/api/preparar-mk` que já existe. Esse é o caminho das ~20 MKs em produção, que não podem rodar o script completo de novo (ele troca a senha do `monitor`).
   - **Script completo do Preparar MK:** ganha o mesmo passo, mas só quando a descoberta achou **exatamente um** IP de túnel. Com zero ou vários, pula o passo e imprime "eventos não ligados: use Ligar eventos no detalhe da MK depois do cadastro". O passo é idempotente: remove as configurações anteriores pelo nome e recria.
-- Conteúdo, válido em v6 ≥ 6.43 e v7:
+- Conteúdo validado no spike, um por versão. O script escolhe pela versão da MK e roda tudo num bloco `{}` só:
 
 ```
 /system logging action remove [find where name="nodebeat"]
-/system logging action add name=nodebeat target=remote remote=$ipOrigem remote-port=514 src-address=$ipTunel bsd-syslog=yes
+# v6:
+/system logging action add name=nodebeat target=remote remote=$ipOrigem remote-port=514 src-address=$ipTunel bsd-syslog=no
+# v7 (a v6 rejeita o parâmetro ao ler o script, por isso vai via [:parse "..."]):
+/system logging action add name=nodebeat target=remote remote=$ipOrigem remote-port=514 src-address=$ipTunel remote-log-format=default
 /system logging remove [find where action="nodebeat"]
-:foreach t in={"account";"system";"interface";"ipsec";"dhcp";"pppoe";"critical";"error"} do={
+:foreach t in={"account,!debug";"system,!debug";"interface,!debug";"ipsec,!debug";"dhcp,!debug";"pppoe,!debug";"critical";"error"} do={
   /system logging add topics=$t action=nodebeat
 }
 ```
 
-  - `$ipOrigem` = `NODEBEAT_IP_ORIGEM` (já existe). `$ipTunel` = o IP da LAN que o script já descobre.
-  - **A confirmar no spike:** nomes de tópico aceitos na v6 e se `system` sem `!debug` traz ruído (debug fica desligado por padrão nas MKs).
+  - **Versão:** `[:tonum [:pick $ver 0 [:find $ver "."]]] >= 7`, com `$ver` = `[/system resource get version]`, como o Preparar MK já faz.
+  - `$ipOrigem` = `NODEBEAT_IP_ORIGEM` (já existe). `$ipTunel` = o `ip_tunel` cadastrado (script curto) ou o único IP descoberto (script completo).
   - `/system logging` não aceita `comment` em todas as versões, por isso a limpeza é por `action="nodebeat"`.
 - Testes do `mk_script.dart` cobrem o passo novo e o script curto, no mesmo estilo dos atuais.
 
@@ -146,10 +155,11 @@ As regex finais saem de **amostras reais** colhidas no spike (uma MK v7 e uma MK
 - Env novas: `NODEBEAT_SYSLOG_BIND_IP` (no CT: o IP da eth1, <IP_NODEBEAT_TUNEL>, só no `.env`) e `NODEBEAT_SYSLOG_DIAS` (padrão 30). `.env.example` e `deploy/README.md` ganham as duas, com placeholders.
 - `config.Settings` ganha `syslog_dias: int = 30`.
 - O `rotas-tunel.sh` não muda: ele cuida da saída, e aqui o tráfego é de entrada.
+- IP fixo do `syslog` na rede do compose: `networks: default: ipv4_address: 172.30.0.50`. Depois de `up`, rodar `conntrack -D -p udp --dport 514` no CT (README).
 
 ## Testes
 
-- `test_eventos.py`: parser e classificação com as amostras reais do spike (uma por linha da tabela), linha sem PRI, sem cabeçalho BSD, UTF-8 inválido e linha gigante.
+- `test_eventos.py`: parser e classificação com as amostras reais do spike, linha sem tópicos, UTF-8 inválido e linha gigante.
 - `test_syslog.py`: receptor com socket UDP real em `127.0.0.1` e porta efêmera, Mongo `mongomock-motor`. Cobre IP desconhecido descartado, IP cadastrado gravado, limite por MK e teto da fila.
 - `test_api_eventos.py`: filtros, `limite`, 404, `syslog_ativo` e exigência de sessão.
 - Flutter: `eventos_test.dart` (chips filtram, aviso de syslog inativo, temas claro e escuro).

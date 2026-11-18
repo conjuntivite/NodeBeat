@@ -70,13 +70,15 @@ const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-ap
 }
 /ip firewall filter set $f disabled=no''';
 
-/// MK já cadastrada: a api-ssl passa a aceitar também os IPs públicos da sede (o botão Reiniciar cai no IP público quando
-/// o túnel não responde). Mexe só nas três travas: serviço, usuário monitor (sem trocar a senha) e firewall.
+/// MK já cadastrada: libera o botão Reiniciar do painel, pelo túnel e pelo IP público (o painel cai no IP público quando
+/// o túnel não responde). Dá a permissão de reboot ao grupo monitor e abre as três travas da api-ssl para o NodeBeat e os
+/// IPs da sede: serviço, usuário monitor (sem trocar a senha) e firewall.
 /// available-from só existe a partir da 7.24 (e nunca na v6): tenta e, se a MK recusar, usa address.
-String scriptLiberarReinicioPublico({required String ipOrigem, required List<String> ipsSede}) => '''{
+String scriptLiberarReinicio({required String ipOrigem, required List<String> ipsSede}) => '''{
 :if ([:len [/user find where name="monitor"]] = 0) do={
   :error "Usuario monitor nao existe: rode o Preparar MK primeiro"
 }
+/user group set monitor policy=read,api,reboot
 ${_lista(ipOrigem, ipsSede)}
 :do {
   [[:parse ("/ip service set api-ssl available-from=" . \$lista)]]
@@ -87,12 +89,10 @@ ${_lista(ipOrigem, ipsSede)}
 /ip firewall address-list remove [find where list="nodebeat-sede"]
 ${ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip').join('\n')}
 $_travaWan
-:put "OK. api-ssl liberada para o NodeBeat e para a sede (lista nodebeat-sede)"
+:put "OK. Reiniciar liberado pelo tunel e pelo IP publico (lista nodebeat-sede)"
 }
 ''';
 
-/// MK já cadastrada: só libera o botão "Reiniciar" do painel.
-const scriptLiberarReinicio = '/user group set monitor policy=read,api,reboot';
 
 const scriptDesfazer = r'''/ip firewall filter remove [find where comment="monitor-icmp"]
 /ip firewall filter remove [find where comment="monitor-api"]

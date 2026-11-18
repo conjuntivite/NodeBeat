@@ -60,10 +60,6 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
           : ListView(padding: EdgeInsets.all(t.space6), children: [
               _novaMk(context, t, i),
               SizedBox(height: t.space4),
-              _card(t, 'MK já cadastrada: liberar o botão Reiniciar',
-                  'Cole no terminal da MK (logado como admin). Só acrescenta a permissão de reinício ao usuário monitor.',
-                  scriptLiberarReinicio, 'copiar-reinicio', 'Comando copiado'),
-              SizedBox(height: t.space4),
               _reinicioPublico(t, i),
               SizedBox(height: t.space4),
               _card(t, 'Desfazer tudo', 'Remove da MK o usuário, o grupo, os certificados e as regras de firewall, e desliga a api-ssl.',
@@ -125,7 +121,7 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
 
   /// Sem os IPs da sede o script só reabriria para o próprio NodeBeat: não mostra.
   Widget _reinicioPublico(TradeTokens t, PrepararMkInfo i) {
-    const titulo = 'MK já cadastrada: liberar o reinício pelo IP público';
+    const titulo = 'MK já cadastrada: liberar o botão Reiniciar';
     if (i.ipOrigem == null || i.ipsSede.isEmpty) {
       return TradeCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -139,11 +135,11 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
     return _card(
         t,
         titulo,
-        'Cole no terminal da MK (logado como admin). A api-ssl passa a aceitar também os IPs públicos da sede, para o '
-            'botão Reiniciar funcionar com o túnel caído. Substitui os IPs permitidos na api-ssl e no usuário monitor (outra '
+        'Cole no terminal da MK (logado como admin). Dá ao usuário monitor a permissão de reinício e faz a api-ssl '
+            'aceitar também os IPs públicos da sede, para o botão Reiniciar funcionar até com o túnel caído. Substitui os IPs permitidos na api-ssl e no usuário monitor (outra '
             'ferramenta que use a api-ssl perde o acesso). Não troca a senha do usuário monitor.',
-        scriptLiberarReinicioPublico(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
-        'copiar-reinicio-publico',
+        scriptLiberarReinicio(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
+        'copiar-reinicio',
         'Script copiado');
   }
 

@@ -75,7 +75,9 @@ void main() {
   });
 
   test('liberar reinício e desfazer', () {
-    expect(scriptLiberarReinicio, '/user group set monitor policy=read,api,reboot');
+    final r = scriptLiberarReinicio(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10']);
+    expect(r, contains('/user group set monitor policy=read,api,reboot'));
+    expect(r.indexOf('policy=read,api,reboot'), greaterThan(r.indexOf(':error "Usuario monitor nao existe')));
     for (final x in ['monitor-icmp', '/user remove', '/user group remove', '/certificate remove', 'api-ssl disabled=yes']) {
       expect(scriptDesfazer, contains(x));
     }
@@ -119,7 +121,7 @@ void main() {
   });
 
   test('terminal da MK: sem "?" (abre a ajuda até dentro de aspas) e termina com Enter', () {
-    for (final x in [s, scriptDesfazer, scriptLiberarReinicio]) {
+    for (final x in [s, scriptDesfazer, scriptLiberarReinicio(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10'])]) {
       expect(x, isNot(contains('?')));
     }
     expect(s.endsWith('}\n'), isTrue);
@@ -230,7 +232,7 @@ void main() {
   });
 
   group('reinício pelo IP público', () {
-    final curto = scriptLiberarReinicioPublico(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10', '203.0.113.11']);
+    final curto = scriptLiberarReinicio(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10', '203.0.113.11']);
     final completo = scriptPreparar(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10', '203.0.113.11'], senha: 'Abc123');
 
     test('script curto libera as três travas para a sede', () {

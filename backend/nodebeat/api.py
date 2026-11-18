@@ -4,14 +4,14 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from nodebeat import auth, crypto, history, inventario, routeros, store, webhook, worker
+from nodebeat import auth, crypto, eventos, history, inventario, routeros, store, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
@@ -304,6 +304,18 @@ def create_app(db, r, settings) -> FastAPI:
         if erro:
             return JSONResponse({"detalhe": erro}, status_code=502)
         return await _inv(id)
+
+    @mks.get("/mks/{id}/eventos")
+    async def eventos_mk(id: str, tipo: list[str] | None = Query(None), desde: datetime | None = None,
+                         ate: datetime | None = None, q: str | None = Query(None, max_length=100),
+                         limite: int = Query(200, ge=1, le=1000)) -> dict:
+        await _achar(id)
+        if tipo and any(t not in eventos.TIPOS for t in tipo):
+            raise HTTPException(422, [{"loc": ["query", "tipo"], "msg": "Valor inválido"}])
+        lista = await store.listar_eventos(db, id, tipos=tipo, desde=desde, ate=ate, q=q, limite=limite)
+        ultimo = await store.ultimo_evento(db, id)
+        return {"eventos": [{k: v for k, v in e.items() if k != "mk_id"} for e in lista],
+                "syslog_ativo": ultimo is not None and ultimo > datetime.now(UTC) - timedelta(hours=24)}
 
     @mks.get("/mks/{id}/portas/conferir")
     async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),

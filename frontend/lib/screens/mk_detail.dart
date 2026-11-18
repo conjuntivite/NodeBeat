@@ -7,6 +7,7 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/heartbeat.dart';
+import '../widgets/eventos.dart';
 import '../widgets/inventario.dart';
 
 class MkDetailScreen extends StatefulWidget {
@@ -216,6 +217,8 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               PortasCard(key: ValueKey('p$_inv'), api: widget.api, id: widget.id),
               SizedBox(height: t.space4),
               IpsCard(key: ValueKey('i$_inv'), api: widget.api, id: widget.id),
+              SizedBox(height: t.space4),
+              EventosCard(key: ValueKey('e$_inv'), api: widget.api, id: widget.id, ipTunel: mk.ipTunel),
               SizedBox(height: t.space4),
               _history(t),
             ]),

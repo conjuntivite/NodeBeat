@@ -142,34 +142,6 @@ class _ConferirCampoState extends State<ConferirCampo> {
   }
 }
 
-/// Carrega um recurso do inventário; erros (exceto 401) viram texto no cartão.
-mixin _Carrega<W extends StatefulWidget, T> on State<W> {
-  T? dados;
-  String? erro;
-  Future<T> buscar();
-
-  Future<void> carregar() async {
-    try {
-      final d = await buscar();
-      if (mounted) {
-        setState(() {
-          dados = d;
-          erro = null;
-        });
-      }
-    } catch (e) {
-      if (!mounted || sessionExpired(context, e)) return;
-      setState(() => erro = errorText(e));
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    carregar();
-  }
-}
-
 Widget _vazio(TradeTokens t, String? erro, String texto) =>
     Text(erro ?? texto, style: TradeType.bodyMd.copyWith(color: erro != null ? t.negative : t.fgSecondary));
 
@@ -209,7 +181,7 @@ class PortasCard extends StatefulWidget {
   State<PortasCard> createState() => _PortasCardState();
 }
 
-class _PortasCardState extends State<PortasCard> with _Carrega<PortasCard, InventarioMk> {
+class _PortasCardState extends State<PortasCard> with Carrega<PortasCard, InventarioMk> {
   String _proto = 'tcp';
 
   @override
@@ -280,7 +252,7 @@ class IpsCard extends StatefulWidget {
   State<IpsCard> createState() => _IpsCardState();
 }
 
-class _IpsCardState extends State<IpsCard> with _Carrega<IpsCard, List<IpVisto>> {
+class _IpsCardState extends State<IpsCard> with Carrega<IpsCard, List<IpVisto>> {
   InventarioMk? _inv;
 
   @override

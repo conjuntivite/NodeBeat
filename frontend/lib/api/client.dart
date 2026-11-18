@@ -130,6 +130,28 @@ class PrepararMkInfo {
   final List<String> ipsSede;
 }
 
+class Evento {
+  Evento.fromJson(Map<String, dynamic> j)
+      : recebidoEm = DateTime.parse(j['recebido_em']),
+        severidade = j['severidade'] ?? '',
+        tipo = j['tipo'] ?? '',
+        mensagem = j['mensagem'] ?? '',
+        topicos = List<String>.from(j['topicos'] ?? const []),
+        campos = Map<String, dynamic>.from(j['campos'] ?? const {});
+  final DateTime recebidoEm;
+  final String severidade, tipo, mensagem;
+  final List<String> topicos;
+  final Map<String, dynamic> campos;
+}
+
+class EventosPagina {
+  EventosPagina.fromJson(Map<String, dynamic> j)
+      : eventos = [for (final e in j['eventos'] ?? const []) Evento.fromJson(e)],
+        syslogAtivo = j['syslog_ativo'] ?? false;
+  final List<Evento> eventos;
+  final bool syslogAtivo;
+}
+
 class FaixaRede {
   FaixaRede.fromJson(Map<String, dynamic> j)
       : rede = j['rede'],
@@ -330,6 +352,18 @@ class ApiClient {
 
   Future<Conferencia> conferirIp(String id, String ip) async =>
       Conferencia.fromJson(await _send('GET', '/mks/$id/ips/conferir?ip=${Uri.encodeQueryComponent(ip)}'));
+
+  Future<EventosPagina> eventos(String id,
+      {List<String> tipos = const [], DateTime? desde, DateTime? ate, String? q, int limite = 200}) async {
+    final query = [
+      for (final t in tipos) 'tipo=${Uri.encodeQueryComponent(t)}',
+      if (desde != null) 'desde=${Uri.encodeQueryComponent(desde.toUtc().toIso8601String())}',
+      if (ate != null) 'ate=${Uri.encodeQueryComponent(ate.toUtc().toIso8601String())}',
+      if (q != null && q.isNotEmpty) 'q=${Uri.encodeQueryComponent(q)}',
+      'limite=$limite',
+    ].join('&');
+    return EventosPagina.fromJson(await _send('GET', '/mks/$id/eventos?$query'));
+  }
 
   Future<void> esquecerIp(String id, String ip) => _send('DELETE', '/mks/$id/ips/$ip');
 }

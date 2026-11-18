@@ -115,3 +115,31 @@ class TradeCard extends StatelessWidget {
     );
   }
 }
+
+/// Carrega um recurso do inventário; erros (exceto 401) viram texto no cartão.
+mixin Carrega<W extends StatefulWidget, T> on State<W> {
+  T? dados;
+  String? erro;
+  Future<T> buscar();
+
+  Future<void> carregar() async {
+    try {
+      final d = await buscar();
+      if (mounted) {
+        setState(() {
+          dados = d;
+          erro = null;
+        });
+      }
+    } catch (e) {
+      if (!mounted || sessionExpired(context, e)) return;
+      setState(() => erro = errorText(e));
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    carregar();
+  }
+}

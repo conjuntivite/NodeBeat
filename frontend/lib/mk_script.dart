@@ -13,10 +13,35 @@ String gerarSenha([Random? rng]) {
 /// Só ASCII. Tudo que pode falhar é checado antes da primeira alteração (`:error` aborta o bloco).
 /// [ipsSede]: todas as saídas públicas da sede (load balance), liberadas para ping numa address-list.
 String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
+    .replaceAll('@EVENTOS@', _eventos)
+    .replaceAll('@IP_TUNEL_STR@', '" . \$ipTunel . "')
+    .replaceAll('@IP_TUNEL@', r'$ipTunel')
     .replaceAll('@IP_ORIGEM@', ipOrigem)
     .replaceAll('@SEDE_LISTA@',
         ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip comment="NodeBeat"').join('\n'))
     .replaceAll('@SENHA@', senha);
+
+/// MK já cadastrada: liga só o envio de log (syslog) para o NodeBeat. Não mexe em usuário, certificado, api-ssl nem filtros.
+String scriptLigarEventos({required String ipOrigem, required String ipTunel}) => '''{
+:local ver [/system resource get version]
+:local maior [:tonum [:pick \$ver 0 [:find \$ver "."]]]
+$_eventos}
+'''
+    .replaceAll('@IP_ORIGEM@', ipOrigem)
+    .replaceAll('@IP_TUNEL_STR@', ipTunel)
+    .replaceAll('@IP_TUNEL@', ipTunel);
+
+/// Passo de eventos, colado dentro de um bloco `{}` que já tem `$maior`. Idempotente.
+/// Só a v7 aceita remote-log-format e só a v6 aceita bsd-syslog; a v6 rejeita parâmetro desconhecido ao ler o script, por isso o :parse.
+const _eventos = r'''/system logging remove [find where action="nodebeat"]
+/system logging action remove [find where name="nodebeat"]
+:if ($maior >= 7) do={
+  [[:parse "/system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL_STR@ remote-log-format=default"]]
+} else={
+  /system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL@ bsd-syslog=no
+}
+:foreach t in={"account,!debug";"system,!debug";"interface,!debug";"ipsec,!debug";"dhcp,!debug";"pppoe,!debug";"critical";"error"} do={/system logging add topics=$t action=nodebeat}
+''';
 
 /// MK já cadastrada: só libera o botão "Reiniciar" do painel.
 const scriptLiberarReinicio = '/user group set monitor policy=read,api,reboot';
@@ -28,7 +53,9 @@ const scriptDesfazer = r'''/ip firewall filter remove [find where comment="monit
 /user group remove [find where name="monitor"]
 /ip service set api-ssl disabled=yes certificate=none
 /certificate remove [find where name="monitor-api"]
-/certificate remove [find where name="monitor-ca"]''';
+/certificate remove [find where name="monitor-ca"]
+/system logging remove [find where action="nodebeat"]
+/system logging action remove [find where name="nodebeat"]''';
 
 const _modelo = r'''{
 :local ipOrigem "@IP_ORIGEM@"
@@ -168,6 +195,12 @@ const _modelo = r'''{
 # firewall que bloqueia a WAN derruba a api-ssl que chega pelo tunel: libera so o NodeBeat, so via IPsec
 /ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
+
+# eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
+:if ([:typeof [:toip $ipTunel]] = "ip") do={
+@EVENTOS@} else={
+  :put "Eventos nao ligados: use Ligar eventos no detalhe da MK depois do cadastro"
+}
 
 # 3) Resultado.
 :local modo "address"

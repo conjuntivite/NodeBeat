@@ -134,4 +134,40 @@ void main() {
     expect(s, contains(r':foreach g in=[/ip route get $rota gateway] do={'));
     expect(s, isNot(contains(r'[:tostr [/ip route get $rota gateway]]')));
   });
+
+  group('eventos (syslog)', () {
+    final e = scriptLigarEventos(ipOrigem: '192.0.2.10', ipTunel: '10.9.0.1');
+
+    test('ligar eventos: action, v7 dentro de :parse, 8 topics, sem firewall, ASCII', () {
+      expect(e, contains('remote=192.0.2.10'));
+      expect(e, contains('src-address=10.9.0.1'));
+      expect(e, contains('remote-port=514'));
+      expect(e, contains('bsd-syslog=no'));
+      final m = RegExp('remote-log-format=default').firstMatch(e)!;
+      expect(e.substring(e.lastIndexOf('\n', m.start) + 1, m.start), contains('[:parse'));
+      for (final t in ['account', 'system', 'interface', 'ipsec', 'dhcp', 'pppoe']) {
+        expect(e, contains('"$t,!debug"'));
+      }
+      expect(e, contains('"critical";"error"'));
+      expect(e, isNot(contains('firewall')));
+      expect(e, isNot(contains('@')));
+      expect(e.codeUnits.every((c) => c < 128), isTrue);
+      expect(e.endsWith('}\n'), isTrue);
+    });
+
+    test('preparar: passo de eventos entre monitor-api e Resultado, só com IP de túnel único', () {
+      expect(s, contains('action="nodebeat"'));
+      expect(s, contains(r'[:typeof [:toip $ipTunel]] = "ip"'));
+      expect(s, contains('Eventos nao ligados'));
+      expect(s, contains('remote=10.9.9.9'));
+      expect(s.indexOf('action="nodebeat"'), greaterThan(s.indexOf('comment="monitor-api"')));
+      expect(s.indexOf('action="nodebeat"'), lessThan(s.indexOf('# 3) Resultado')));
+      expect(s.codeUnits.every((c) => c < 128), isTrue);
+    });
+
+    test('desfazer remove regras e action nodebeat', () {
+      expect(scriptDesfazer, contains('/system logging remove [find where action="nodebeat"]'));
+      expect(scriptDesfazer, contains('/system logging action remove [find where name="nodebeat"]'));
+    });
+  });
 }

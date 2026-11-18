@@ -228,4 +228,52 @@ void main() {
       expect(scriptDesfazer, contains('/system logging action remove [find where name="nodebeat"]'));
     });
   });
+
+  group('reinício pelo IP público', () {
+    final curto = scriptLiberarReinicioPublico(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10', '203.0.113.11']);
+    final completo = scriptPreparar(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10', '203.0.113.11'], senha: 'Abc123');
+
+    test('script curto libera as três travas para a sede', () {
+      expect(curto, contains(':local lista "192.0.2.53/32"'));
+      expect(curto, contains(':set lista (\$lista . ",203.0.113.10/32")'));
+      expect(curto, contains(':set lista (\$lista . ",203.0.113.11/32")'));
+      expect(curto, contains('[[:parse ("/ip service set api-ssl available-from=" . \$lista)]]'));
+      expect(curto, contains('/ip service set api-ssl address=\$lista'));
+      expect(curto, contains('/user set monitor address=\$lista'));
+      expect(curto, contains('/ip firewall address-list remove [find where list="nodebeat-sede"]'));
+      expect(curto, contains('/ip firewall address-list add list=nodebeat-sede address=203.0.113.10'));
+      expect(curto, contains('/ip firewall address-list add list=nodebeat-sede address=203.0.113.11'));
+      expect(curto, contains('dst-port=8729'));
+      expect(curto, contains('src-address-list=nodebeat-sede'));
+      expect(curto, contains('comment=monitor-api-wan'));
+      expect(curto, isNot(contains('password')));
+    });
+
+    test('regra nova sem monitor-icmp cai na primeira regra input, ou fica no fim', () {
+      expect(curto, contains(':local antes [/ip firewall filter find where comment="monitor-icmp"]'));
+      expect(curto, contains(':set antes [/ip firewall filter find where chain=input && !dynamic]'));
+      expect(curto, contains(':if ([:len \$antes] > 0) do={'));
+    });
+
+    test('script curto: bloco único, ASCII e linhas de até 80 colunas', () {
+      expect(curto.trimLeft().startsWith('{'), isTrue);
+      expect(curto.codeUnits.every((c) => c < 128), isTrue);
+      for (final l in curto.split('\n')) {
+        expect(l.length, lessThanOrEqualTo(80), reason: l);
+      }
+    });
+
+    test('Preparar usa a lista no serviço, no usuário e cria monitor-api-wan', () {
+      expect(completo, contains('available-from=" . \$lista)'));
+      expect(completo, contains('address=\$lista'));
+      expect(completo, contains('/user add name=monitor group=monitor password=\$senha address=\$lista'));
+      expect(completo, contains('/user set monitor group=monitor password=\$senha address=\$lista'));
+      expect(completo, contains('comment=monitor-api-wan'));
+      expect(completo, isNot(contains('/32")]]')));
+    });
+
+    test('Desfazer remove monitor-api-wan', () {
+      expect(scriptDesfazer, contains('/ip firewall filter remove [find where comment="monitor-api-wan"]'));
+    });
+  });
 }

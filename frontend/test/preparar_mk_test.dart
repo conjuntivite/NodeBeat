@@ -71,9 +71,23 @@ void main() {
 
   testWidgets('sem as variáveis no servidor: avisa o que falta e não mostra o script', (t) async {
     await _show(t, info: {'ip_origem': '10.9.9.9', 'ips_publicos_sede': []});
-    expect(find.textContaining('NODEBEAT_IPS_PUBLICOS_SEDE'), findsOneWidget);
+    expect(find.textContaining('NODEBEAT_IPS_PUBLICOS_SEDE'), findsWidgets);
     expect(find.byKey(const Key('copiar-preparar')), findsNothing);
     expect(find.byKey(const Key('copiar-reinicio')), findsOneWidget); // não depende do servidor
+  });
+
+  testWidgets('liberar reinício pelo IP público tem seu Copiar', (t) async {
+    final copiado = await _show(t);
+    expect(find.text('MK já cadastrada: liberar o reinício pelo IP público'), findsOneWidget);
+    await t.tap(find.byKey(const Key('copiar-reinicio-publico')));
+    await t.pump();
+    expect(copiado, [scriptLiberarReinicioPublico(ipOrigem: '10.9.9.9', ipsSede: ['203.0.113.5'])]);
+  });
+
+  testWidgets('test_liberar_publico_sem_ips_sede: avisa e não mostra o script', (t) async {
+    await _show(t, info: {'ip_origem': '10.9.9.9', 'ips_publicos_sede': []});
+    expect(find.text('Configure NODEBEAT_IPS_PUBLICOS_SEDE no servidor'), findsOneWidget);
+    expect(find.byKey(const Key('copiar-reinicio-publico')), findsNothing);
   });
 
   testWidgets('renderiza no tema escuro sem exceção', (t) async {

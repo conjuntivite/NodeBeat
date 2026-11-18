@@ -178,8 +178,11 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
         ) ??
         false; // sem ctrl.dispose(): o diálogo ainda usa o controlador na animação de saída
     if (!ok) return;
-    await _run(() => widget.api.reiniciar(widget.id));
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reinício enviado à MK')));
+    String? via;
+    await _run(() async => via = await widget.api.reiniciar(widget.id));
+    if (via == null || !mounted) return; // erro: _run já avisou
+    final caminho = via == 'publico' ? 'pelo IP público' : 'pelo túnel';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reinício enviado $caminho')));
   }
 
   Future<void> _delete() async {

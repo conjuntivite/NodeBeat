@@ -20,7 +20,7 @@ const _reinicio = {'evento': 'reinicio', 'tipo': 'reinicio', 'mk': {'id': 'x', '
   'detalhe': 'Solicitado por ana', 'inicio': '2026-01-01T10:00:00-03:00', 'fim': null, 'duracao_s': null};
 const _inv = {'lido_em': null, 'erro': null, 'desatualizado': false, 'redes': [], 'pools': [], 'nat': [], 'servicos': []};
 
-Future<List<http.Request>> _show(WidgetTester t, {Brightness b = Brightness.light}) async {
+Future<List<http.Request>> _show(WidgetTester t, {Brightness b = Brightness.light, String via = 'tunel'}) async {
   t.view.physicalSize = const Size(1200, 1600);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -28,7 +28,7 @@ Future<List<http.Request>> _show(WidgetTester t, {Brightness b = Brightness.ligh
   final api = ApiClient(client: MockClient((req) async {
     if (req.method == 'POST') {
       posts.add(req);
-      return http.Response('', 204);
+      return _json({'via': via});
     }
     return switch (req.url.path) {
       '/api/mks/x' => _json(_mk),
@@ -62,6 +62,18 @@ void main() {
     await t.tap(ok);
     await t.pumpAndSettle();
     expect(posts.single.url.path, '/api/mks/x/reiniciar');
+    expect(find.text('Reinício enviado pelo túnel'), findsOneWidget);
+  });
+
+  testWidgets('reinício pelo IP público avisa o caminho', (t) async {
+    await _show(t, via: 'publico');
+    await t.tap(find.widgetWithText(OutlinedButton, 'Reiniciar'));
+    await t.pumpAndSettle();
+    await t.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'MK Norte');
+    await t.pump();
+    await t.tap(find.widgetWithText(FilledButton, 'Reiniciar agora'));
+    await t.pumpAndSettle();
+    expect(find.text('Reinício enviado pelo IP público'), findsOneWidget);
   });
 
   test('reiniciando não apita', () {

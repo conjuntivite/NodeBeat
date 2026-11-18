@@ -64,6 +64,8 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
                   'Cole no terminal da MK (logado como admin). Só acrescenta a permissão de reinício ao usuário monitor.',
                   scriptLiberarReinicio, 'copiar-reinicio', 'Comando copiado'),
               SizedBox(height: t.space4),
+              _reinicioPublico(t, i),
+              SizedBox(height: t.space4),
               _card(t, 'Desfazer tudo', 'Remove da MK o usuário, o grupo, os certificados e as regras de firewall, e desliga a api-ssl.',
                   scriptDesfazer, 'copiar-desfazer', 'Comando copiado'),
             ]),
@@ -119,6 +121,29 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
             style: texto),
       ]),
     );
+  }
+
+  /// Sem os IPs da sede o script só reabriria para o próprio NodeBeat: não mostra.
+  Widget _reinicioPublico(TradeTokens t, PrepararMkInfo i) {
+    const titulo = 'MK já cadastrada: liberar o reinício pelo IP público';
+    if (i.ipOrigem == null || i.ipsSede.isEmpty) {
+      return TradeCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titulo, style: TradeType.heading4.copyWith(color: t.fgPrimary)),
+          SizedBox(height: t.space3),
+          Text(i.ipsSede.isEmpty ? 'Configure NODEBEAT_IPS_PUBLICOS_SEDE no servidor' : 'Configure NODEBEAT_IP_ORIGEM no servidor',
+              style: TradeType.bodyMd.copyWith(color: t.negative)),
+        ]),
+      );
+    }
+    return _card(
+        t,
+        titulo,
+        'Cole no terminal da MK (logado como admin). A api-ssl passa a aceitar também os IPs públicos da sede, para o '
+            'botão Reiniciar funcionar com o túnel caído. Não troca a senha do usuário monitor.',
+        scriptLiberarReinicioPublico(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
+        'copiar-reinicio-publico',
+        'Script copiado');
   }
 
   Widget _card(TradeTokens t, String titulo, String texto, String comando, String chave, String aviso) => TradeCard(

@@ -14,6 +14,8 @@ String gerarSenha([Random? rng]) {
 /// [ipsSede]: todas as saídas públicas da sede (load balance), liberadas para ping numa address-list.
 String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
     .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
+    .replaceAll('@TRAVA_WAN@', _travaWan)
+    .replaceAll('@LISTA_API@', _lista(ipOrigem, ipsSede))
     .replaceAll('@IP_ORIGEM@', ipOrigem)
     .replaceAll('@SEDE_LISTA@',
         ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip comment="NodeBeat"').join('\n'))
@@ -46,11 +48,52 @@ const _eventos = r''':local dst @DST@
 }
 ''';
 
+/// `:local lista` com o NodeBeat e as saídas da sede (/32), em linhas curtas: a cópia do terminal quebra linha longa.
+String _lista(String ipOrigem, List<String> ipsSede) => [
+      ':local lista "$ipOrigem/32"',
+      for (final ip in ipsSede) ':set lista (\$lista . ",$ip/32")',
+    ].join('\n');
+
+/// Regra que deixa a sede (lista nodebeat-sede) chegar na api-ssl pela WAN. Criada desligada e só ligada no lugar certo:
+/// antes da monitor-icmp, senão antes da primeira regra input, senão no fim. Linhas de até 80 colunas.
+const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-api-wan"]
+:local antes [/ip firewall filter find where comment="monitor-icmp"]
+:if ([:len $antes] = 0) do={
+  :set antes [/ip firewall filter find where chain=input && !dynamic]
+}
+:local f [/ip firewall filter add chain=input disabled=yes]
+/ip firewall filter set $f protocol=tcp dst-port=8729 action=accept
+/ip firewall filter set $f src-address-list=nodebeat-sede
+/ip firewall filter set $f comment=monitor-api-wan
+:if ([:len $antes] > 0) do={
+  /ip firewall filter move $f destination=[:pick $antes 0]
+}
+/ip firewall filter set $f disabled=no''';
+
+/// MK já cadastrada: a api-ssl passa a aceitar também os IPs públicos da sede (o botão Reiniciar cai no IP público quando
+/// o túnel não responde). Mexe só nas três travas: serviço, usuário monitor (sem trocar a senha) e firewall.
+/// available-from só existe a partir da 7.24 (e nunca na v6): tenta e, se a MK recusar, usa address.
+String scriptLiberarReinicioPublico({required String ipOrigem, required List<String> ipsSede}) => '''{
+${_lista(ipOrigem, ipsSede)}
+:do {
+  [[:parse ("/ip service set api-ssl available-from=" . \$lista)]]
+} on-error={
+  /ip service set api-ssl address=\$lista
+}
+/user set monitor address=\$lista
+/ip firewall address-list remove [find where list="nodebeat-sede"]
+${ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip').join('\n')}
+$_travaWan
+:put "OK. api-ssl liberada para o NodeBeat e para a sede (lista nodebeat-sede)"
+}
+''';
+
 /// MK já cadastrada: só libera o botão "Reiniciar" do painel.
 const scriptLiberarReinicio = '/user group set monitor policy=read,api,reboot';
 
 const scriptDesfazer = r'''/ip firewall filter remove [find where comment="monitor-icmp"]
 /ip firewall filter remove [find where comment="monitor-api"]
+/ip firewall filter remove [find where comment="monitor-api-wan"]
 /ip firewall address-list remove [find where list="nodebeat-sede"]
 /user remove [find where name="monitor"]
 /user group remove [find where name="monitor"]
@@ -167,10 +210,12 @@ const _modelo = r'''{
   :set n ($n + 1)
 }
 
+# api-ssl e usuario monitor aceitam o NodeBeat (tunel) e as saidas da sede (IP publico, para o Reiniciar)
+@LISTA_API@
 :if ($novo) do={
-  [[:parse ("/ip service set api-ssl certificate=monitor-api disabled=no available-from=" . $ipOrigem . "/32")]]
+  [[:parse ("/ip service set api-ssl certificate=monitor-api disabled=no available-from=" . $lista)]]
 } else={
-  /ip service set api-ssl certificate=monitor-api disabled=no address=($ipOrigem . "/32")
+  /ip service set api-ssl certificate=monitor-api disabled=no address=$lista
 }
 
 :if ([:len [/user group find where name="monitor"]] = 0) do={
@@ -180,9 +225,9 @@ const _modelo = r'''{
 }
 :local trocou false
 :if ([:len [/user find where name="monitor"]] = 0) do={
-  /user add name=monitor group=monitor password=$senha address=($ipOrigem . "/32")
+  /user add name=monitor group=monitor password=$senha address=$lista
 } else={
-  /user set monitor group=monitor password=$senha address=($ipOrigem . "/32")
+  /user set monitor group=monitor password=$senha address=$lista
   :set trocou true
 }
 
@@ -198,6 +243,8 @@ const _modelo = r'''{
 # firewall que bloqueia a WAN derruba a api-ssl que chega pelo tunel: libera so o NodeBeat, so via IPsec
 /ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
+# a sede tambem chega na api-ssl pela WAN (botao Reiniciar com o tunel caido)
+@TRAVA_WAN@
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {

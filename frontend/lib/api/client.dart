@@ -325,7 +325,8 @@ class ApiClient {
 
   Future<void> acceptCert(String id) => _send('POST', '/mks/$id/aceitar-certificado');
 
-  Future<void> reiniciar(String id) => _send('POST', '/mks/$id/reiniciar');
+  /// Devolve o caminho usado: 'tunel' ou 'publico'.
+  Future<String> reiniciar(String id) async => (await _send('POST', '/mks/$id/reiniciar'))['via'] as String;
 
   Future<List<HistEvent>> history(String id) async =>
       [for (final j in await _send('GET', '/mks/$id/historico')) HistEvent.fromJson(j)];

@@ -165,6 +165,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Text('Eventos', style: TradeType.heading4.copyWith(color: t.fgPrimary))),
+          IconButton(icon: const Icon(Icons.terminal), tooltip: 'Ligar eventos', onPressed: _ligar),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Atualizar', onPressed: carregar),
         ]),
         SizedBox(height: t.space3),

@@ -13,8 +13,7 @@ String gerarSenha([Random? rng]) {
 /// Só ASCII. Tudo que pode falhar é checado antes da primeira alteração (`:error` aborta o bloco).
 /// [ipsSede]: todas as saídas públicas da sede (load balance), liberadas para ping numa address-list.
 String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
-    .replaceAll('@EVENTOS@', _eventos)
-    .replaceAll('@IP_TUNEL_STR@', '" . \$ipTunel . "')
+    .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
     .replaceAll('@IP_ORIGEM@', ipOrigem)
     .replaceAll('@SEDE_LISTA@',
         ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip comment="NodeBeat"').join('\n'))
@@ -22,18 +21,29 @@ String scriptPreparar({required String ipOrigem, required List<String> ipsSede, 
 
 /// MK já cadastrada: liga só o envio de log (syslog) para o NodeBeat. Não mexe em usuário, certificado, api-ssl nem filtros.
 String scriptLigarEventos({required String ipOrigem, required String ipTunel}) => '''{
-$_eventos}
-'''
-    .replaceAll('@IP_ORIGEM@', ipOrigem)
-    .replaceAll('@IP_TUNEL_STR@', ipTunel);
+${_eventos.replaceAll('@DST@', '"remote=$ipOrigem remote-port=514 src-address=$ipTunel"')}}
+''';
+
+/// No Preparar o IP de origem e o do túnel já são variáveis da MK.
+const _dstPreparar = r'("remote=" . $ipOrigem . " remote-port=514 src-address=" . $ipTunel)';
 
 /// Passo de eventos, colado dentro de um bloco `{}`. Idempotente.
 /// Só a v7 aceita remote-log-format e só a v6 aceita bsd-syslog; a MK lê o bloco inteiro antes de rodar e rejeita parâmetro
 /// desconhecido, por isso as duas formas ficam dentro de :parse e a escolha é por tentativa (:do/on-error), não por versão.
-const _eventos = r'''/system logging remove [find where action="nodebeat"]
+const _eventos = r''':local dst @DST@
+/system logging remove [find where action="nodebeat"]
 /system logging action remove [find where name="nodebeat"]
-:do {[[:parse ("/system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL_STR@ remote-log-format=default")]]} on-error={[[:parse ("/system logging action add name=nodebeat target=remote remote=@IP_ORIGEM@ remote-port=514 src-address=@IP_TUNEL_STR@ bsd-syslog=no")]]}
-:foreach t in={"account,!debug";"system,!debug";"interface,!debug";"ipsec,!debug";"dhcp,!debug";"pppoe,!debug";"critical";"error"} do={/system logging add topics=$t action=nodebeat}
+:do {
+  [[:parse ("/system logging action add name=nodebeat target=remote " . $dst . " remote-log-format=default")]]
+} on-error={
+  [[:parse ("/system logging action add name=nodebeat target=remote " . $dst . " bsd-syslog=no")]]
+}
+:foreach t in={"account,!debug";"system,!debug";"interface,!debug";"ipsec,!debug"} do={
+  /system logging add topics=$t action=nodebeat
+}
+:foreach t in={"dhcp,!debug";"pppoe,!debug";"critical";"error"} do={
+  /system logging add topics=$t action=nodebeat
+}
 ''';
 
 /// MK já cadastrada: só libera o botão "Reiniciar" do painel.

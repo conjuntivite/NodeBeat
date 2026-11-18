@@ -108,6 +108,15 @@ void main() {
     expect(copiado, script);
   });
 
+  testWidgets('botão do cabeçalho abre o diálogo mesmo com eventos e syslog ativo', (t) async {
+    await _show(t);
+    expect(find.text('Esta MK não está mandando eventos'), findsNothing);
+    await t.tap(find.byTooltip('Ligar eventos'));
+    await t.pumpAndSettle();
+    expect(find.text('Cole no terminal da MK:'), findsOneWidget);
+    expect(find.textContaining('/system logging', findRichText: true), findsWidgets);
+  });
+
   testWidgets('ligar eventos sem IP de origem', (t) async {
     await _show(t, eventos: [], ativo: false, ipOrigem: null);
     await _tap(t, 'Ligar eventos');

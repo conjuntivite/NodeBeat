@@ -159,7 +159,7 @@ void main() {
       expect(s, contains('action="nodebeat"'));
       expect(s, contains(r'[:typeof [:toip $ipTunel]] = "ip"'));
       expect(s, contains('Eventos nao ligados'));
-      expect(s, contains('remote=10.9.9.9'));
+      expect(s, contains(':local ipOrigem "10.9.9.9"'));
       expect(s.indexOf('action="nodebeat"'), greaterThan(s.indexOf('comment="monitor-api"')));
       expect(s.indexOf('action="nodebeat"'), lessThan(s.indexOf('# 3) Resultado')));
       expect(s.codeUnits.every((c) => c < 128), isTrue);
@@ -170,8 +170,8 @@ void main() {
         for (final l in x.split('\n')) {
           if (l.contains('bsd-syslog') || l.contains('remote-log-format')) expect(l, contains('[:parse ('));
         }
-        expect(x, contains(':do {[[:parse ("/system logging action add'));
-        expect(x, contains('} on-error={[[:parse ("/system logging action add'));
+        expect(x, contains(':do {\n  [[:parse ("/system logging action add'));
+        expect(x, contains('} on-error={\n  [[:parse ("/system logging action add'));
       }
       expect(e, isNot(contains(r'$maior')));
     });
@@ -187,11 +187,40 @@ void main() {
 
     test(':parse com a string entre parênteses (o "." só concatena dentro de expressão)', () {
       expect(e, contains('[[:parse ("/system logging action add'));
-      expect(e, contains('src-address=10.9.0.1 remote-log-format=default")]]'));
-      expect(e, contains('src-address=10.9.0.1 bsd-syslog=no")]]'));
-      expect(s, contains(r'src-address=" . $ipTunel . " remote-log-format=default")]]'));
-      expect(s, contains(r'src-address=" . $ipTunel . " bsd-syslog=no")]]'));
+      expect(e, contains(r'target=remote " . $dst . " remote-log-format=default")]]'));
+      expect(e, contains(r'target=remote " . $dst . " bsd-syslog=no")]]'));
+      expect(e, contains(':local dst "remote=192.0.2.10 remote-port=514 src-address=10.9.0.1"'));
+      expect(s, contains(r':local dst ("remote=" . $ipOrigem . " remote-port=514 src-address=" . $ipTunel)'));
+      expect(s, contains(r'target=remote " . $dst . " remote-log-format=default")]]'));
       expect(s, contains('[[:parse ("/system logging action add'));
+    });
+
+    test('linhas curtas (terminal que quebra linha): nenhuma passa de 110 colunas', () {
+      final ini = s.indexOf('# eventos (syslog)');
+      final fim = s.indexOf('# 3) Resultado');
+      for (final l in [...e.split('\n'), ...s.substring(ini, fim).split('\n')]) {
+        expect(l.length, lessThanOrEqualTo(110), reason: l);
+      }
+    });
+
+    test('forma exata validada numa MK v7.24', () {
+      expect(e, '''{
+:local dst "remote=192.0.2.10 remote-port=514 src-address=10.9.0.1"
+/system logging remove [find where action="nodebeat"]
+/system logging action remove [find where name="nodebeat"]
+:do {
+  [[:parse ("/system logging action add name=nodebeat target=remote " . \$dst . " remote-log-format=default")]]
+} on-error={
+  [[:parse ("/system logging action add name=nodebeat target=remote " . \$dst . " bsd-syslog=no")]]
+}
+:foreach t in={"account,!debug";"system,!debug";"interface,!debug";"ipsec,!debug"} do={
+  /system logging add topics=\$t action=nodebeat
+}
+:foreach t in={"dhcp,!debug";"pppoe,!debug";"critical";"error"} do={
+  /system logging add topics=\$t action=nodebeat
+}
+}
+''');
     });
 
     test('desfazer remove regras e action nodebeat', () {

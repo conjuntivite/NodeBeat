@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
+PERIODOS = {"24h": 24, "7d": 168, "30d": 720}
+CATEGORIAS = ("acesso", "autenticacao", "vpn", "erros")
 NORMAIS = {"login_ok", "ok"}  # subtipos que aparecem nos blocos mas não entram nas contagens de problema
 
 _FALHA_LOGIN = re.compile(r"login failure for user (\S*) from ([\d.]+) via (\S+)")
@@ -65,3 +69,71 @@ def categoria(ev: dict, ctx: Ctx) -> tuple[str, str] | None:
     if _LINK_FISICO.search(msg):
         return "erros", "link_fisico"
     return None
+
+
+def _por_mk(contagem: Counter, nomes: dict) -> list[dict]:
+    return [{"mk_id": k, "nome": nomes[k], "n": n} for k, n in contagem.most_common()]
+
+
+def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, periodo: str,
+           mk_id: str | None = None) -> dict:
+    if periodo not in PERIODOS:
+        raise ValueError(periodo)
+    nomes = {m["id"]: m["nome"] for m in mks if not mk_id or m["id"] == mk_id}
+    fim = agora.replace(minute=0, second=0, microsecond=0)
+    inicio = fim - timedelta(hours=PERIODOS[periodo] - 1)
+    serie = {inicio + timedelta(hours=i): dict.fromkeys(CATEGORIAS, 0) for i in range(PERIODOS[periodo])}
+    resumo = dict.fromkeys(CATEGORIAS, 0)
+    contagens: dict[str, Counter] = defaultdict(Counter)  # mk -> categoria -> n
+    por_mk_cat: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
+    sub: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
+    ips, vias = Counter(), Counter()
+    logins, vpn_falhas, ifaces = [], [], Counter()
+
+    for ev in eventos:
+        if ev["mk_id"] not in nomes or ev["recebido_em"] < inicio:
+            continue
+        cat = categoria(ev, ctx)
+        if not cat:
+            continue
+        c, st = cat
+        sub[c][st] += 1
+        if st in NORMAIS:
+            continue
+        resumo[c] += 1
+        por_mk_cat[c][ev["mk_id"]] += 1
+        contagens[ev["mk_id"]][c] += 1
+        serie[ev["recebido_em"].replace(minute=0, second=0, microsecond=0)][c] += 1
+        if st == "falha_externa":
+            _, ip, via = falha_login(ev)
+            ips[ip] += 1
+            vias[via] += 1
+        elif st == "login_externo_ok":
+            cp = ev["campos"]
+            logins.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]], "usuario": cp.get("usuario"),
+                           "ip": cp.get("ip"), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
+        elif st == "falha" and c == "vpn":
+            vpn_falhas.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]],
+                               "quando": ev["recebido_em"].isoformat(), "mensagem": ev["mensagem"]})
+        elif st == "link_fisico":
+            ifaces[(ev["mk_id"], ev["mensagem"].split(" ", 1)[0])] += 1
+
+    def bloco(c: str, **extra) -> dict:
+        return {"total": resumo[c], "por_mk": _por_mk(por_mk_cat[c], nomes), **extra}
+
+    return {
+        "periodo": periodo, "gerado_em": agora.isoformat(), "resumo": resumo,
+        "serie_hora": [{"hora": h.isoformat(), **v} for h, v in serie.items()],
+        "blocos": {
+            "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n} for i, n in ips.most_common(10)],
+                            por_via=dict(vias.most_common()), logins_externos=logins[::-1]),
+            "autenticacao": bloco("autenticacao", por_subtipo=dict(sub["autenticacao"])),
+            "vpn": bloco("vpn", por_subtipo=dict(sub["vpn"]), ultimos=vpn_falhas[::-1][:20]),
+            "erros": bloco("erros", por_subtipo=dict(sub["erros"]),
+                           interfaces=[{"mk_id": m, "nome": nomes[m], "interface": i, "n": n}
+                                       for (m, i), n in ifaces.most_common()]),
+        },
+        "por_mk": [{"mk_id": i, "nome": n, "semaforo": "verde", "motivos": [],
+                    "contagens": {c: contagens[i][c] for c in CATEGORIAS}} for i, n in nomes.items()],
+        "atencao": [], "incidentes": [], "config": [],
+    }

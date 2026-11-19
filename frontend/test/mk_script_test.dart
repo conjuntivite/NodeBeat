@@ -304,6 +304,14 @@ void main() {
       expect(curto, contains('dst-address-type=local'));
     });
 
+    test('NAT 18729 vai para o topo do dstnat nos dois scripts (port forward amplo pegaria antes)', () {
+      for (final sc in [completo, curto]) {
+        expect(sc, contains('[/ip firewall nat find where chain=dstnat && !dynamic]'));
+        expect(sc, contains(r'/ip firewall nat move $alt destination=[:pick $d 0]'));
+      }
+      expect(curto, contains('[/ip firewall nat add chain=dstnat comment=monitor-api-alt]'));
+    });
+
     test('Desfazer remove o NAT monitor-api-alt', () {
       expect(scriptDesfazer, contains('/ip firewall nat remove [find where comment="monitor-api-alt"]'));
     });

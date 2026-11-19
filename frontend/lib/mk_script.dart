@@ -15,6 +15,7 @@ String gerarSenha([Random? rng]) {
 String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
     .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
     .replaceAll('@TRAVA_WAN@', _travaWan)
+    .replaceAll('@NAT_MOVE@', _natMove)
     .replaceAll('@LISTA_API@', _lista(ipOrigem, ipsSede))
     .replaceAll('@IP_ORIGEM@', ipOrigem)
     .replaceAll('@SEDE_LISTA@',
@@ -72,11 +73,19 @@ const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-ap
 
 /// Operadora que bloqueia a 8729 na entrada: o NodeBeat tenta a 18729 pelo IP público, e esta regra a leva à 8729.
 /// Sem a WAN (script curto) vale em qualquer interface; dst-address-type=local limita ao tráfego para a própria MK.
+/// Vai para o topo do dstnat: um port forward amplo (DVR "em DMZ", faixa de portas) pegaria a 18729 antes.
+/// O comentário já entra no add: se o bloco parar no meio, a regra continua achável pelo remove e pelo Desfazer.
 const _natAlt = r'''/ip firewall nat remove [find where comment="monitor-api-alt"]
-:local nat [/ip firewall nat add chain=dstnat protocol=tcp dst-port=18729]
-/ip firewall nat set $nat dst-address-type=local
-/ip firewall nat set $nat action=redirect to-ports=8729
-/ip firewall nat set $nat comment=monitor-api-alt''';
+:local d [/ip firewall nat find where chain=dstnat && !dynamic]
+:local alt [/ip firewall nat add chain=dstnat comment=monitor-api-alt]
+/ip firewall nat set $alt protocol=tcp dst-port=18729
+/ip firewall nat set $alt dst-address-type=local
+/ip firewall nat set $alt action=redirect to-ports=8729
+''' + _natMove;
+
+const _natMove = r''':if ([:len $d] > 0) do={
+  /ip firewall nat move $alt destination=[:pick $d 0]
+}''';
 
 /// MK já cadastrada: libera o botão Reiniciar do painel, pelo túnel e pelo IP público (o painel cai no IP público quando
 /// o túnel não responde). Dá a permissão de reboot ao grupo monitor e abre as três travas da api-ssl para o NodeBeat e os
@@ -260,7 +269,9 @@ const _modelo = r'''{
 @TRAVA_WAN@
 # operadora que bloqueia a 8729: o NodeBeat tenta a 18729 pelo IP publico e esta regra leva a 8729
 /ip firewall nat remove [find where comment="monitor-api-alt"]
-/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"
+:local d [/ip firewall nat find where chain=dstnat && !dynamic]
+:local alt [/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"]
+@NAT_MOVE@
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {

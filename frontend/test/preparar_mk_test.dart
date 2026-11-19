@@ -45,6 +45,11 @@ void main() {
     expect(s, contains('"$senha"'));
   });
 
+  testWidgets('explica o que fazer quando a colagem quebra, nos dois scripts', (t) async {
+    await _show(t);
+    expect(find.textContaining('invalid value'), findsNWidgets(2));
+  });
+
   testWidgets('Copiar põe o script no clipboard e avisa', (t) async {
     final copiado = await _show(t);
     await t.tap(find.byKey(const Key('copiar-preparar')));

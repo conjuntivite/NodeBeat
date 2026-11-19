@@ -7,6 +7,10 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 
+/// A cópia às vezes perde a "{" do começo e o terminal roda linha a linha (as variáveis somem).
+const avisoColagem = 'Se o terminal mostrar "invalid value" ou "expected end of command", a colagem perdeu parte do script '
+    '(a "{" do começo). Copie e cole de novo o script inteiro: ele pode ser repetido.';
+
 /// Passo a passo + script RouterOS para pôr uma MK no NodeBeat. O script é montado aqui; a senha não vai ao servidor.
 class PrepararMkScreen extends StatefulWidget {
   const PrepararMkScreen({super.key, required this.api});
@@ -112,6 +116,8 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
           child: const Text('Copiar script'),
         ),
         SizedBox(height: t.space3),
+        Text(avisoColagem, style: texto),
+        SizedBox(height: t.space3),
         Text('Rodar de novo numa MK já cadastrada troca a senha do monitor: atualize no cadastro (Editar). '
             'O script também troca o certificado e os IPs permitidos da api-ssl: outra ferramenta que use a api-ssl perde o acesso.',
             style: texto),
@@ -137,7 +143,7 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
         titulo,
         'Cole no terminal da MK (logado como admin). Dá ao usuário monitor a permissão de reinício e faz a api-ssl '
             'aceitar também os IPs públicos da sede, para o botão Reiniciar funcionar até com o túnel caído. Substitui os IPs permitidos na api-ssl e no usuário monitor (outra '
-            'ferramenta que use a api-ssl perde o acesso). Não troca a senha do usuário monitor.',
+            'ferramenta que use a api-ssl perde o acesso). Não troca a senha do usuário monitor. $avisoColagem',
         scriptLiberarReinicio(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
         'copiar-reinicio',
         'Script copiado');

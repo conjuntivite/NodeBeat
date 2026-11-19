@@ -286,6 +286,26 @@ void main() {
       expect(guarda, lessThan(curto.indexOf('/ip service set api-ssl')));
     });
 
+    test('Preparar cria o NAT 18729 -> 8729 na WAN, removendo o antigo antes', () {
+      final rm = completo.indexOf('/ip firewall nat remove [find where comment="monitor-api-alt"]');
+      final add = completo.indexOf('in-interface=\$wan protocol=tcp dst-port=18729 action=redirect to-ports=8729');
+      expect(rm, greaterThan(0));
+      expect(add, greaterThan(rm));
+    });
+
+    test('script curto cria o NAT 18729 -> 8729 sem depender da WAN', () {
+      final rm = curto.indexOf('/ip firewall nat remove [find where comment="monitor-api-alt"]');
+      expect(rm, greaterThan(0));
+      expect(curto.indexOf('dst-port=18729'), greaterThan(rm));
+      expect(curto, contains('to-ports=8729'));
+      expect(curto, contains('comment=monitor-api-alt'));
+      expect(curto, isNot(contains('in-interface')));
+    });
+
+    test('Desfazer remove o NAT monitor-api-alt', () {
+      expect(scriptDesfazer, contains('/ip firewall nat remove [find where comment="monitor-api-alt"]'));
+    });
+
     test('Desfazer remove monitor-api-wan', () {
       expect(scriptDesfazer, contains('/ip firewall filter remove [find where comment="monitor-api-wan"]'));
     });

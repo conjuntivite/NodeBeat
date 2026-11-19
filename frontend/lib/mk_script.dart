@@ -70,6 +70,13 @@ const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-ap
 }
 /ip firewall filter set $f disabled=no''';
 
+/// Operadora que bloqueia a 8729 na entrada: o NodeBeat tenta a 18729 pelo IP público, e esta regra a leva à 8729.
+/// Sem a WAN (script curto) vale em qualquer interface: a api-ssl e o filtro continuam restringindo quem entra.
+const _natAlt = r'''/ip firewall nat remove [find where comment="monitor-api-alt"]
+:local nat [/ip firewall nat add chain=dstnat protocol=tcp dst-port=18729]
+/ip firewall nat set $nat action=redirect to-ports=8729
+/ip firewall nat set $nat comment=monitor-api-alt''';
+
 /// MK já cadastrada: libera o botão Reiniciar do painel, pelo túnel e pelo IP público (o painel cai no IP público quando
 /// o túnel não responde). Dá a permissão de reboot ao grupo monitor e abre as três travas da api-ssl para o NodeBeat e os
 /// IPs da sede: serviço, usuário monitor (sem trocar a senha) e firewall.
@@ -89,12 +96,14 @@ ${_lista(ipOrigem, ipsSede)}
 /ip firewall address-list remove [find where list="nodebeat-sede"]
 ${ipsSede.map((ip) => '/ip firewall address-list add list=nodebeat-sede address=$ip').join('\n')}
 $_travaWan
+$_natAlt
 :put "OK. Reiniciar liberado pelo tunel e pelo IP publico (lista nodebeat-sede)"
 }
 ''';
 
 
-const scriptDesfazer = r'''/ip firewall filter remove [find where comment="monitor-icmp"]
+const scriptDesfazer = r'''/ip firewall nat remove [find where comment="monitor-api-alt"]
+/ip firewall filter remove [find where comment="monitor-icmp"]
 /ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall filter remove [find where comment="monitor-api-wan"]
 /ip firewall address-list remove [find where list="nodebeat-sede"]
@@ -248,6 +257,9 @@ const _modelo = r'''{
 /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
 # a sede tambem chega na api-ssl pela WAN (botao Reiniciar com o tunel caido)
 @TRAVA_WAN@
+# operadora que bloqueia a 8729: o NodeBeat tenta a 18729 pelo IP publico e esta regra leva a 8729
+/ip firewall nat remove [find where comment="monitor-api-alt"]
+/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 action=redirect to-ports=8729 comment="monitor-api-alt"
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {

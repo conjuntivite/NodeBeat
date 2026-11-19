@@ -22,3 +22,13 @@ e as que nao acessavam a gente ajustou". O cartão "liberar o botão Reiniciar" 
 - Desfazer: remove a regra `winbox-alt`. A porta não volta para a 8291, porque nas MKs com bloqueio da operadora isso
   cortaria o acesso externo (decisão minha).
 - Página: aviso, no cartão do Preparar, de que a sessão cai ao final e que depois se entra por `<ip>:18291`.
+
+## Revisão do mesmo dia: NAT 18291 → 8291 em vez de trocar a porta
+O usuário perguntou se o script libera a 18291 "quando a 8291 não aceita". Como o script não consegue detectar o bloqueio
+da operadora, a troca fixa da porta foi substituída (aprovado: "pode fazer com o NAT 18291 para 8291"):
+- o Winbox continua na 8291; nada muda para quem já entra por ela, e a sessão não cai;
+- NAT `winbox-alt`: `chain=dstnat in-interface=$wan protocol=tcp dst-port=18291 dst-address-type=local action=redirect
+  to-ports=8291`, no topo do dstnat;
+- filtro `winbox-alt`: `protocol=tcp dst-port=8291 connection-nat-state=dstnat action=accept`, no topo do input. Aceita só
+  o que veio pelo NAT, de qualquer IP; o acesso direto à 8291 segue as regras que a MK já tem;
+- o Desfazer remove as duas regras.

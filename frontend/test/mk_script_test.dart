@@ -316,22 +316,26 @@ void main() {
       expect(curto, isNot(contains('winbox')));
     });
 
-    test('Preparar: regra winbox-alt no topo do input e troca de porta na última linha do bloco', () {
-      for (final sc in [completo]) {
-        final rm = sc.indexOf('/ip firewall filter remove [find where comment="winbox-alt"]');
-        expect(rm, greaterThan(0));
-        expect(sc, contains('protocol=tcp dst-port=18291 action=accept'));
-        expect(sc, contains(r'/ip firewall filter move $w destination=[:pick $wd 0]'));
-        expect(sc, contains(r'/ip firewall filter set $w disabled=no'));
-        final linhas = sc.trimRight().split('\n');
-        expect(linhas[linhas.length - 2], '/ip service set winbox port=18291');
-        expect(linhas.last, '}');
-        expect(sc, isNot(contains('winbox address')));
-      }
+    test('Preparar: NAT 18291 -> 8291 na WAN, no topo do dstnat, sem trocar a porta do Winbox', () {
+      final rm = completo.indexOf('/ip firewall nat remove [find where comment="winbox-alt"]');
+      expect(rm, greaterThan(0));
+      expect(completo.indexOf(
+          r'in-interface=$wan protocol=tcp dst-port=18291 dst-address-type=local action=redirect to-ports=8291'), greaterThan(rm));
+      expect(completo, contains(r'/ip firewall nat move $wn destination=[:pick $wnd 0]'));
+      expect(completo, isNot(contains('winbox port=')));
     });
 
-    test('Desfazer remove a regra winbox-alt', () {
+    test('Preparar: filtro winbox-alt aceita só a 8291 que veio do NAT, no topo do input', () {
+      expect(completo, contains('/ip firewall filter remove [find where comment="winbox-alt"]'));
+      expect(completo, contains('protocol=tcp dst-port=8291 connection-nat-state=dstnat action=accept'));
+      expect(completo, contains(r'/ip firewall filter move $w destination=[:pick $wd 0]'));
+      expect(completo, contains(r'/ip firewall filter set $w disabled=no'));
+      expect(completo, isNot(contains('dst-port=18291 action=accept')));
+    });
+
+    test('Desfazer remove o NAT e o filtro winbox-alt', () {
       expect(scriptDesfazer, contains('/ip firewall filter remove [find where comment="winbox-alt"]'));
+      expect(scriptDesfazer, contains('/ip firewall nat remove [find where comment="winbox-alt"]'));
     });
 
     test('Desfazer remove o NAT monitor-api-alt', () {

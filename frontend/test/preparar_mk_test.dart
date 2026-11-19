@@ -50,7 +50,7 @@ void main() {
     expect(find.textContaining('invalid value'), findsNWidgets(2));
   });
 
-  testWidgets('avisa que o Winbox cai e passa para a 18291, só no Preparar (MK nova)', (t) async {
+  testWidgets('diz que o Winbox atende na 8291 e na 18291, só no Preparar (MK nova)', (t) async {
     await _show(t);
     expect(find.textContaining(':18291'), findsOneWidget);
   });

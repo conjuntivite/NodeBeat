@@ -223,9 +223,9 @@ def create_app(db, r, settings) -> FastAPI:
     async def reiniciar(id: str, user: dict = Depends(auth.current_user)):
         mk = await _achar(id)
 
-        async def _reboot(host: str) -> None:
+        async def _reboot(host: str, **kw) -> None:
             senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
-            await asyncio.to_thread(routeros.reboot, host, mk["usuario"], senha, mk.get("cert_sha256"))
+            await asyncio.to_thread(routeros.reboot, host, mk["usuario"], senha, mk.get("cert_sha256"), **kw)
 
         via = "tunel"
         try:
@@ -236,7 +236,10 @@ def create_app(db, r, settings) -> FastAPI:
                     raise
                 via = "publico"
                 try:
-                    await _reboot(mk["ip_publico"])
+                    try:
+                        await _reboot(mk["ip_publico"])
+                    except routeros.SemConexao:  # operadora bloqueando a 8729: tenta a porta alternativa
+                        await _reboot(mk["ip_publico"], porta=routeros.PORTA_API_ALT)
                 except routeros.RouterOsError as e2:
                     raise routeros.RouterOsError(f"Túnel: {e.detalhe}. IP público: {e2.detalhe}") from None
         except routeros.RouterOsError as e:

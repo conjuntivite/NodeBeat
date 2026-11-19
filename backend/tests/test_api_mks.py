@@ -249,8 +249,8 @@ def _reboot_fake(monkeypatch, *respostas):
     """Cada chamada a routeros.reboot consome uma resposta: None (ok) ou uma exceção."""
     hosts, fila = [], list(respostas)
 
-    def reboot(host, *a):
-        hosts.append(host)
+    def reboot(host, *a, porta=8729):
+        hosts.append((host, porta))
         r = fila.pop(0)
         if r is not None:
             raise r
@@ -275,10 +275,30 @@ async def test_reiniciar_cai_no_publico(client, r, monkeypatch):
     hosts = _reboot_fake(monkeypatch, routeros.SemConexao("API sem resposta (timeout)"), None)
     resp = await client.post(f"/api/mks/{id}/reiniciar")
     assert resp.status_code == 200 and resp.json() == {"via": "publico"}
-    assert hosts == ["10.8.0.2", "8.8.4.4"]
+    assert hosts == [("10.8.0.2", 8729), ("8.8.4.4", 8729)]
     assert await r.exists(f"reinicio:{id}")
     [h] = await history.history(r, id)
     assert h["detalhe"] == "Solicitado por ana pelo IP público"
+
+
+async def test_reiniciar_cai_na_porta_alternativa(client, r, monkeypatch):
+    id = await criar(client)
+    hosts = _reboot_fake(monkeypatch, routeros.SemConexao("API sem resposta (timeout)"),
+                         routeros.SemConexao("API sem resposta (timeout)"), None)
+    resp = await client.post(f"/api/mks/{id}/reiniciar")
+    assert resp.status_code == 200 and resp.json() == {"via": "publico"}
+    assert hosts == [("10.8.0.2", 8729), ("8.8.4.4", 8729), ("8.8.4.4", 18729)]
+    assert await r.exists(f"reinicio:{id}")
+
+
+async def test_reiniciar_publico_login_recusado_nao_tenta_alternativa(client, r, monkeypatch):
+    id = await criar(client)
+    hosts = _reboot_fake(monkeypatch, routeros.SemConexao("API sem resposta (timeout)"),
+                         routeros.RouterOsError("Login recusado (usuário ou senha)"))
+    resp = await client.post(f"/api/mks/{id}/reiniciar")
+    assert resp.status_code == 502
+    assert resp.json() == {"detalhe": "Túnel: API sem resposta (timeout). IP público: Login recusado (usuário ou senha)"}
+    assert hosts == [("10.8.0.2", 8729), ("8.8.4.4", 8729)]
 
 
 async def test_reiniciar_login_recusado_nao_tenta_publico(client, r, monkeypatch):
@@ -286,13 +306,14 @@ async def test_reiniciar_login_recusado_nao_tenta_publico(client, r, monkeypatch
     hosts = _reboot_fake(monkeypatch, routeros.RouterOsError("Login recusado (usuário ou senha)"))
     resp = await client.post(f"/api/mks/{id}/reiniciar")
     assert resp.status_code == 502 and resp.json() == {"detalhe": "Login recusado (usuário ou senha)"}
-    assert hosts == ["10.8.0.2"]
+    assert hosts == [("10.8.0.2", 8729)]
     assert not await r.exists(f"reinicio:{id}")
 
 
 async def test_reiniciar_dois_caminhos_falham(client, r, monkeypatch):
     id = await criar(client)
     _reboot_fake(monkeypatch, routeros.SemConexao("API sem resposta (timeout)"),
+                 routeros.SemConexao("API sem resposta (timeout)"),
                  routeros.SemConexao("Conexão com a API recusada"))
     resp = await client.post(f"/api/mks/{id}/reiniciar")
     assert resp.status_code == 502
@@ -306,7 +327,7 @@ async def test_reiniciar_sem_ip_publico_so_tunel(client, db, monkeypatch):
     hosts = _reboot_fake(monkeypatch, routeros.SemConexao("API sem resposta (timeout)"))
     resp = await client.post(f"/api/mks/{id}/reiniciar")
     assert resp.status_code == 502 and resp.json() == {"detalhe": "API sem resposta (timeout)"}
-    assert hosts == ["10.8.0.2"]
+    assert hosts == [("10.8.0.2", 8729)]
 
 
 async def test_reiniciar_publico_excecao_inesperada(client, monkeypatch):

@@ -198,6 +198,19 @@ def test_reboot_envia_comando_e_aceita_conexao_caindo(monkeypatch):
     assert api.closed
 
 
+def test_reboot_usa_porta_informada(monkeypatch):
+    portas = []
+
+    def fake(host, user, password, **kw):
+        portas.append(kw["port"])
+        raise TimeoutError()
+    monkeypatch.setattr(routeros.librouteros, "connect", fake)
+    for kw in ({"porta": 18729}, {}):
+        with pytest.raises(routeros.SemConexao):
+            routeros.reboot("h", "u", "p", None, **kw)
+    assert portas == [18729, 8729]
+
+
 def test_reboot_sem_permissao(monkeypatch):
     api = FakeApi(extra={"/system/reboot": _derruba(TrapError("not enough permissions (9)"))})
     _patch_connect(monkeypatch, api)

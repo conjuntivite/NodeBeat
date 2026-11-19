@@ -5,8 +5,13 @@ import ipaddress
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
+SILENCIO_H, REBOOTS_24H = 24, 2
+FLAP_N, VPN_FALHAS_N, PPPOE_MASSA_N, INCIDENTE_MKS = 3, 3, 10, 3
+HABITUAL_FATOR, HABITUAL_MIN = 3, 20
+HORA_INI, HORA_FIM = 7, 19
+BRT = timezone(timedelta(hours=-3))  # sem zoneinfo: a imagem não tem tzdata
 PERIODOS = {"24h": 24, "7d": 168, "30d": 720}
 CATEGORIAS = ("acesso", "autenticacao", "vpn", "erros")
 NORMAIS = {"login_ok", "ok"}  # subtipos que aparecem nos blocos mas não entram nas contagens de problema
@@ -121,6 +126,30 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
     def bloco(c: str, **extra) -> dict:
         return {"total": resumo[c], "por_mk": _por_mk(por_mk_cat[c], nomes), **extra}
 
+    todas = {m["id"]: m["nome"] for m in mks}
+    por_ev: dict[str, list[dict]] = defaultdict(list)
+    for ev in sorted(eventos, key=lambda x: x["recebido_em"]):
+        por_ev[ev["mk_id"]].append(ev)
+    semaforo, novos_por_mk = {}, {}
+    for i in nomes:
+        verm, amar, novos = _regras(por_ev[i], ctx, agora)
+        semaforo[i] = ("vermelho" if verm else "amarelo" if amar else "verde", verm + amar)
+        novos_por_mk[i] = novos
+    atencao = sorted(({"mk_id": i, "nome": nomes[i], "semaforo": c, "motivo": "; ".join(m)}
+                      for i, (c, m) in semaforo.items() if c != "verde"),
+                     key=lambda a: a["semaforo"] != "vermelho")
+    incidentes = [{"inicio": x["inicio"].isoformat(), "fim": x["fim"].isoformat(), "sintoma": x["sintoma"],
+                   "mks": sorted(todas[m] for m in x["ids"] if m in todas)}
+                  for x in _incidentes([e for e in eventos if e["mk_id"] in todas], ctx)
+                  if x["inicio"] >= inicio and (not mk_id or mk_id in x["ids"])]
+    config = [{"mk_id": e["mk_id"], "nome": nomes[e["mk_id"]], "quando": e["recebido_em"].isoformat(),
+               "usuario": e["campos"].get("usuario"), "objeto": e["campos"].get("objeto"),
+               "acao": e["campos"].get("acao"),
+               "fora_horario": not HORA_INI <= e["recebido_em"].astimezone(BRT).hour < HORA_FIM,
+               "usuario_novo": e["campos"].get("usuario") in novos_por_mk[e["mk_id"]]}
+              for e in reversed(sorted(eventos, key=lambda x: x["recebido_em"]))
+              if e["tipo"] == "config" and e["mk_id"] in nomes and e["recebido_em"] >= inicio]
+
     return {
         "periodo": periodo, "gerado_em": agora.isoformat(), "resumo": resumo,
         "serie_hora": [{"hora": h.isoformat(), **v} for h, v in serie.items()],
@@ -133,7 +162,85 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                            interfaces=[{"mk_id": m, "nome": nomes[m], "interface": i, "n": n}
                                        for (m, i), n in ifaces.most_common()]),
         },
-        "por_mk": [{"mk_id": i, "nome": n, "semaforo": "verde", "motivos": [],
+        "por_mk": [{"mk_id": i, "nome": n, "semaforo": semaforo[i][0], "motivos": semaforo[i][1],
                     "contagens": {c: contagens[i][c] for c in CATEGORIAS}} for i, n in nomes.items()],
-        "atencao": [], "incidentes": [], "config": [],
+        "atencao": atencao, "incidentes": incidentes, "config": config,
     }
+
+
+def _rajada(tempos: list[datetime], n: int, janela: timedelta) -> bool:
+    return any(tempos[i + n - 1] - tempos[i] <= janela for i in range(len(tempos) - n + 1))
+
+
+def _sintoma(c: str, st: str) -> str | None:
+    return {"interface_down": "interface_down", "reboot": "reboot", "pppoe": "pppoe"}.get(st) or         ("vpn_falha" if (c, st) == ("vpn", "falha") else None)
+
+
+def _usuario(ev: dict) -> str | None:
+    return ev["campos"].get("usuario") if ev["tipo"] in ("config", "login", "logout") else None
+
+
+def _regras(evs: list[dict], ctx: Ctx, agora: datetime) -> tuple[list[str], list[str], set[str]]:
+    """(motivos vermelhos, motivos amarelos, usuários novos) de uma MK; `evs` em ordem crescente."""
+    d24, d15, h1 = agora - timedelta(hours=24), timedelta(minutes=15), timedelta(hours=1)
+    verm, amar = [], []
+    rec = [(e, categoria(e, ctx)) for e in evs if e["recebido_em"] >= d24]
+    login = next(((e, c) for e, c in rec if c == ("acesso", "login_externo_ok")), None)
+    if login:
+        cp = login[0]["campos"]
+        verm.append(f"Login de fora: {cp.get('usuario')} de {cp.get('ip')} via {cp.get('via')}")
+    reboots = sum(1 for _, c in rec if c == ("erros", "reboot"))
+    if reboots >= REBOOTS_24H:
+        verm.append(f"Reinícios repetidos ({reboots} em 24 h)")
+    downs: dict[str, list[datetime]] = defaultdict(list)
+    for e, c in rec:
+        if c == ("erros", "interface_down"):
+            downs[e["mensagem"].split(" ", 1)[0]].append(e["recebido_em"])
+    verm += [f"Oscilação em {i}" for i, t in downs.items() if _rajada(t, FLAP_N, h1)]
+    if _rajada([e["recebido_em"] for e, c in rec if c == ("vpn", "falha")], VPN_FALHAS_N, h1):
+        verm.append("Falhas de VPN repetidas")
+    if _rajada([e["recebido_em"] for e, c in rec if c == ("erros", "pppoe")], PPPOE_MASSA_N, d15):
+        verm.append("Queda em massa de PPPoE")
+    if not evs:
+        amar.append("Nunca mandou eventos")
+    elif evs[-1]["recebido_em"] < agora - timedelta(hours=SILENCIO_H):
+        amar.append("Sem eventos há mais de 24 h")
+    primeira: dict[str, datetime] = {}
+    for e in evs:
+        u = _usuario(e)
+        if u:
+            primeira.setdefault(u, e["recebido_em"])
+    antigo = any(t < d24 for t in primeira.values())
+    novos = {u for u, t in primeira.items() if antigo and t >= d24}
+    amar += [f"Usuário novo: {u}" for u in sorted(novos)]
+    # Acesso externo e PPPoE-auth ficam de fora: são ruído constante da internet/sondas.
+    conta = lambda e, c: c and c[0] in ("vpn", "erros") or c == ("autenticacao", "falha_interna")  # noqa: E731
+    n24 = sum(1 for e, c in rec if conta(e, c))
+    antes = sum(1 for e in evs if agora - timedelta(hours=24 + 168) <= e["recebido_em"] < d24
+                and conta(e, categoria(e, ctx)))
+    if n24 >= HABITUAL_MIN and n24 > HABITUAL_FATOR * antes / 7:
+        amar.append(f"Acima do habitual ({n24} em 24 h, média {antes / 7:.0f}/dia)")
+    return verm, amar, novos
+
+
+def _incidentes(todos: list[dict], ctx: Ctx) -> list[dict]:
+    por_sintoma: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
+    for e in todos:
+        c = categoria(e, ctx)
+        if c and (sin := _sintoma(*c)):
+            por_sintoma[sin].append((e["recebido_em"], e["mk_id"]))
+    out = []
+    for sin, lista in por_sintoma.items():
+        lista.sort()
+        i = 0
+        while i < len(lista):
+            j = i
+            while j + 1 < len(lista) and lista[j + 1][0] - lista[i][0] <= timedelta(minutes=15):
+                j += 1
+            ids = {m for _, m in lista[i:j + 1]}
+            if len(ids) >= INCIDENTE_MKS:
+                out.append({"inicio": lista[i][0], "fim": lista[j][0], "sintoma": sin, "ids": ids})
+                i = j + 1
+            else:
+                i += 1
+    return sorted(out, key=lambda x: x["inicio"], reverse=True)

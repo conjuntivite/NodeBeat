@@ -144,7 +144,9 @@ def test_banco_vazio_devolve_estrutura_completa():
     r = M([])
     assert r["resumo"] == {"acesso": 0, "autenticacao": 0, "vpn": 0, "erros": 0}
     assert [m["nome"] for m in r["por_mk"]] == ["Alfa", "Beta"]
-    assert r["atencao"] == [] and r["incidentes"] == [] and r["config"] == []
+    assert [(a["nome"], a["motivo"]) for a in r["atencao"]] == [("Alfa", "Nunca mandou eventos"),
+                                                                ("Beta", "Nunca mandou eventos")]
+    assert r["incidentes"] == [] and r["config"] == []
     assert set(r["blocos"]) == {"acesso", "autenticacao", "vpn", "erros"}
     assert r["blocos"]["acesso"]["top_ips"] == []
 
@@ -158,3 +160,121 @@ def test_filtro_mk():
 def test_periodo_invalido_levanta_valueerror():
     with pytest.raises(ValueError):
         M([], "1h")
+
+
+# ---- Task 3: semáforo, incidentes, mudanças, habitual ----
+def sem(r, mk="a"):
+    m = next(x for x in r["por_mk"] if x["mk_id"] == mk)
+    return m["semaforo"], " | ".join(m["motivos"])
+
+
+def vida(mk):
+    """Evento neutro recente: tira a MK do 'silêncio' sem contar como problema."""
+    return EV(mk, "outro", "x", 0.5)
+
+
+def down(mk, atras_h, iface="ether3"):
+    return EV(mk, "interface", f"{iface} link down", atras_h)
+
+
+def test_login_de_fora_deixa_vermelho():
+    ev = EV("a", "login", "user admin logged in from 203.0.113.9 via ssh",
+            campos={"usuario": "admin", "ip": "203.0.113.9", "via": "ssh"})
+    cor, motivo = sem(M([ev, vida("b")]))
+    assert cor == "vermelho" and "Login de fora" in motivo
+
+
+def test_dois_reboots_em_24h_vermelho():
+    r2 = M([EV("a", "reboot", "router rebooted", 2), EV("a", "reboot", "router rebooted", 5)])
+    assert sem(r2)[0] == "vermelho"
+    assert sem(M([EV("a", "reboot", "router rebooted", 2), vida("a")]))[0] == "verde"
+
+
+def test_oscilacao_de_interface():
+    cor, motivo = sem(M([down("a", 1.0), down("a", 1.2), down("a", 1.6)]))
+    assert cor == "vermelho" and "ether3" in motivo
+    assert sem(M([down("a", 1.0), down("a", 1.2), vida("a")]))[0] == "verde"
+    assert sem(M([down("a", 1.0), down("a", 2.5), down("a", 4.0)]))[0] == "verde"
+
+
+def test_falhas_de_vpn_em_1h_vermelho():
+    evs = [EV("a", "ipsec", "failed to pre-process ph2 packet.", h) for h in (1.0, 1.2, 1.5)]
+    cor, motivo = sem(M(evs))
+    assert cor == "vermelho" and "VPN" in motivo
+
+
+def test_queda_em_massa_pppoe():
+    evs = [EV("a", "pppoe", "pppoe-out1: terminating...", 1 + i / 100, "err") for i in range(10)]
+    cor, motivo = sem(M(evs))
+    assert cor == "vermelho" and "PPPoE" in motivo
+    auth = [EV("a", "pppoe", "<198.51.100.7>: user teste authentication failed", 1 + i / 100, "err") for i in range(30)]
+    assert sem(M(auth + [vida("a")]))[0] == "verde"
+
+
+def test_silencio_amarelo():
+    assert sem(M([EV("a", "outro", "x", 25)]))[1] == "Sem eventos há mais de 24 h"
+    assert sem(M([EV("a", "outro", "x", 25)]))[0] == "amarelo"
+    assert sem(M([]))[1] == "Nunca mandou eventos"
+    assert sem(M([EV("a", "outro", "x", 23)]))[0] == "verde"
+
+
+def _erros(n, atras_ini_h, mk="a"):
+    return [EV(mk, "erro", "ssl: no common ciphers", atras_ini_h + i * 0.001, "err") for i in range(n)]
+
+
+def test_acima_do_habitual():
+    base = _erros(35, 48)  # 35 erros nos 7 dias anteriores: media 5/dia
+    cor, motivo = sem(M(base + _erros(20, 3)))
+    assert cor == "amarelo" and "Acima do habitual" in motivo
+    assert sem(M(base + _erros(19, 3)))[0] == "verde"
+
+
+def test_enxurrada_de_acesso_externo_nao_marca_habitual():
+    assert sem(M([falha("a", atras_h=1 + i / 1000) for i in range(200)] + [vida("a")]))[0] == "verde"
+
+
+def test_incidente_correlacionado():
+    mks3 = MKS + [{"id": "c", "nome": "Gama"}]
+    evs = [down("a", 2.0), down("b", 2.05), down("c", 2.1)]
+    r = montar(evs, mks3, CTX, AGORA, "24h")
+    assert len(r["incidentes"]) == 1
+    assert r["incidentes"][0]["sintoma"] == "interface_down"
+    assert sorted(r["incidentes"][0]["mks"]) == ["Alfa", "Beta", "Gama"]
+    assert M([down("a", 2.0), down("b", 2.05)])["incidentes"] == []
+    assert montar([down("a", 2.0), down("a", 2.01), down("a", 2.02)], mks3, CTX, AGORA, "24h")["incidentes"] == []
+
+
+def test_config_fora_do_horario():
+    def cfg(h):
+        e = EV("a", "config", "log rule added by admin", campos={"objeto": "log rule", "acao": "added", "usuario": "admin"})
+        e["recebido_em"] = h
+        return e
+    r = M([cfg(datetime(2026, 3, 5, 1, 0, tzinfo=UTC)), cfg(datetime(2026, 3, 5, 12, 0, tzinfo=UTC))])
+    assert [(c["fora_horario"], c["usuario"], c["objeto"], c["acao"]) for c in r["config"]] == [
+        (False, "admin", "log rule", "added"), (True, "admin", "log rule", "added")]  # mais recentes primeiro
+
+
+def test_usuario_novo():
+    def cfg(user, atras_h):
+        return EV("a", "config", f"x added by {user}", atras_h,
+                  campos={"objeto": "x", "acao": "added", "usuario": user})
+    r = M([cfg("admin", 120), cfg("fulano", 2)])
+    assert sem(r) == ("amarelo", "Usuário novo: fulano")
+    assert [c["usuario_novo"] for c in r["config"]] == [True]
+    r2 = M([cfg("admin", 120), cfg("admin", 2)])
+    assert [c["usuario_novo"] for c in r2["config"]] == [False]
+    r3 = M([cfg("fulano", 2)])  # sem historico anterior: nao marca
+    assert r3["config"][0]["usuario_novo"] is False
+
+
+def test_atencao_ordena_vermelho_primeiro():
+    evs = [EV("a", "outro", "x", 25), EV("b", "reboot", "router rebooted", 2), EV("b", "reboot", "router rebooted", 3)]
+    at = M(evs)["atencao"]
+    assert [(a["nome"], a["semaforo"]) for a in at] == [("Beta", "vermelho"), ("Alfa", "amarelo")]
+
+
+def test_filtro_mk_mantem_incidente_da_mk():
+    mks3 = MKS + [{"id": "c", "nome": "Gama"}]
+    evs = [down("a", 2.0), down("b", 2.05), down("c", 2.1)]
+    assert len(montar(evs, mks3, CTX, AGORA, "24h", "a")["incidentes"]) == 1
+    assert montar(evs + [vida("a")], MKS + [{"id": "d", "nome": "Delta"}], CTX, AGORA, "24h", "d")["incidentes"] == []

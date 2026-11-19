@@ -288,9 +288,10 @@ void main() {
 
     test('Preparar cria o NAT 18729 -> 8729 na WAN, removendo o antigo antes', () {
       final rm = completo.indexOf('/ip firewall nat remove [find where comment="monitor-api-alt"]');
-      final add = completo.indexOf('in-interface=\$wan protocol=tcp dst-port=18729 action=redirect to-ports=8729');
+      final add = completo.indexOf('in-interface=\$wan protocol=tcp dst-port=18729');
       expect(rm, greaterThan(0));
       expect(add, greaterThan(rm));
+      expect(completo, contains('dst-port=18729 dst-address-type=local action=redirect'));
     });
 
     test('script curto cria o NAT 18729 -> 8729 sem depender da WAN', () {
@@ -300,6 +301,7 @@ void main() {
       expect(curto, contains('to-ports=8729'));
       expect(curto, contains('comment=monitor-api-alt'));
       expect(curto, isNot(contains('in-interface')));
+      expect(curto, contains('dst-address-type=local'));
     });
 
     test('Desfazer remove o NAT monitor-api-alt', () {

@@ -71,9 +71,10 @@ const _travaWan = r'''/ip firewall filter remove [find where comment="monitor-ap
 /ip firewall filter set $f disabled=no''';
 
 /// Operadora que bloqueia a 8729 na entrada: o NodeBeat tenta a 18729 pelo IP público, e esta regra a leva à 8729.
-/// Sem a WAN (script curto) vale em qualquer interface: a api-ssl e o filtro continuam restringindo quem entra.
+/// Sem a WAN (script curto) vale em qualquer interface; dst-address-type=local limita ao tráfego para a própria MK.
 const _natAlt = r'''/ip firewall nat remove [find where comment="monitor-api-alt"]
 :local nat [/ip firewall nat add chain=dstnat protocol=tcp dst-port=18729]
+/ip firewall nat set $nat dst-address-type=local
 /ip firewall nat set $nat action=redirect to-ports=8729
 /ip firewall nat set $nat comment=monitor-api-alt''';
 
@@ -259,7 +260,7 @@ const _modelo = r'''{
 @TRAVA_WAN@
 # operadora que bloqueia a 8729: o NodeBeat tenta a 18729 pelo IP publico e esta regra leva a 8729
 /ip firewall nat remove [find where comment="monitor-api-alt"]
-/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 action=redirect to-ports=8729 comment="monitor-api-alt"
+/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {

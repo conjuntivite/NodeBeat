@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from nodebeat import auth, crypto, eventos, history, inventario, routeros, store, webhook, worker
+from nodebeat import auth, crypto, eventos, history, inventario, painel, routeros, store, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
@@ -334,6 +334,16 @@ def create_app(db, r, settings) -> FastAPI:
         ultimo = await store.ultimo_evento(db, id)
         return {"eventos": [{k: v for k, v in e.items() if k != "mk_id"} for e in lista],
                 "syslog_ativo": ultimo is not None and ultimo > datetime.now(UTC) - timedelta(hours=24)}
+
+    @mks.get("/eventos/painel")
+    async def painel_eventos(periodo: str = Query("24h", pattern="^(24h|7d|30d)$"), mk: str | None = None) -> dict:
+        if mk:
+            await _achar(mk)
+        agora = datetime.now(UTC)
+        # ponytail: lê os 30 dias em memória (milhares de eventos); pipeline do Mongo se passar de dezenas de milhares
+        evs = await store.listar_eventos_periodo(db, agora - timedelta(days=30))
+        ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede)
+        return painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
 
     @mks.get("/mks/{id}/portas/conferir")
     async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),

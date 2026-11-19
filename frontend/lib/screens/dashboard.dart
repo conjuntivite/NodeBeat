@@ -285,6 +285,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               onPressed: () => Navigator.of(context).pushNamed('/faixas'),
             ),
             IconButton(
+              tooltip: 'Eventos',
+              icon: const Icon(Icons.insights_outlined, size: 20),
+              onPressed: () => Navigator.of(context).pushNamed('/eventos'),
+            ),
+            IconButton(
               tooltip: 'Preparar MK',
               icon: const Icon(Icons.terminal, size: 20),
               onPressed: () => Navigator.of(context).pushNamed('/preparar-mk'),

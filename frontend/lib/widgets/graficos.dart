@@ -43,7 +43,7 @@ class _Legenda extends StatelessWidget {
         Row(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(color: cor, borderRadius: BorderRadius.circular(2))),
           SizedBox(width: t.space2),
-          Text(texto, style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
+          Flexible(child: Text(texto, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
         ]),
     ]);
   }
@@ -92,8 +92,9 @@ class GraficoBarras extends StatelessWidget {
         Padding(
           padding: EdgeInsets.symmetric(vertical: t.space1),
           child: Row(children: [
-            SizedBox(width: 140, child: Text(nome, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
+            Expanded(flex: 5, child: Text(nome, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
             Expanded(
+              flex: 6,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(t.radiusPill),
                 child: LinearProgressIndicator(
@@ -105,7 +106,7 @@ class GraficoBarras extends StatelessWidget {
               ),
             ),
             SizedBox(width: t.space2),
-            SizedBox(width: 44, child: Text('$n', textAlign: TextAlign.end, style: TradeType.dataSm.copyWith(color: t.fgPrimary))),
+            SizedBox(width: 40, child: Text('$n', textAlign: TextAlign.end, style: TradeType.dataSm.copyWith(color: t.fgPrimary))),
           ]),
         ),
     ]);

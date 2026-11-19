@@ -50,6 +50,11 @@ void main() {
     expect(find.textContaining('invalid value'), findsNWidgets(2));
   });
 
+  testWidgets('avisa que o Winbox cai e passa para a 18291, só no Preparar (MK nova)', (t) async {
+    await _show(t);
+    expect(find.textContaining(':18291'), findsOneWidget);
+  });
+
   testWidgets('Copiar põe o script no clipboard e avisa', (t) async {
     final copiado = await _show(t);
     await t.tap(find.byKey(const Key('copiar-preparar')));

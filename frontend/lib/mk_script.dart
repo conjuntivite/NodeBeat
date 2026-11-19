@@ -16,6 +16,8 @@ String scriptPreparar({required String ipOrigem, required List<String> ipsSede, 
     .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
     .replaceAll('@TRAVA_WAN@', _travaWan)
     .replaceAll('@NAT_MOVE@', _natMove)
+    .replaceAll('@WINBOX_REGRA@', _winboxRegra)
+    .replaceAll('@WINBOX_PORTA@', _winboxPorta)
     .replaceAll('@LISTA_API@', _lista(ipOrigem, ipsSede))
     .replaceAll('@IP_ORIGEM@', ipOrigem)
     .replaceAll('@SEDE_LISTA@',
@@ -87,6 +89,21 @@ const _natMove = r''':if ([:len $d] > 0) do={
   /ip firewall nat move $alt destination=[:pick $d 0]
 }''';
 
+/// Só no Preparar (MK nova): Winbox na 18291 (operadoras bloqueiam a 8291), aceita de qualquer IP por decisão do usuário
+/// até a etapa de segurança. As MKs já cadastradas foram ajustadas à mão.
+/// A regra vai para o topo do input (MK que descarta tudo na entrada) e é criada desligada, como a monitor-api-wan.
+const _winboxRegra = r'''/ip firewall filter remove [find where comment="winbox-alt"]
+:local wd [/ip firewall filter find where chain=input && !dynamic]
+:local w [/ip firewall filter add chain=input disabled=yes comment=winbox-alt]
+/ip firewall filter set $w protocol=tcp dst-port=18291 action=accept
+:if ([:len $wd] > 0) do={
+  /ip firewall filter move $w destination=[:pick $wd 0]
+}
+/ip firewall filter set $w disabled=no''';
+
+/// Última linha do bloco: a sessão do Winbox cai na troca e pode interromper o terminal.
+const _winboxPorta = '/ip service set winbox port=18291';
+
 /// MK já cadastrada: libera o botão Reiniciar do painel, pelo túnel e pelo IP público (o painel cai no IP público quando
 /// o túnel não responde). Dá a permissão de reboot ao grupo monitor e abre as três travas da api-ssl para o NodeBeat e os
 /// IPs da sede: serviço, usuário monitor (sem trocar a senha) e firewall.
@@ -112,7 +129,8 @@ $_natAlt
 ''';
 
 
-const scriptDesfazer = r'''/ip firewall nat remove [find where comment="monitor-api-alt"]
+const scriptDesfazer = r'''/ip firewall filter remove [find where comment="winbox-alt"]
+/ip firewall nat remove [find where comment="monitor-api-alt"]
 /ip firewall filter remove [find where comment="monitor-icmp"]
 /ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall filter remove [find where comment="monitor-api-wan"]
@@ -272,6 +290,7 @@ const _modelo = r'''{
 :local d [/ip firewall nat find where chain=dstnat && !dynamic]
 :local alt [/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"]
 @NAT_MOVE@
+@WINBOX_REGRA@
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {
@@ -287,5 +306,7 @@ const _modelo = r'''{
 :put ""
 :put ("OK. API-SSL (" . $modo . ") liberada para " . $ipOrigem . " e para a lista nodebeat-sede | ping liberado para a lista nodebeat-sede")
 :if ($trocou) do={:put "ATENCAO: o usuario monitor ja existia e a senha foi trocada. Se a MK ja esta no NodeBeat, atualize a senha no cadastro (Editar)."}
+:put "Winbox passa para a porta 18291: a sessao cai agora"
+@WINBOX_PORTA@
 }
 '''; // a linha em branco no fim é o Enter: o terminal só executa o bloco quando recebe a "}" com Enter

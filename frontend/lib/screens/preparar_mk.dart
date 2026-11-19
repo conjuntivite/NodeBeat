@@ -8,6 +8,9 @@ import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 
 /// A cópia às vezes perde a "{" do começo e o terminal roda linha a linha (as variáveis somem).
+const avisoWinbox = 'No fim, o Winbox passa para a porta 18291 e a sessão cai. Para entrar de novo, use <ip>:18291 '
+    '(pelo túnel ou pelo IP público).';
+
 const avisoColagem = 'Se o terminal mostrar "invalid value" ou "expected end of command", a colagem perdeu parte do script '
     '(a "{" do começo). Copie e cole de novo o script inteiro: ele pode ser repetido.';
 
@@ -115,6 +118,8 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
           onPressed: () => _copiar(script, 'Script copiado'),
           child: const Text('Copiar script'),
         ),
+        SizedBox(height: t.space3),
+        Text(avisoWinbox, style: texto),
         SizedBox(height: t.space3),
         Text(avisoColagem, style: texto),
         SizedBox(height: t.space3),

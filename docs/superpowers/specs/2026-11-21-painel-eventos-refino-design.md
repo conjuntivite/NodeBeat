@@ -38,7 +38,7 @@ Por categoria em `resumo` passa a existir também (campos novos, os atuais não 
 Resposta ganha `resumo_estado` ao lado de `resumo` para não quebrar o contrato atual.
 
 ### Front (Flutter)
-- `tokens.g.dart` (cópia do projeto): `bgBrand` = `#22D3EE` nos dois temas; novo `fgOnBrand` = `#04222A` (texto sobre o ciano) e `brandText` para links sobre superfície (claro `#0A7A8F`, escuro `#5BE0F5`). Conferir contraste ≥ 4,5:1 e todos os usos atuais de `bgBrand` (dashboard, login).
+- `tokens.g.dart` (cópia do projeto): `bgBrand` = `#22D3EE` nos dois temas; novo `fgOnBrand` = `#04222A` (texto sobre o ciano) e `brandText` para links sobre superfície (claro `#09768A`, escuro `#5BE0F5`). Conferir contraste ≥ 4,5:1 e todos os usos atuais de `bgBrand` (dashboard, login).
 - Cabeçalho com sobretítulo mono, título e subtítulo; filtros em pílulas (período ativo invertido).
 - Card de situação (`bgBrand`, textura hachurada): frase gerada no front por função pura e testável:
   - login de fora aceito → "Atenção: houve login de fora aceito."

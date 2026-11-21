@@ -6,6 +6,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 
 SILENCIO_H, REBOOTS_24H = 24, 2
 FLAP_N, VPN_FALHAS_N, PPPOE_MASSA_N, INCIDENTE_MKS = 3, 3, 10, 3
@@ -31,15 +32,20 @@ _INTERNAS = [ipaddress.ip_network(n) for n in
              ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16")]
 
 
-def _externo(ip: str, ctx: Ctx) -> bool:
+@lru_cache(maxsize=8192)  # o parsing de IP dominava (~5 s com 64 mil eventos); os IPs distintos são poucos
+def _externo_c(ip: str, sede_redes: tuple, ips_sede: tuple) -> bool:
     # Não usa is_global: faixas de documentação (203.0.113.0/24) contam como internet.
     try:
         a = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    if ip in ctx.ips_sede or any(a in n for n in _INTERNAS):
+    if ip in ips_sede or any(a in n for n in _INTERNAS):
         return False
-    return not any(a in ipaddress.ip_network(r) for r in ctx.sede_redes)
+    return not any(a in ipaddress.ip_network(r) for r in sede_redes)
+
+
+def _externo(ip: str, ctx: Ctx) -> bool:
+    return _externo_c(ip, tuple(ctx.sede_redes), tuple(ctx.ips_sede))
 
 
 def falha_login(ev: dict) -> tuple[str, str, str] | None:

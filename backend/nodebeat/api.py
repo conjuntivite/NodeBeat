@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import time
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from nodebeat import auth, crypto, eventos, history, inventario, painel, routeros, store, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
+PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
 
@@ -335,15 +337,22 @@ def create_app(db, r, settings) -> FastAPI:
         return {"eventos": [{k: v for k, v in e.items() if k != "mk_id"} for e in lista],
                 "syslog_ativo": ultimo is not None and ultimo > datetime.now(UTC) - timedelta(hours=24)}
 
+    _painel_cache: dict = {}  # (periodo, mk) -> (instante, resposta); no máx. 3 períodos x (1 + 19 MKs)
+
     @mks.get("/eventos/painel")
     async def painel_eventos(periodo: str = Query("24h", pattern="^(24h|7d|30d)$"), mk: str | None = None) -> dict:
         if mk:
             await _achar(mk)
+        chave, t = (periodo, mk), time.monotonic()
+        if (c := _painel_cache.get(chave)) and t - c[0] < PAINEL_TTL:
+            return c[1]
         agora = datetime.now(UTC)
-        # ponytail: lê os 30 dias em memória (milhares de eventos); pipeline do Mongo se passar de dezenas de milhares
+        # ponytail: lê os 30 dias em memória (~30 mil eventos/dia); pipeline do Mongo se o cache não bastar
         evs = await store.listar_eventos_periodo(db, agora - timedelta(days=30))
         ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede)
-        return painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
+        res = painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
+        _painel_cache[chave] = (t, res)
+        return res
 
     @mks.get("/mks/{id}/portas/conferir")
     async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),

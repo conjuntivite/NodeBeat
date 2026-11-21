@@ -78,3 +78,20 @@ async def test_filtro_mk(client, db):
     body = (await client.get("/api/eventos/painel", params={"mk": b})).json()
     assert [m["mk_id"] for m in body["por_mk"]] == [b]
     assert body["resumo"]["acesso"] == 1
+
+
+async def test_cache_repete_a_resposta_dentro_do_ttl(client, db):
+    id = await criar(client)
+    antes = (await client.get("/api/eventos/painel")).json()
+    await store.inserir_eventos(db, [falha(id, "203.0.113.9")])
+    assert (await client.get("/api/eventos/painel")).json() == antes
+
+
+async def test_cache_expira_e_chave_inclui_periodo_e_mk(client, db, monkeypatch):
+    id = await criar(client)
+    await client.get("/api/eventos/painel")
+    await store.inserir_eventos(db, [falha(id, "203.0.113.9")])
+    assert (await client.get("/api/eventos/painel", params={"periodo": "7d"})).json()["resumo"]["acesso"] == 1
+    assert (await client.get("/api/eventos/painel", params={"mk": id})).json()["resumo"]["acesso"] == 1
+    monkeypatch.setattr("nodebeat.api.PAINEL_TTL", 0)
+    assert (await client.get("/api/eventos/painel")).json()["resumo"]["acesso"] == 1

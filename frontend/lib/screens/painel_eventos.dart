@@ -49,6 +49,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   List<MkPainel> _mks = []; // lista completa, vinda da carga sem filtro
   String? _erro;
   int _pedido = 0;
+  final _chaves = {for (final c in _categorias) c: GlobalKey()};
 
   @override
   void initState() {
@@ -170,40 +171,171 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         ]),
       );
 
-  List<Widget> _conteudo(BuildContext context, TradeTokens t, PainelEventos d) => [
-        _topo(context, t, d),
-        if (d.incidentes.isNotEmpty) ...[SizedBox(height: t.space4), _incidentes(t, d)],
-        SizedBox(height: t.space4),
-        _resumo(t, d),
-        SizedBox(height: t.space4),
-        _bloco(t, 'Acesso (hacker)', d.blocos['acesso'], 'acesso', [
-          _lista(t, 'IPs que mais tentaram', [for (final i in d.blocos['acesso']?.topIps ?? const <ContaIp>[]) (i.ip, '${i.n}')]),
-          _barras(t, 'Serviços atacados', [for (final e in (d.blocos['acesso']?.porVia ?? const <String, int>{}).entries) (e.key, e.value)]),
-          _lista(t, 'Logins de fora', [
-            for (final l in d.blocos['acesso']?.loginsExternos ?? const <Map<String, dynamic>>[])
-              ('${l['usuario']} de ${l['ip']} via ${l['via']}', '${l['nome']}'),
-          ], cor: t.negative),
-        ]),
-        SizedBox(height: t.space4),
-        _bloco(t, 'Autenticação', d.blocos['autenticacao'], 'autenticacao', [_subtiposBarras(t, d.blocos['autenticacao'])]),
-        SizedBox(height: t.space4),
-        _bloco(t, 'VPN', d.blocos['vpn'], 'vpn', [
+  List<Widget> _conteudo(BuildContext context, TradeTokens t, PainelEventos d) {
+    final porMk = [
+      for (final m in d.porMk) (m.nome, m.contagens.values.fold<int>(0, (a, b) => a + b)),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    final ranking = porMk.where((e) => e.$2 > 0).take(10).toList();
+    final nota = notaConcentracao(ranking);
+    final blocoAcesso = d.blocos['acesso'];
+    final logins = blocoAcesso?.loginsExternos ?? const <Map<String, dynamic>>[];
+
+    final cards = [
+      for (final c in _categorias)
+        CartaoCategoria(
+          categoria: c,
+          total: d.resumo[c] ?? 0,
+          estado: d.resumoEstado[c],
+          serie: d.serieHora,
+          aoVerDetalhes: () {
+            final ctx = _chaves[c]!.currentContext;
+            if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), alignment: 0.05);
+          },
+        ),
+    ];
+
+    final linha = _cartao(t, 'Ao longo do tempo', 'Quando os eventos aconteceram',
+        'Cada linha é um tipo de evento por hora. Picos isolados costumam ser varredura; subida contínua merece atenção.', [
+      GraficoLinha(pontos: d.serieHora, series: _categorias),
+    ]);
+    final barras = _cartao(t, 'Por MK', 'Quem mais recebe eventos',
+        'Mais eventos não quer dizer mais problema: MKs com IP público exposto recebem mais varredura.', [
+      GraficoBarras(dados: ranking, cor: t.bgBrand),
+      if (nota != null) _aviso(t, nota),
+    ]);
+
+    return [
+      _topo(context, t, d),
+      SizedBox(height: t.space4),
+      _grade(t, cards, [1000, 560]),
+      SizedBox(height: t.space4),
+      LayoutBuilder(builder: (context, c) {
+        if (c.maxWidth < 900) return Column(children: [linha, SizedBox(height: t.space4), barras]);
+        return IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(flex: 2, child: linha),
+            SizedBox(width: t.space4),
+            Expanded(child: barras),
+          ]),
+        );
+      }),
+      SizedBox(height: t.space4),
+      _detalheAcesso(t, blocoAcesso, logins),
+      SizedBox(height: t.space4),
+      _grade(t, [
+        _detalhe(t, 'autenticacao', 'Quem erra a senha por dentro', 'Falhas de login na rede interna e de PPPoE, por tipo e por MK.',
+            d.blocos['autenticacao'], [_subtiposBarras(t, d.blocos['autenticacao'])]),
+        _detalhe(t, 'vpn', 'Túneis com falha', 'Falhas ao negociar o túnel, por MK e as últimas ocorrências.', d.blocos['vpn'], [
           _subtiposBarras(t, d.blocos['vpn']),
           _lista(t, 'Últimas falhas', [
             for (final u in d.blocos['vpn']?.ultimos ?? const <Map<String, dynamic>>[])
               ('${u['nome']}: ${u['mensagem']}', formatEventoHora(DateTime.parse(u['quando']))),
           ]),
         ]),
-        SizedBox(height: t.space4),
-        _bloco(t, 'Erros importantes', d.blocos['erros'], 'erros', [
+        _detalhe(t, 'erros', 'Problemas nas MKs e no cabo', 'Reinícios, quedas de interface e colisões, por tipo e por MK.',
+            d.blocos['erros'], [
           _subtiposBarras(t, d.blocos['erros']),
           _lista(t, 'Colisão / duplex por interface', [
             for (final i in d.blocos['erros']?.interfaces ?? const <Map<String, dynamic>>[]) ('${i['nome']} · ${i['interface']}', '${i['n']}'),
           ]),
         ]),
-        SizedBox(height: t.space4),
-        _config(t, d),
-      ];
+      ], [1000, 700]),
+      if (d.incidentes.isNotEmpty) ...[SizedBox(height: t.space4), _incidentes(t, d)],
+      SizedBox(height: t.space4),
+      _config(t, d),
+    ];
+  }
+
+  /// Distribui os cards em colunas: a partir do 1.º limite todos lado a lado; a partir do 2.º, 2 colunas; abaixo, uma.
+  Widget _grade(TradeTokens t, List<Widget> itens, List<double> limites) => LayoutBuilder(builder: (context, c) {
+        final cols = c.maxWidth >= limites[0] ? itens.length : (c.maxWidth >= limites[1] ? 2 : 1);
+        final linhas = <Widget>[];
+        for (var i = 0; i < itens.length; i += cols) {
+          final grupo = itens.sublist(i, i + cols > itens.length ? itens.length : i + cols);
+          if (linhas.isNotEmpty) linhas.add(SizedBox(height: t.space4));
+          linhas.add(IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (var k = 0; k < cols; k++) ...[
+                if (k > 0) SizedBox(width: t.space4),
+                Expanded(child: k < grupo.length ? grupo[k] : const SizedBox.shrink()),
+              ],
+            ]),
+          ));
+        }
+        return Column(children: linhas);
+      });
+
+  Widget _cartao(TradeTokens t, String sobre, String titulo, String sub, List<Widget> filhos) => TradeCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          eyebrow(sobre, cor: t.fgMuted),
+          SizedBox(height: t.space1),
+          Text(titulo, style: TradeType.heading3.copyWith(color: t.fgPrimary)),
+          SizedBox(height: t.space1),
+          Text(sub, style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+          SizedBox(height: t.space4),
+          ...filhos,
+        ]),
+      );
+
+  Widget _aviso(TradeTokens t, String texto) => Container(
+        margin: EdgeInsets.only(top: t.space4),
+        padding: EdgeInsets.all(t.space3),
+        decoration: BoxDecoration(color: t.info.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(t.radiusMd)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.info_outline, size: 16, color: t.info),
+          SizedBox(width: t.space2),
+          Expanded(child: Text(texto, style: TradeType.bodySm.copyWith(color: t.fgPrimary))),
+        ]),
+      );
+
+  Widget _detalheAcesso(TradeTokens t, BlocoPainel? b, List<Map<String, dynamic>> logins) => Container(
+        key: _chaves['acesso'],
+        child: TradeCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(alignment: WrapAlignment.spaceBetween, spacing: t.space3, runSpacing: t.space3, children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  eyebrow('Acesso · detalhe', cor: t.fgMuted),
+                  SizedBox(height: t.space1),
+                  Text('Quem está tentando entrar', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
+                  SizedBox(height: t.space1),
+                  Text('IPs da internet que erraram a senha. Um IP que aparece muito dá para bloquear no firewall.',
+                      style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+                ]),
+              ),
+              logins.isEmpty
+                  ? Pilula('Nenhum login de fora aceito', cor: t.positive)
+                  : Pilula(logins.length == 1 ? '1 login de fora aceito' : '${logins.length} logins de fora aceitos', cor: t.negative),
+            ]),
+            SizedBox(height: t.space4),
+            LayoutBuilder(builder: (context, c) {
+              final ips = _lista(t, 'IPs que mais tentaram', [for (final i in b?.topIps ?? const <ContaIp>[]) (i.ip, '${i.n} tentativas')],
+                  pilulaCor: t.negative);
+              final vias = _barras(t, 'Serviço atacado', [for (final e in (b?.porVia ?? const <String, int>{}).entries) (e.key.toUpperCase(), e.value)]);
+              final dois = c.maxWidth >= 700;
+              return dois
+                  ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Expanded(child: ips),
+                      SizedBox(width: t.space6),
+                      Expanded(child: vias),
+                    ])
+                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ips, vias]);
+            }),
+            _lista(t, 'Logins de fora aceitos', [
+              for (final l in logins) ('${l['usuario']} de ${l['ip']} via ${l['via']}', '${l['nome']}'),
+            ], cor: t.negative),
+          ]),
+        ),
+      );
+
+  Widget _detalhe(TradeTokens t, String cat, String titulo, String sub, BlocoPainel? b, List<Widget> filhos) => Container(
+        key: _chaves[cat],
+        child: _cartao(t, rotuloCategoria[cat] ?? cat, titulo, sub, [
+          _barras(t, 'Por MK', [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)], topo: false),
+          ...filhos,
+        ]),
+      );
 
   Widget _topo(BuildContext context, TradeTokens t, PainelEventos d) {
     int n(String c) => d.porMk.where((m) => m.semaforo == c).length;
@@ -229,112 +361,72 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     });
   }
 
-  Widget _incidentes(TradeTokens t, PainelEventos d) => TradeCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Incidentes entre MKs', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-          Text('Várias MKs com o mesmo problema ao mesmo tempo: provável causa na sede ou na operadora.',
-              style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-          SizedBox(height: t.space3),
+  Widget _incidentes(TradeTokens t, PainelEventos d) => _cartao(
+        t,
+        'Correlação',
+        'Incidentes entre MKs',
+        'Várias MKs com o mesmo problema ao mesmo tempo: provável causa na sede ou na operadora.',
+        [
           for (final i in d.incidentes)
             Padding(
               padding: EdgeInsets.symmetric(vertical: t.space1),
               child: Text('${formatEventoHora(i.inicio)} · ${_sintomas[i.sintoma] ?? i.sintoma} · ${i.mks.join(', ')}',
                   style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
             ),
-        ]),
+        ],
       );
 
-  Widget _resumo(TradeTokens t, PainelEventos d) {
-    final porMk = [
-      for (final m in d.porMk)
-        (m.nome, m.contagens.values.fold<int>(0, (a, b) => a + b)),
-    ]..sort((a, b) => b.$2.compareTo(a.$2));
-    Widget cartao(String titulo, Widget grafico) => TradeCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(titulo, style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-            SizedBox(height: t.space3),
-            grafico,
-          ]),
-        );
-    return LayoutBuilder(builder: (context, c) {
-      final barras = cartao('Por MK', GraficoBarras(dados: porMk.where((e) => e.$2 > 0).take(10).toList()));
-      final linha = cartao('Ao longo do tempo', GraficoLinha(pontos: d.serieHora, series: _categorias));
-      if (c.maxWidth >= 900) {
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(flex: 2, child: linha),
-          SizedBox(width: t.space4),
-          Expanded(child: barras),
-        ]);
-      }
-      return Column(children: [linha, SizedBox(height: t.space4), barras]);
-    });
-  }
-
-  Widget _bloco(TradeTokens t, String titulo, BlocoPainel? b, String cat, List<Widget> filhos) => TradeCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(titulo, style: TradeType.heading4.copyWith(color: t.fgPrimary))),
-            Text('${b?.total ?? 0}', key: Key('total-$cat'), style: TradeType.dataLg.copyWith(color: corCategoria(t, cat))),
-          ]),
-          SizedBox(height: t.space3),
-          _barras(t, 'Por MK', [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)]),
-          ...filhos,
-        ]),
-      );
-
-  Widget _barras(TradeTokens t, String titulo, List<(String, int)> dados) => dados.isEmpty
+  Widget _barras(TradeTokens t, String titulo, List<(String, int)> dados, {bool topo = true}) => dados.isEmpty
       ? const SizedBox.shrink()
       : Padding(
-          padding: EdgeInsets.only(top: t.space3),
+          padding: EdgeInsets.only(top: topo ? t.space3 : 0),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(titulo, style: TradeType.label.copyWith(color: t.fgSecondary)),
-            SizedBox(height: t.space1),
-            GraficoBarras(dados: dados),
+            eyebrow(titulo, cor: t.fgMuted),
+            SizedBox(height: t.space2),
+            GraficoBarras(dados: dados, cor: t.bgBrand),
           ]),
         );
 
   Widget _subtiposBarras(TradeTokens t, BlocoPainel? b) =>
       _barras(t, 'Tipos', [for (final e in (b?.porSubtipo ?? const <String, int>{}).entries) (_subtipos[e.key] ?? e.key, e.value)]);
 
-  Widget _lista(TradeTokens t, String titulo, List<(String, String)> itens, {Color? cor}) => itens.isEmpty
+  Widget _lista(TradeTokens t, String titulo, List<(String, String)> itens, {Color? cor, Color? pilulaCor}) => itens.isEmpty
       ? const SizedBox.shrink()
       : Padding(
           padding: EdgeInsets.only(top: t.space3),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(titulo, style: TradeType.label.copyWith(color: t.fgSecondary)),
+            eyebrow(titulo, cor: t.fgMuted),
+            SizedBox(height: t.space2),
             for (final (a, b) in itens)
               Padding(
                 padding: EdgeInsets.symmetric(vertical: t.space1),
                 child: Row(children: [
                   Expanded(child: Text(a, style: dataStyle(context, TradeType.dataSm).copyWith(color: cor ?? t.fgPrimary))),
-                  Text(b, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+                  SizedBox(width: t.space2),
+                  if (pilulaCor != null) Pilula(b, cor: pilulaCor) else Text(b, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
                 ]),
               ),
           ]),
         );
 
-  Widget _selinho(TradeTokens t, String texto, Color cor) => Container(
-        margin: EdgeInsets.only(left: t.space2),
-        padding: EdgeInsets.symmetric(horizontal: t.space2, vertical: 2),
-        decoration: BoxDecoration(border: Border.all(color: cor), borderRadius: BorderRadius.circular(t.radiusPill)),
-        child: Text(texto, style: TradeType.label.copyWith(color: cor)),
-      );
-
-  Widget _config(TradeTokens t, PainelEventos d) => TradeCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Mudanças de configuração', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-          SizedBox(height: t.space3),
+  Widget _config(TradeTokens t, PainelEventos d) => _cartao(
+        t,
+        'Auditoria',
+        'Mudanças de configuração',
+        'Quem mexeu na configuração das MKs. "Fora do horário" e "usuário novo" merecem conferência.',
+        [
           if (d.config.isEmpty) Text('Nenhuma mudança no período', style: TradeType.bodyMd.copyWith(color: t.fgMuted)),
           for (final c in d.config.take(50))
             Padding(
               padding: EdgeInsets.symmetric(vertical: t.space1),
-              child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                Text('${formatEventoHora(c.quando)} · ${c.nome} · ${c.usuario ?? '?'} · ${c.acao ?? ''} ${c.objeto ?? ''}',
+              child: Wrap(spacing: t.space2, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                Text(formatEventoHora(c.quando), style: TradeType.ticker.copyWith(color: t.fgMuted)),
+                Text('${c.nome} · ${c.usuario ?? '?'} · ${c.acao ?? ''} ${c.objeto ?? ''}',
                     style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
-                if (c.foraHorario) _selinho(t, 'fora do horário', t.warning),
-                if (c.usuarioNovo) _selinho(t, 'usuário novo', t.warning),
+                if (c.foraHorario) Pilula('fora do horário', cor: t.warning),
+                if (c.usuarioNovo) Pilula('usuário novo', cor: t.warning),
               ]),
             ),
-        ]),
+        ],
       );
 }

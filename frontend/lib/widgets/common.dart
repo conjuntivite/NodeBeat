@@ -166,7 +166,7 @@ class Pilula extends StatelessWidget {
           Container(width: 8, height: 8, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
           SizedBox(width: t.space2),
         ],
-        Text(texto, style: TradeType.label.copyWith(color: cor, fontWeight: FontWeight.w600)),
+        Flexible(child: Text(texto, overflow: TextOverflow.ellipsis, style: TradeType.label.copyWith(color: cor, fontWeight: FontWeight.w600))),
       ]),
     );
   }

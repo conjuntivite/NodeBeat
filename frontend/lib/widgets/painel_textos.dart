@@ -46,3 +46,6 @@ String? notaConcentracao(List<(String, int)> porMk) {
   if (pct < 25) return null;
   return '${topo.$1} concentra $pct% dos eventos. Confirme se ela precisa ter SSH/Winbox aberto para a internet.';
 }
+
+/// 23445 -> "23.445".
+String milhar(int n) => n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');

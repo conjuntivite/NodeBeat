@@ -1,9 +1,12 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import 'common.dart';
+import 'graficos.dart';
+import 'painel_textos.dart';
 
 /// Sobretítulo em caixa alta (mono). A caixa alta vem do texto, não de estilo.
 Widget eyebrow(String texto, {required Color cor}) =>
@@ -158,6 +161,90 @@ class PainelAtencao extends StatelessWidget {
               ]),
             ),
           ),
+      ]),
+    );
+  }
+}
+
+Color _corEstado(TradeTokens t, String estado) => switch (estado) {
+      'esperado' => t.info,
+      'normal' => t.positive,
+      'atencao' => t.warning,
+      _ => t.negative,
+    };
+
+/// Card de uma categoria de eventos: o número, se é bom ou ruim e o que ele significa.
+class CartaoCategoria extends StatelessWidget {
+  const CartaoCategoria({
+    super.key,
+    required this.categoria,
+    required this.total,
+    required this.estado,
+    required this.serie,
+    required this.aoVerDetalhes,
+  });
+  final String categoria;
+  final int total;
+  final EstadoCategoria? estado;
+  final List<PontoSerie> serie;
+  final VoidCallback aoVerDetalhes;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    final delta = estado?.deltaPct;
+    // Acesso é ruído da internet: a variação fica neutra. Nas demais, subir é ruim e cair é bom.
+    final corDelta = delta == null
+        ? t.fgMuted
+        : categoria == 'acesso' || delta == 0
+            ? t.fgSecondary
+            : delta > 0
+                ? t.negative
+                : t.positive;
+    final pontos = [for (var i = 0; i < serie.length; i++) FlSpot(i.toDouble(), (serie[i].valores[categoria] ?? 0).toDouble())];
+    return TradeCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: eyebrow(rotuloCategoria[categoria] ?? categoria, cor: t.fgMuted)),
+          if (estado != null) Selo(rotuloEstado(estado!.estado), cor: _corEstado(t, estado!.estado)),
+        ]),
+        SizedBox(height: t.space3),
+        Text(milhar(total), key: Key('total-$categoria'), style: TradeType.dataXl.copyWith(color: t.fgPrimary)),
+        SizedBox(height: t.space1),
+        Text(textoDelta(delta), style: TradeType.dataSm.copyWith(color: corDelta)),
+        SizedBox(height: t.space3),
+        SizedBox(
+          height: 36,
+          child: pontos.length < 2
+              ? null
+              : LineChart(LineChartData(
+                  minY: 0,
+                  gridData: const FlGridData(show: false),
+                  titlesData: const FlTitlesData(show: false),
+                  borderData: FlBorderData(show: false),
+                  lineTouchData: const LineTouchData(enabled: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: pontos,
+                      isCurved: true,
+                      color: corCategoria(t, categoria),
+                      barWidth: 2,
+                      dotData: const FlDotData(show: false),
+                    ),
+                  ],
+                )),
+        ),
+        SizedBox(height: t.space3),
+        Container(
+          padding: EdgeInsets.only(top: t.space3),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: t.borderSubtle))),
+          child: Text(explicacaoCategoria[categoria] ?? '', style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+        ),
+        SizedBox(height: t.space3),
+        InkWell(
+          onTap: aoVerDetalhes,
+          child: Text('Ver detalhes →', style: TradeType.label.copyWith(color: t.brandText, fontWeight: FontWeight.w600)),
+        ),
       ]),
     );
   }

@@ -32,6 +32,10 @@ void main() {
     });
   });
 
+  test('milhar separa com ponto', () {
+    expect([for (final n in [0, 7, 999, 1000, 23445, 1234567]) milhar(n)], ['0', '7', '999', '1.000', '23.445', '1.234.567']);
+  });
+
   test('rotuloEstado', () {
     expect([for (final e in ['esperado', 'normal', 'atencao', 'critico']) rotuloEstado(e)],
         ['Esperado', 'Normal', 'Atenção', 'Crítico']);

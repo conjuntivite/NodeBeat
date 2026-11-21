@@ -9,6 +9,12 @@ Map<String, dynamic> painelJson() => {
       'periodo': '24h',
       'gerado_em': '2026-03-05T15:00:00+00:00',
       'resumo': {'acesso': 12, 'autenticacao': 3, 'vpn': 1, 'erros': 5},
+      'resumo_estado': {
+        'acesso': {'estado': 'esperado', 'delta_pct': 4},
+        'autenticacao': {'estado': 'normal', 'delta_pct': -2},
+        'vpn': {'estado': 'normal', 'delta_pct': null},
+        'erros': {'estado': 'atencao', 'delta_pct': 38},
+      },
       'serie_hora': [
         {'hora': '2026-03-05T14:00:00+00:00', 'acesso': 2, 'autenticacao': 0, 'vpn': 0, 'erros': 1},
         {'hora': '2026-03-05T15:00:00+00:00', 'acesso': 1, 'autenticacao': 1, 'vpn': 0, 'erros': 0},
@@ -99,6 +105,16 @@ void main() {
     expect(p.incidentes.first.mks, ['Alfa', 'Beta', 'Gama']);
     expect(p.config.first.foraHorario, true);
     expect(p.config.first.usuarioNovo, true);
+  });
+
+  test('PainelEventos lê resumo_estado e aceita resposta sem o campo', () {
+    final p = PainelEventos.fromJson(painelJson());
+    expect(p.resumoEstado['acesso']!.estado, 'esperado');
+    expect(p.resumoEstado['acesso']!.deltaPct, 4);
+    expect(p.resumoEstado['autenticacao']!.deltaPct, -2);
+    expect(p.resumoEstado['vpn']!.deltaPct, isNull);
+    final antigo = painelJson()..remove('resumo_estado');
+    expect(PainelEventos.fromJson(antigo).resumoEstado, isEmpty);
   });
 
   test('painelEventos chama /api/eventos/painel com periodo e mk', () async {

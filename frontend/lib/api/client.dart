@@ -246,10 +246,23 @@ class MudancaConfig {
   final bool foraHorario, usuarioNovo;
 }
 
+/// Selo e variação de uma categoria: estado = esperado | normal | atencao | critico.
+class EstadoCategoria {
+  EstadoCategoria.fromJson(Map<String, dynamic> j)
+      : estado = j['estado'] as String,
+        deltaPct = (j['delta_pct'] as num?)?.toInt();
+  final String estado;
+  final int? deltaPct; // null: sem base de comparação
+}
+
 class PainelEventos {
   PainelEventos.fromJson(Map<String, dynamic> j)
       : periodo = j['periodo'],
         resumo = _mapaInt(j['resumo']),
+        resumoEstado = {
+          for (final e in (j['resumo_estado'] as Map? ?? const {}).entries)
+            e.key as String: EstadoCategoria.fromJson(Map<String, dynamic>.from(e.value)),
+        },
         serieHora = [for (final e in _lista(j['serie_hora'])) PontoSerie.fromJson(e)],
         blocos = {for (final e in (j['blocos'] as Map).entries) e.key as String: BlocoPainel.fromJson(Map<String, dynamic>.from(e.value))},
         porMk = [for (final e in _lista(j['por_mk'])) MkPainel.fromJson(e)],
@@ -258,6 +271,7 @@ class PainelEventos {
         config = [for (final e in _lista(j['config'])) MudancaConfig.fromJson(e)];
   final String periodo;
   final Map<String, int> resumo;
+  final Map<String, EstadoCategoria> resumoEstado;
   final List<PontoSerie> serieHora;
   final Map<String, BlocoPainel> blocos;
   final List<MkPainel> porMk;

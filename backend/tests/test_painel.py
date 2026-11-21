@@ -348,3 +348,24 @@ def test_vpn_atencao_so_com_rajada_de_falhas():
         return EV("a", "ipsec", "failed to pre-process ph2 packet.", h)
     assert est(M([f(1.0), f(1.2)]), "vpn")["estado"] == "normal"
     assert est(M([f(1.4), f(1.0), f(1.2)]), "vpn")["estado"] == "atencao"  # fora de ordem também conta
+
+
+# ---- Revisão final: base por MK e rajada de VPN por MK ----
+def test_delta_nao_inventa_variacao_com_mk_recente():
+    # "a" é antiga (sem eventos na janela); "b" começou há ~1,5 dia e manda 20/dia de forma constante.
+    b = [falha("b", atras_h=1 + 1.2 * i) for i in range(50)]
+    evs = [falha("a", atras_h=200)] + b
+    for mk_id in (None, "b"):
+        d = M(evs, mk_id=mk_id)["resumo_estado"]["acesso"]["delta_pct"]
+        assert d is not None and abs(d) < 15, (mk_id, d)
+
+
+def test_vpn_rajada_e_por_mk_nao_somada_entre_mks():
+    mks3 = MKS + [{"id": "c", "nome": "Gama"}]
+
+    def f(mk, h):
+        return EV(mk, "ipsec", "failed to pre-process ph2 packet.", h)
+    espalhadas = [f("a", 1.0), f("b", 1.1), f("c", 1.2)]
+    assert montar(espalhadas, mks3, CTX, AGORA, "24h")["resumo_estado"]["vpn"]["estado"] == "normal"
+    na_mesma = [f("a", 1.0), f("a", 1.1), f("a", 1.2)]
+    assert montar(na_mesma, mks3, CTX, AGORA, "24h")["resumo_estado"]["vpn"]["estado"] == "atencao"

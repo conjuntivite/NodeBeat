@@ -30,8 +30,8 @@ Map<String, dynamic> _zerado() => {
     };
 
 Future<List<Uri>> _show(WidgetTester t,
-    {Map<String, dynamic>? corpo, int status = 200, Brightness b = Brightness.light}) async {
-  t.view.physicalSize = const Size(1100, 2400);
+    {Map<String, dynamic>? corpo, int status = 200, Brightness b = Brightness.light, double largura = 1100}) async {
+  t.view.physicalSize = Size(largura, 2400);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final urls = <Uri>[];
@@ -58,7 +58,7 @@ void main() {
   for (final b in Brightness.values) {
     testWidgets('mostra atenção, incidentes, blocos e mudanças (${b.name})', (t) async {
       await _show(t, b: b);
-      expect(find.text('Atenção agora'), findsOneWidget);
+      expect(find.text('ATENÇÃO AGORA'), findsOneWidget);
       expect(find.textContaining('Login de fora: admin'), findsOneWidget);
       expect(find.text('Vermelho'), findsOneWidget);
       expect(find.text('Incidentes entre MKs'), findsOneWidget);
@@ -77,6 +77,32 @@ void main() {
       expect(t.takeException(), isNull);
     });
   }
+
+  for (final b in Brightness.values) {
+    testWidgets('cabeçalho e card de situação (${b.name})', (t) async {
+      await _show(t, b: b);
+      expect(find.text('Eventos'), findsOneWidget);
+      expect(find.textContaining('NODEBEAT'), findsOneWidget);
+      expect(find.text('Sem invasão detectada, mas 1 MK em vermelho.'), findsOneWidget);
+      expect(find.textContaining('SITUAÇÃO'), findsOneWidget);
+      expect(find.textContaining('1 verde'), findsOneWidget);
+      expect(find.textContaining('0 amarelas'), findsOneWidget);
+      expect(find.textContaining('1 vermelha'), findsOneWidget);
+      expect(find.text('1 MK pede uma olhada'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('tela estreita (360 px) sem overflow', (t) async {
+    await _show(t, largura: 360);
+    expect(find.text('Sem invasão detectada, mas 1 MK em vermelho.'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('sem eventos: Tudo calmo', (t) async {
+    await _show(t, corpo: _zerado());
+    expect(find.text('Tudo calmo.'), findsOneWidget);
+  });
 
   testWidgets('trocar o período refaz a requisição', (t) async {
     final urls = await _show(t);

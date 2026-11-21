@@ -6,8 +6,11 @@ import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/eventos.dart' show formatEventoHora;
 import '../widgets/graficos.dart';
+import '../widgets/painel_cards.dart';
+import '../widgets/painel_textos.dart';
 
 const _periodos = [('24 h', '24h'), ('7 dias', '7d'), ('30 dias', '30d')];
+const _rotuloPeriodo = {'24h': 'últimas 24 h', '7d': 'últimos 7 dias', '30d': 'últimos 30 dias'};
 const _categorias = ['acesso', 'autenticacao', 'vpn', 'erros'];
 
 const _subtipos = {
@@ -77,39 +80,87 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       appBar: AppBar(
         leading: backFallback(context),
         backgroundColor: t.bgPage,
-        title: Text('Eventos', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
         actions: [const ThemeToggle(), SizedBox(width: t.space2)],
       ),
       body: ListView(padding: EdgeInsets.all(t.space6), children: [
-        _filtros(t),
-        SizedBox(height: t.space4),
+        _cabecalho(t),
+        SizedBox(height: t.space6),
         if (_erro != null) _falha(t) else if (d == null) const Center(child: CircularProgressIndicator()) else ..._conteudo(context, t, d),
       ]),
     );
   }
 
-  Widget _filtros(TradeTokens t) => Wrap(spacing: t.space4, runSpacing: t.space3, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        SegmentedButton<String>(
-          showSelectedIcon: false,
-          segments: [for (final (rotulo, valor) in _periodos) ButtonSegment(value: valor, label: Text(rotulo))],
-          selected: {_periodo},
-          onSelectionChanged: (s) {
-            _periodo = s.first;
-            _carregar();
-          },
+  Widget _cabecalho(TradeTokens t) => Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        spacing: t.space4,
+        runSpacing: t.space4,
+        children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            eyebrow('NodeBeat · segurança e eventos', cor: t.fgMuted),
+            SizedBox(height: t.space1),
+            Text('Eventos', style: TradeType.heading1.copyWith(color: t.fgPrimary)),
+            Text('O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
+                style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+          ]),
+          Wrap(spacing: t.space2, runSpacing: t.space2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            _pilulasPeriodo(t),
+            _filtroMk(t),
+          ]),
+        ],
+      );
+
+  Widget _pilulasPeriodo(TradeTokens t) => Container(
+        padding: EdgeInsets.all(t.space1),
+        decoration: BoxDecoration(
+          color: t.bgSurface,
+          borderRadius: BorderRadius.circular(t.radiusPill),
+          border: Border.all(color: t.borderSubtle),
         ),
-        DropdownButton<String?>(
-          value: _mk,
-          items: [
-            const DropdownMenuItem<String?>(value: null, child: Text('Todas as MKs')),
-            for (final m in _mks) DropdownMenuItem<String?>(value: m.mkId, child: Text(m.nome)),
-          ],
-          onChanged: (v) {
-            _mk = v;
-            _carregar();
-          },
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final (rotulo, valor) in _periodos)
+            InkWell(
+              borderRadius: BorderRadius.circular(t.radiusPill),
+              onTap: () {
+                _periodo = valor;
+                _carregar();
+              },
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space2),
+                decoration: BoxDecoration(
+                  color: valor == _periodo ? t.bgInverse : null,
+                  borderRadius: BorderRadius.circular(t.radiusPill),
+                ),
+                child: Text(rotulo,
+                    style: TradeType.label.copyWith(color: valor == _periodo ? t.fgInverse : t.fgSecondary)),
+              ),
+            ),
+        ]),
+      );
+
+  Widget _filtroMk(TradeTokens t) => Container(
+        padding: EdgeInsets.symmetric(horizontal: t.space4),
+        decoration: BoxDecoration(
+          color: t.bgSurface,
+          borderRadius: BorderRadius.circular(t.radiusPill),
+          border: Border.all(color: t.borderSubtle),
         ),
-      ]);
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String?>(
+            value: _mk,
+            borderRadius: BorderRadius.circular(t.radiusMd),
+            style: TradeType.label.copyWith(color: t.fgPrimary),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('Todas as MKs')),
+              for (final m in _mks) DropdownMenuItem<String?>(value: m.mkId, child: Text(m.nome)),
+            ],
+            onChanged: (v) {
+              _mk = v;
+              _carregar();
+            },
+          ),
+        ),
+      );
 
   Widget _falha(TradeTokens t) => TradeCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -120,7 +171,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       );
 
   List<Widget> _conteudo(BuildContext context, TradeTokens t, PainelEventos d) => [
-        _atencao(context, t, d),
+        _topo(context, t, d),
         if (d.incidentes.isNotEmpty) ...[SizedBox(height: t.space4), _incidentes(t, d)],
         SizedBox(height: t.space4),
         _resumo(t, d),
@@ -154,44 +205,29 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         _config(t, d),
       ];
 
-  Widget _selo(TradeTokens t, String semaforo) {
-    final (cor, icone, texto) = switch (semaforo) {
-      'vermelho' => (t.negative, Icons.error_outline, 'Vermelho'),
-      'amarelo' => (t.warning, Icons.warning_amber_outlined, 'Amarelo'),
-      _ => (t.positive, Icons.check_circle_outline, 'Verde'),
-    };
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icone, size: 18, color: cor),
-      SizedBox(width: t.space1),
-      Flexible(child: Text(texto, overflow: TextOverflow.ellipsis, style: TradeType.label.copyWith(color: cor))),
-    ]);
+  Widget _topo(BuildContext context, TradeTokens t, PainelEventos d) {
+    int n(String c) => d.porMk.where((m) => m.semaforo == c).length;
+    final situacao = CartaoSituacao(
+      frase: fraseSituacao(d),
+      eyebrowTexto: 'Situação · ${_rotuloPeriodo[d.periodo] ?? d.periodo}',
+      verdes: n('verde'),
+      amarelas: n('amarelo'),
+      vermelhas: n('vermelho'),
+    );
+    final atencao = PainelAtencao(itens: d.atencao, aoAbrir: (id) => Navigator.of(context).pushNamed('/mk/$id'));
+    return LayoutBuilder(builder: (context, c) {
+      if (c.maxWidth >= 900) {
+        return IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(flex: 3, child: situacao),
+            SizedBox(width: t.space4),
+            Expanded(flex: 2, child: atencao),
+          ]),
+        );
+      }
+      return Column(children: [situacao, SizedBox(height: t.space4), atencao]);
+    });
   }
-
-  Widget _atencao(BuildContext context, TradeTokens t, PainelEventos d) => TradeCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Atenção agora', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-          SizedBox(height: t.space3),
-          if (d.atencao.isEmpty)
-            Row(children: [
-              Icon(Icons.check_circle_outline, size: 18, color: t.positive),
-              SizedBox(width: t.space2),
-              Text('Tudo certo', style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
-            ]),
-          for (final a in d.atencao)
-            InkWell(
-              key: Key('atencao-${a.mkId}'),
-              onTap: () => Navigator.of(context).pushNamed('/mk/${a.mkId}'),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: t.space2),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 120, child: _selo(t, a.semaforo)),
-                  SizedBox(width: 120, child: Text(a.nome, style: TradeType.heading4.copyWith(color: t.fgPrimary))),
-                  Expanded(child: Text(a.motivo, style: TradeType.bodyMd.copyWith(color: t.fgSecondary))),
-                ]),
-              ),
-            ),
-        ]),
-      );
 
   Widget _incidentes(TradeTokens t, PainelEventos d) => TradeCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

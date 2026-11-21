@@ -16,6 +16,7 @@ class TradeTokens {
     required this.fgMuted,
     required this.fgInverse,
     required this.fgOnBrand,
+    required this.brandText,
     required this.actionPrimary,
     required this.actionPrimaryFg,
     required this.actionAccent,
@@ -46,6 +47,7 @@ class TradeTokens {
   final Color fgMuted;
   final Color fgInverse;
   final Color fgOnBrand;
+  final Color brandText;
   final Color actionPrimary;
   final Color actionPrimaryFg;
   final Color actionAccent;
@@ -86,7 +88,7 @@ class TradeTokens {
     bgSurface: Color(0xFFF8F8F8),
     bgElevated: Color(0xFFFFFFFF),
     bgInverse: Color(0xFF141414),
-    bgBrand: Color(0xFFC2F86C),
+    bgBrand: Color(0xFF22D3EE),
     bgBrandDeep: Color(0xFF0A2D27),
     borderSubtle: Color(0xFFE4E4E4),
     borderStrong: Color(0xFF6E7075),
@@ -94,10 +96,11 @@ class TradeTokens {
     fgSecondary: Color(0xFF5B5D60),
     fgMuted: Color(0xFF6E7075),
     fgInverse: Color(0xFFFFFFFF),
-    fgOnBrand: Color(0xFF141414),
+    fgOnBrand: Color(0xFF04222A),
+    brandText: Color(0xFF09768A),
     actionPrimary: Color(0xFF141414),
     actionPrimaryFg: Color(0xFFFFFFFF),
-    actionAccent: Color(0xFFC2F86C),
+    actionAccent: Color(0xFF22D3EE),
     positive: Color(0xFF17782F),
     positiveFill: Color(0xFF60CF71),
     negative: Color(0xFFC13510),
@@ -117,7 +120,7 @@ class TradeTokens {
     bgSurface: Color(0xFF0F0F10),
     bgElevated: Color(0xFF1A1A1C),
     bgInverse: Color(0xFFFBF4F4),
-    bgBrand: Color(0xFFC2F86C),
+    bgBrand: Color(0xFF22D3EE),
     bgBrandDeep: Color(0xFF0A2D27),
     borderSubtle: Color(0xFF26262A),
     borderStrong: Color(0xFF6A6C71),
@@ -125,10 +128,11 @@ class TradeTokens {
     fgSecondary: Color(0xFFA1A3A8),
     fgMuted: Color(0xFF8A8C91),
     fgInverse: Color(0xFF141414),
-    fgOnBrand: Color(0xFF141414),
+    fgOnBrand: Color(0xFF04222A),
+    brandText: Color(0xFF5BE0F5),
     actionPrimary: Color(0xFF32D15A),
     actionPrimaryFg: Color(0xFF000000),
-    actionAccent: Color(0xFFC2F86C),
+    actionAccent: Color(0xFF22D3EE),
     positive: Color(0xFF32D15A),
     positiveFill: Color(0xFF32D15A),
     negative: Color(0xFFFF6B47),

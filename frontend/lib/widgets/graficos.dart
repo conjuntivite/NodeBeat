@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
+import 'common.dart' show Pilula;
 
 const rotuloCategoria = {
   'acesso': 'Acesso',
@@ -49,33 +50,6 @@ class _Legenda extends StatelessWidget {
   }
 }
 
-class GraficoPizza extends StatelessWidget {
-  const GraficoPizza({super.key, required this.dados});
-  final Map<String, int> dados;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    if (dados.values.every((v) => v == 0)) return const _Vazio();
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      SizedBox(
-        height: 160,
-        child: PieChart(PieChartData(
-          sectionsSpace: 2,
-          centerSpaceRadius: 36,
-          sections: [
-            for (final e in dados.entries)
-              if (e.value > 0)
-                PieChartSectionData(value: e.value.toDouble(), color: corCategoria(t, e.key), title: '', radius: 28),
-          ],
-        )),
-      ),
-      SizedBox(height: t.space3),
-      _Legenda([for (final e in dados.entries) (corCategoria(t, e.key), '${rotuloCategoria[e.key] ?? e.key}: ${e.value}')]),
-    ]);
-  }
-}
-
 /// Barras horizontais com rótulo e número (nomes de MK longos não cabem no eixo de um gráfico vertical).
 class GraficoBarras extends StatelessWidget {
   const GraficoBarras({super.key, required this.dados, this.cor});
@@ -101,55 +75,79 @@ class GraficoBarras extends StatelessWidget {
                   value: maximo == 0 ? 0 : n / maximo,
                   minHeight: 10,
                   color: cor ?? t.info,
-                  backgroundColor: t.bgSurface,
+                  backgroundColor: t.borderSubtle,
                 ),
               ),
             ),
             SizedBox(width: t.space2),
-            SizedBox(width: 40, child: Text('$n', textAlign: TextAlign.end, style: TradeType.dataSm.copyWith(color: t.fgPrimary))),
+            SizedBox(width: 40, child: Text('$n', textAlign: TextAlign.end, style: TradeType.dataSm.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
           ]),
         ),
     ]);
   }
 }
 
+String _rotuloHora(DateTime utc, int total) {
+  final d = utc.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return total > 48 ? '${two(d.day)}/${two(d.month)}' : '${two(d.hour)}h';
+}
+
+int _somaPonto(PontoSerie p, List<String> series) => series.fold(0, (a, s) => a + (p.valores[s] ?? 0));
+
 class GraficoLinha extends StatelessWidget {
   const GraficoLinha({super.key, required this.pontos, required this.series});
   final List<PontoSerie> pontos;
   final List<String> series;
 
-  String _rotulo(DateTime utc) {
-    final d = utc.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return pontos.length > 48 ? '${two(d.day)}/${two(d.month)}' : '${two(d.hour)}h';
+  /// "03h · 812": o ponto da série com mais eventos; `null` sem eventos.
+  static String? picoDe(List<PontoSerie> pontos, List<String> series) {
+    if (pontos.isEmpty) return null;
+    final p = pontos.reduce((a, b) => _somaPonto(b, series) > _somaPonto(a, series) ? b : a);
+    final n = _somaPonto(p, series);
+    return n == 0 ? null : '${_rotuloHora(p.hora, pontos.length)} · $n';
   }
 
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    final total = pontos.fold<int>(0, (a, p) => a + p.valores.values.fold(0, (x, y) => x + y));
-    if (pontos.isEmpty || total == 0) return const _Vazio();
+    final pico = picoDe(pontos, series);
+    if (pico == null) return const _Vazio();
     final passo = (pontos.length / 6).ceil().clamp(1, pontos.length);
+    int total(String s) => pontos.fold(0, (a, p) => a + (p.valores[s] ?? 0));
+    final principal = series.reduce((a, b) => total(b) > total(a) ? b : a);
     return Column(mainAxisSize: MainAxisSize.min, children: [
+      Align(alignment: Alignment.centerRight, child: Pilula('Pico: $pico', cor: t.info)),
+      SizedBox(height: t.space3),
       SizedBox(
         height: 180,
         child: LineChart(LineChartData(
           minY: 0,
           gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.borderSubtle, strokeWidth: 1)),
           borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => t.bgInverse,
+              getTooltipItems: (spots) => [
+                for (final s in spots)
+                  LineTooltipItem('${rotuloCategoria[series[s.barIndex]] ?? series[s.barIndex]}: ${s.y.toInt()}',
+                      TradeType.label.copyWith(color: t.fgInverse)),
+              ],
+            ),
+          ),
           titlesData: FlTitlesData(
             topTitles: const AxisTitles(),
             rightTitles: const AxisTitles(),
             leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 32, getTitlesWidget: (v, meta) {
               if (v == meta.max || v == meta.min && v != 0) return const SizedBox.shrink();
-              return Text(v.toInt().toString(), style: TradeType.bodyMd.copyWith(color: t.fgMuted, fontSize: 11));
+              return Text(v.toInt().toString(), style: TradeType.bodySm.copyWith(color: t.fgMuted));
             })),
             bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, interval: passo.toDouble(), getTitlesWidget: (v, meta) {
               final i = v.toInt();
               if (i < 0 || i >= pontos.length) return const SizedBox.shrink();
               return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(_rotulo(pontos[i].hora), style: TradeType.bodyMd.copyWith(color: t.fgMuted, fontSize: 11)),
+                padding: EdgeInsets.only(top: t.space2),
+                child: Text(_rotuloHora(pontos[i].hora, pontos.length), style: TradeType.bodySm.copyWith(color: t.fgMuted)),
               );
             })),
           ),
@@ -158,8 +156,21 @@ class GraficoLinha extends StatelessWidget {
               LineChartBarData(
                 spots: [for (var i = 0; i < pontos.length; i++) FlSpot(i.toDouble(), (pontos[i].valores[s] ?? 0).toDouble())],
                 color: corCategoria(t, s),
-                barWidth: 2,
+                barWidth: 2.5,
+                isCurved: true,
+                curveSmoothness: 0.2,
+                preventCurveOverShooting: true,
                 dotData: const FlDotData(show: false),
+                belowBarData: s == principal
+                    ? BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [corCategoria(t, s).withValues(alpha: 0.22), corCategoria(t, s).withValues(alpha: 0)],
+                        ),
+                      )
+                    : BarAreaData(show: false),
               ),
           ],
         )),

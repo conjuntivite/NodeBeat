@@ -12,7 +12,7 @@
 
 ## Global Constraints
 - Trade UI: só tokens (`tokensOf(context)`, `TradeType`), nunca cor/espaço/raio literal; os dois temas; texto ≥ 4,5:1; números com `tabular-nums`; variação com seta `↗`/`↘`; uma cor de marca por tela; grade de 4 px; cards `radius-xl`, padding `space-6`, gap `space-4`.
-- Cor de marca ciano `#22D3EE` nos dois temas, texto sobre ela `#04222A`; link sobre superfície `brand-text` claro `#0A7A8F`, escuro `#5BE0F5`.
+- Cor de marca ciano `#22D3EE` nos dois temas, texto sobre ela `#04222A`; link sobre superfície `brand-text` claro `#09768A`, escuro `#5BE0F5`.
 - Não alterar o Trade UI global nem `C:/Users/User/design-systems/`. Não alterar campos existentes da resposta do painel nem as regras do semáforo/habitual.
 - Nenhum IP ou domínio real em código, testes ou commits (usar 203.0.113.x / 198.51.100.x).
 - Textos em pt-BR com acentos. Commits em pt-BR, terminando com `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
@@ -63,7 +63,7 @@
 - Test: `frontend/test/theme_test.dart`
 
 **Interfaces:**
-- Produces: `bgBrand` e `actionAccent` = `#22D3EE` (claro e escuro); `fgOnBrand` = `#04222A`; novo token semântico `brandText` (claro `#0A7A8F`, escuro `#5BE0F5`).
+- Produces: `bgBrand` e `actionAccent` = `#22D3EE` (claro e escuro); `fgOnBrand` = `#04222A`; novo token semântico `brandText` (claro `#09768A`, escuro `#5BE0F5`).
 
 - [ ] **Step 1: Teste (RED)** com o helper `contrast` já existente: `fgOnBrand` sobre `bgBrand` ≥ 4,5 e `brandText` sobre `bgSurface` ≥ 4,5, nos dois temas.
 - [ ] **Step 2: Rodar** → FALHA (token inexistente).

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/painel_eventos.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 
 import 'painel_api_test.dart' show painelJson;
 
@@ -30,8 +31,8 @@ Map<String, dynamic> _zerado() => {
     };
 
 Future<List<Uri>> _show(WidgetTester t,
-    {Map<String, dynamic>? corpo, int status = 200, Brightness b = Brightness.light}) async {
-  t.view.physicalSize = const Size(1100, 2400);
+    {Map<String, dynamic>? corpo, int status = 200, Brightness b = Brightness.light, double largura = 1100, double altura = 2400}) async {
+  t.view.physicalSize = Size(largura, altura);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final urls = <Uri>[];
@@ -56,27 +57,93 @@ Future<List<Uri>> _show(WidgetTester t,
 
 void main() {
   for (final b in Brightness.values) {
-    testWidgets('mostra atenção, incidentes, blocos e mudanças (${b.name})', (t) async {
-      await _show(t, b: b);
-      expect(find.text('Atenção agora'), findsOneWidget);
+    testWidgets('mostra atenção, cards, detalhes, incidentes e mudanças (${b.name})', (t) async {
+      await _show(t, b: b, altura: 4200);
+      expect(find.text('ATENÇÃO AGORA'), findsOneWidget);
       expect(find.textContaining('Login de fora: admin'), findsOneWidget);
       expect(find.text('Vermelho'), findsOneWidget);
       expect(find.text('Incidentes entre MKs'), findsOneWidget);
       expect(find.textContaining('Alfa, Beta, Gama'), findsOneWidget);
-      for (final titulo in ['Acesso (hacker)', 'Autenticação', 'VPN', 'Erros importantes']) {
-        expect(find.text(titulo), findsWidgets, reason: titulo);
+      for (final c in ['ACESSO', 'AUTENTICAÇÃO', 'VPN', 'ERROS']) {
+        expect(find.text(c), findsWidgets, reason: c);
       }
-      expect(find.text('Acesso (hacker)'), findsOneWidget);
-      expect(find.text('Erros importantes'), findsOneWidget);
       expect(t.widget<Text>(find.byKey(const Key('total-acesso'))).data, '12');
       expect(t.widget<Text>(find.byKey(const Key('total-erros'))).data, '5');
-      expect(find.text('203.0.113.9', skipOffstage: false), findsWidgets);
-      expect(find.text('Mudanças de configuração', skipOffstage: false), findsOneWidget);
-      expect(find.text('fora do horário', skipOffstage: false), findsOneWidget);
-      expect(find.text('usuário novo', skipOffstage: false), findsOneWidget);
+      expect(find.text('Esperado'), findsOneWidget);
+      expect(find.text('Atenção'), findsOneWidget);
+      expect(find.text('Quem está tentando entrar'), findsOneWidget);
+      expect(find.text('203.0.113.9'), findsWidgets);
+      expect(find.text('7 tentativas'), findsOneWidget);
+      expect(find.text('1 login de fora aceito'), findsOneWidget);
+      expect(find.text('Acesso (hacker)'), findsNothing);
+      expect(find.text('Mudanças de configuração'), findsOneWidget);
+      expect(find.text('fora do horário'), findsOneWidget);
+      expect(find.text('usuário novo'), findsOneWidget);
       expect(t.takeException(), isNull);
     });
   }
+
+  testWidgets('sem login de fora aceito mostra o selo positivo', (t) async {
+    final j = painelJson();
+    ((j['blocos'] as Map)['acesso'] as Map)['logins_externos'] = <Object>[];
+    await _show(t, corpo: j, altura: 4200);
+    expect(find.text('Nenhum login de fora aceito'), findsOneWidget);
+    expect(find.textContaining('login de fora aceito'), findsOneWidget);
+  });
+
+  testWidgets('nota de concentração aparece quando uma MK tem 25% ou mais', (t) async {
+    await _show(t, altura: 4200);
+    expect(find.textContaining('Alfa concentra'), findsOneWidget);
+  });
+
+  testWidgets('ordem: situação, cards, tempo/por MK, acesso, incidentes, mudanças', (t) async {
+    await _show(t, altura: 4200);
+    double y(Finder f) => t.getTopLeft(f.first).dy;
+    final ordem = [
+      y(find.textContaining('SITUAÇÃO')),
+      y(find.byKey(const Key('total-acesso'))),
+      y(find.text('Quando os eventos aconteceram')),
+      y(find.text('Quem está tentando entrar')),
+      y(find.text('Incidentes entre MKs')),
+      y(find.text('Mudanças de configuração')),
+    ];
+    expect(ordem, [...ordem]..sort());
+  });
+
+  testWidgets('Ver detalhes rola até o detalhe sem erro', (t) async {
+    await _show(t);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+  });
+
+  for (final b in Brightness.values) {
+    testWidgets('tela completa em 360 px sem overflow (${b.name})', (t) async {
+      await _show(t, b: b, largura: 360, altura: 6000);
+      expect(find.text('Mudanças de configuração'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  for (final b in Brightness.values) {
+    testWidgets('cabeçalho e card de situação (${b.name})', (t) async {
+      await _show(t, b: b);
+      expect(find.text('Eventos'), findsOneWidget);
+      expect(find.textContaining('NODEBEAT'), findsOneWidget);
+      expect(find.text('Sem invasão detectada, mas 1 MK em vermelho.'), findsOneWidget);
+      expect(find.textContaining('SITUAÇÃO'), findsOneWidget);
+      expect(find.textContaining('1 verde'), findsOneWidget);
+      expect(find.textContaining('0 amarelas'), findsOneWidget);
+      expect(find.textContaining('1 vermelha'), findsOneWidget);
+      expect(find.text('1 MK pede uma olhada'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('sem eventos: Tudo calmo', (t) async {
+    await _show(t, corpo: _zerado());
+    expect(find.text('Tudo calmo.'), findsOneWidget);
+  });
 
   testWidgets('trocar o período refaz a requisição', (t) async {
     final urls = await _show(t);
@@ -114,5 +181,51 @@ void main() {
   testWidgets('falha da API mostra o erro e Tentar de novo', (t) async {
     await _show(t, corpo: {'detail': 'x'}, status: 500);
     expect(find.text('Tentar de novo'), findsOneWidget);
+  });
+
+  testWidgets('só o ranking por MK usa a cor de marca nas barras', (t) async {
+    await _show(t, altura: 4200);
+    final marca = find.byWidgetPredicate((w) => w is LinearProgressIndicator && w.color == TradeTokens.light.bgBrand);
+    expect(marca, findsNWidgets(2)); // Alfa e Beta no ranking
+  });
+
+  for (final b in Brightness.values) {
+    testWidgets('nome de MK com 60 caracteres em 360 px sem overflow (${b.name})', (t) async {
+      final longo = 'MK ${'X' * 56}';
+      final j = painelJson();
+      for (final m in j['por_mk'] as List) {
+        (m as Map)['nome'] = longo;
+      }
+      (j['atencao'] as List).first['nome'] = longo;
+      for (final c in ['acesso']) {
+        for (final e in ((j['blocos'] as Map)[c] as Map)['por_mk'] as List) {
+          (e as Map)['nome'] = longo;
+        }
+      }
+      await _show(t, corpo: j, b: b, largura: 360, altura: 6000);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('filtrar uma MK não mostra a nota de concentração (seria sempre 100%)', (t) async {
+    await _show(t, altura: 4200);
+    expect(find.textContaining('% dos eventos'), findsOneWidget);
+    await t.tap(find.byType(DropdownButton<String?>));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Beta').last);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.textContaining('% dos eventos'), findsNothing);
+  });
+
+  testWidgets('a nota usa o total de todas as MKs, não só as 10 do ranking', (t) async {
+    final j = painelJson();
+    j['por_mk'] = [
+      for (var i = 0; i < 12; i++)
+        {'mk_id': 'm$i', 'nome': 'MK$i', 'semaforo': 'verde', 'motivos': <String>[], 'contagens': {'acesso': i == 0 ? 30 : 10}},
+    ];
+    // MK0 = 30 de 140 (21%) do total, mas 30 de 120 (25%) só entre as 10 primeiras
+    await _show(t, corpo: j, altura: 4200);
+    expect(find.textContaining('% dos eventos'), findsNothing);
   });
 }

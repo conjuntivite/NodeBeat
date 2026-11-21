@@ -95,3 +95,11 @@ async def test_cache_expira_e_chave_inclui_periodo_e_mk(client, db, monkeypatch)
     assert (await client.get("/api/eventos/painel", params={"mk": id})).json()["resumo"]["acesso"] == 1
     monkeypatch.setattr("nodebeat.api.PAINEL_TTL", 0)
     assert (await client.get("/api/eventos/painel")).json()["resumo"]["acesso"] == 1
+
+
+async def test_resposta_traz_resumo_estado_das_quatro_categorias(client, db):
+    id = await criar(client)
+    await store.inserir_eventos(db, [falha(id, "203.0.113.9")])
+    body = (await client.get("/api/eventos/painel")).json()
+    assert set(body["resumo_estado"]) == {"acesso", "autenticacao", "vpn", "erros"}
+    assert body["resumo_estado"]["acesso"] == {"estado": "esperado", "delta_pct": None}

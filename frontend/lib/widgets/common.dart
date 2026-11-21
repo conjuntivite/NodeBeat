@@ -143,3 +143,34 @@ mixin Carrega<W extends StatefulWidget, T> on State<W> {
     carregar();
   }
 }
+
+/// Sobretítulo em caixa alta (mono). A caixa alta vem do texto, não de estilo.
+Widget eyebrow(String texto, {required Color cor}) =>
+    Text(texto.toUpperCase(), style: TradeType.eyebrow.copyWith(color: cor));
+
+/// Opacidade do fundo da [Pilula] (a cor semântica tingindo a superfície): mantém o texto >= 4,5:1.
+const double kAlphaPilula = 0.06;
+
+/// Pílula: cor semântica no texto e no ponto, fundo com a mesma cor tingida.
+class Pilula extends StatelessWidget {
+  const Pilula(this.texto, {super.key, required this.cor, this.ponto = false});
+  final String texto;
+  final Color cor;
+  final bool ponto;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
+      decoration: BoxDecoration(color: cor.withValues(alpha: kAlphaPilula), borderRadius: BorderRadius.circular(t.radiusPill)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (ponto) ...[
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
+          SizedBox(width: t.space2),
+        ],
+        Flexible(child: Text(texto, overflow: TextOverflow.ellipsis, style: TradeType.label.copyWith(color: cor, fontWeight: FontWeight.w600))),
+      ]),
+    );
+  }
+}

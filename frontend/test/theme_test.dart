@@ -35,4 +35,17 @@ void main() {
       expect(contrast(fg, bg), greaterThanOrEqualTo(4.5));
     }
   });
+
+  test('marca ciano do NodeBeat: bgBrand/actionAccent e contraste do texto sobre ela e do link', () {
+    for (final t in [TradeTokens.light, TradeTokens.dark]) {
+      expect(t.bgBrand, const Color(0xFF22D3EE));
+      expect(t.actionAccent, const Color(0xFF22D3EE));
+      expect(t.fgOnBrand, const Color(0xFF04222A));
+      expect(contrast(t.fgOnBrand, t.bgBrand), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.brandText, t.bgSurface), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.brandText, t.bgPage), greaterThanOrEqualTo(4.5));
+    }
+    expect(TradeTokens.light.brandText, const Color(0xFF09768A));
+    expect(TradeTokens.dark.brandText, const Color(0xFF5BE0F5));
+  });
 }

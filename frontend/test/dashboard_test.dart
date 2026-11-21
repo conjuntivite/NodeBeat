@@ -60,6 +60,8 @@ Future<void> _show(WidgetTester t, Map<String, dynamic> body, {int status = 200,
             ? const Text('LOGIN')
             : s.name == '/preparar-mk'
             ? const Text('PREPARAR')
+            : s.name == '/eventos'
+            ? const Text('EVENTOS')
             : s.name!.startsWith('/mk/')
                 ? Text('DETALHE ${s.name}')
                 : DashboardScreen(api: api, sound: sound, abrir: abrir)),
@@ -101,6 +103,15 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('PREPARAR'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('ícone "Eventos" abre a aba de eventos', (t) async {
+    await _show(t, _status());
+    await t.tap(find.byTooltip('Eventos'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('EVENTOS'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

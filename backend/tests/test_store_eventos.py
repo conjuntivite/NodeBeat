@@ -63,3 +63,12 @@ async def test_apagar_eventos(db):
     await store.apagar_eventos(db, "mk1")
     assert await store.listar_eventos(db, "mk1") == []
     assert len(await store.listar_eventos(db, "mk2")) == 1
+
+
+async def test_listar_eventos_periodo(db):
+    await store.inserir_eventos(db, [ev("a", T2), ev("b", T1), ev("a", T0 - timedelta(hours=1))])
+    todos = await store.listar_eventos_periodo(db, T0)
+    assert [(e["mk_id"], e["recebido_em"]) for e in todos] == [("b", T1), ("a", T2)]
+    assert todos[0]["recebido_em"].tzinfo is not None
+    so_a = await store.listar_eventos_periodo(db, T0, mk_id="a")
+    assert [e["mk_id"] for e in so_a] == ["a"]

@@ -152,6 +152,120 @@ class EventosPagina {
   final bool syslogAtivo;
 }
 
+Map<String, int> _mapaInt(Object? m) => {for (final e in (m as Map? ?? const {}).entries) e.key as String: (e.value as num).toInt()};
+List<Map<String, dynamic>> _lista(Object? l) => [for (final e in (l as List? ?? const [])) Map<String, dynamic>.from(e as Map)];
+
+class PontoSerie {
+  PontoSerie(this.hora, this.valores);
+  PontoSerie.fromJson(Map<String, dynamic> j)
+      : hora = DateTime.parse(j['hora']),
+        valores = {for (final e in j.entries) if (e.key != 'hora') e.key: (e.value as num).toInt()};
+  final DateTime hora;
+  final Map<String, int> valores;
+}
+
+class ContaMk {
+  ContaMk.fromJson(Map<String, dynamic> j)
+      : mkId = j['mk_id'],
+        nome = j['nome'],
+        n = (j['n'] as num).toInt();
+  final String mkId, nome;
+  final int n;
+}
+
+class ContaIp {
+  ContaIp.fromJson(Map<String, dynamic> j)
+      : ip = j['ip'],
+        n = (j['n'] as num).toInt();
+  final String ip;
+  final int n;
+}
+
+class BlocoPainel {
+  BlocoPainel.fromJson(Map<String, dynamic> j)
+      : total = (j['total'] as num).toInt(),
+        porMk = [for (final e in _lista(j['por_mk'])) ContaMk.fromJson(e)],
+        topIps = [for (final e in _lista(j['top_ips'])) ContaIp.fromJson(e)],
+        porVia = _mapaInt(j['por_via']),
+        porSubtipo = _mapaInt(j['por_subtipo']),
+        loginsExternos = _lista(j['logins_externos']),
+        ultimos = _lista(j['ultimos']),
+        interfaces = _lista(j['interfaces']);
+  final int total;
+  final List<ContaMk> porMk;
+  final List<ContaIp> topIps;
+  final Map<String, int> porVia, porSubtipo;
+  final List<Map<String, dynamic>> loginsExternos, ultimos, interfaces;
+}
+
+class MkPainel {
+  MkPainel.fromJson(Map<String, dynamic> j)
+      : mkId = j['mk_id'],
+        nome = j['nome'],
+        semaforo = j['semaforo'],
+        motivos = List<String>.from(j['motivos'] ?? const []),
+        contagens = _mapaInt(j['contagens']);
+  final String mkId, nome, semaforo;
+  final List<String> motivos;
+  final Map<String, int> contagens;
+}
+
+class AtencaoItem {
+  AtencaoItem.fromJson(Map<String, dynamic> j)
+      : mkId = j['mk_id'],
+        nome = j['nome'],
+        semaforo = j['semaforo'],
+        motivo = j['motivo'];
+  final String mkId, nome, semaforo, motivo;
+}
+
+class Incidente {
+  Incidente.fromJson(Map<String, dynamic> j)
+      : inicio = DateTime.parse(j['inicio']),
+        fim = DateTime.parse(j['fim']),
+        sintoma = j['sintoma'],
+        mks = List<String>.from(j['mks']);
+  final DateTime inicio, fim;
+  final String sintoma;
+  final List<String> mks;
+}
+
+class MudancaConfig {
+  MudancaConfig.fromJson(Map<String, dynamic> j)
+      : mkId = j['mk_id'],
+        nome = j['nome'],
+        quando = DateTime.parse(j['quando']),
+        usuario = j['usuario'],
+        objeto = j['objeto'],
+        acao = j['acao'],
+        foraHorario = j['fora_horario'] == true,
+        usuarioNovo = j['usuario_novo'] == true;
+  final String mkId, nome;
+  final DateTime quando;
+  final String? usuario, objeto, acao;
+  final bool foraHorario, usuarioNovo;
+}
+
+class PainelEventos {
+  PainelEventos.fromJson(Map<String, dynamic> j)
+      : periodo = j['periodo'],
+        resumo = _mapaInt(j['resumo']),
+        serieHora = [for (final e in _lista(j['serie_hora'])) PontoSerie.fromJson(e)],
+        blocos = {for (final e in (j['blocos'] as Map).entries) e.key as String: BlocoPainel.fromJson(Map<String, dynamic>.from(e.value))},
+        porMk = [for (final e in _lista(j['por_mk'])) MkPainel.fromJson(e)],
+        atencao = [for (final e in _lista(j['atencao'])) AtencaoItem.fromJson(e)],
+        incidentes = [for (final e in _lista(j['incidentes'])) Incidente.fromJson(e)],
+        config = [for (final e in _lista(j['config'])) MudancaConfig.fromJson(e)];
+  final String periodo;
+  final Map<String, int> resumo;
+  final List<PontoSerie> serieHora;
+  final Map<String, BlocoPainel> blocos;
+  final List<MkPainel> porMk;
+  final List<AtencaoItem> atencao;
+  final List<Incidente> incidentes;
+  final List<MudancaConfig> config;
+}
+
 class FaixaRede {
   FaixaRede.fromJson(Map<String, dynamic> j)
       : rede = j['rede'],
@@ -364,6 +478,11 @@ class ApiClient {
       'limite=$limite',
     ].join('&');
     return EventosPagina.fromJson(await _send('GET', '/mks/$id/eventos?$query'));
+  }
+
+  Future<PainelEventos> painelEventos(String periodo, {String? mkId}) async {
+    final query = 'periodo=${Uri.encodeQueryComponent(periodo)}${mkId == null ? '' : '&mk=${Uri.encodeQueryComponent(mkId)}'}';
+    return PainelEventos.fromJson(await _send('GET', '/eventos/painel?$query'));
   }
 
   Future<void> esquecerIp(String id, String ip) => _send('DELETE', '/mks/$id/ips/$ip');

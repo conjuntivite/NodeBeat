@@ -1,0 +1,51 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:nodebeat/api/client.dart';
+import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/widgets/graficos.dart';
+
+Future<void> _mostra(WidgetTester t, Widget w, Brightness b) async {
+  t.view.physicalSize = const Size(900, 900);
+  t.view.devicePixelRatio = 1;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(MaterialApp(theme: tradeTheme(b), home: Scaffold(body: Center(child: SizedBox(width: 600, child: w)))));
+  await t.pump(const Duration(milliseconds: 600));
+}
+
+final _pontos = [
+  PontoSerie(DateTime.utc(2026, 3, 5, 14), {'acesso': 2, 'erros': 1}),
+  PontoSerie(DateTime.utc(2026, 3, 5, 15), {'acesso': 1, 'vpn': 3}),
+];
+
+void main() {
+  for (final b in Brightness.values) {
+    testWidgets('pizza mostra legenda com rótulo e número (${b.name})', (t) async {
+      await _mostra(t, const GraficoPizza(dados: {'acesso': 12, 'vpn': 3, 'erros': 0}), b);
+      expect(find.text('Acesso: 12'), findsOneWidget);
+      expect(find.text('VPN: 3'), findsOneWidget);
+      expect(find.text('Erros: 0'), findsOneWidget);
+    });
+
+    testWidgets('barras mostram rótulo e número (${b.name})', (t) async {
+      await _mostra(t, const GraficoBarras(dados: [('Alfa', 9), ('Beta', 3)]), b);
+      expect(find.text('Alfa'), findsOneWidget);
+      expect(find.text('9'), findsOneWidget);
+      expect(find.text('Beta'), findsOneWidget);
+    });
+
+    testWidgets('linha mostra legenda por série (${b.name})', (t) async {
+      await _mostra(t, GraficoLinha(pontos: _pontos, series: const ['acesso', 'vpn']), b);
+      expect(find.text('Acesso'), findsOneWidget);
+      expect(find.text('VPN'), findsOneWidget);
+    });
+  }
+
+  testWidgets('sem dados, os três mostram o aviso', (t) async {
+    await _mostra(t, const GraficoPizza(dados: {'acesso': 0, 'vpn': 0}), Brightness.light);
+    expect(find.text('Sem eventos no período'), findsOneWidget);
+    await _mostra(t, const GraficoBarras(dados: []), Brightness.light);
+    expect(find.text('Sem eventos no período'), findsOneWidget);
+    await _mostra(t, const GraficoLinha(pontos: [], series: ['acesso']), Brightness.dark);
+    expect(find.text('Sem eventos no período'), findsOneWidget);
+  });
+}

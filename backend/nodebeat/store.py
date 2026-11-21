@@ -138,6 +138,11 @@ async def listar_eventos(db, mk_id: str, *, tipos: list[str] | None = None, desd
     return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", -1).limit(limite)]
 
 
+async def listar_eventos_periodo(db, desde: datetime, mk_id: str | None = None) -> list[dict]:
+    f: dict = {"recebido_em": {"$gte": desde}, **({"mk_id": mk_id} if mk_id else {})}
+    return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", 1)]
+
+
 async def ultimo_evento(db, mk_id: str) -> datetime | None:
     d = await db.eventos.find_one({"mk_id": mk_id}, sort=[("recebido_em", -1)])
     return _utc(d)["recebido_em"] if d else None

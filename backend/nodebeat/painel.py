@@ -96,7 +96,7 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
     logins, vpn_falhas, ifaces = [], [], Counter()
 
     for ev in eventos:
-        if ev["mk_id"] not in nomes or ev["recebido_em"] < inicio:
+        if ev["mk_id"] not in nomes or not inicio <= ev["recebido_em"] <= agora:  # depois de agora: chegou durante a leitura
             continue
         cat = categoria(ev, ctx)
         if not cat:
@@ -173,7 +173,8 @@ def _rajada(tempos: list[datetime], n: int, janela: timedelta) -> bool:
 
 
 def _sintoma(c: str, st: str) -> str | None:
-    return {"interface_down": "interface_down", "reboot": "reboot", "pppoe": "pppoe"}.get(st) or         ("vpn_falha" if (c, st) == ("vpn", "falha") else None)
+    return {"interface_down": "interface_down", "reboot": "reboot", "pppoe": "pppoe"}.get(st) or (
+        "vpn_falha" if (c, st) == ("vpn", "falha") else None)
 
 
 def _usuario(ev: dict) -> str | None:

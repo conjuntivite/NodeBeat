@@ -121,6 +121,12 @@ def test_serie_hora_tem_todas_as_horas():
     assert sum(p["acesso"] for p in r["serie_hora"]) == r["resumo"]["acesso"] == 2
 
 
+def test_evento_depois_de_agora_nao_derruba_o_painel():
+    # chegou entre `agora` e a leitura, já na hora seguinte da série
+    r = M([falha("a", atras_h=-1.5), falha("a", atras_h=0.5)])
+    assert r["resumo"]["acesso"] == 1
+
+
 def test_logins_externos_lista_o_login_ok_de_fora():
     ev = EV("a", "login", "user admin logged in from 203.0.113.9 via ssh",
             campos={"usuario": "admin", "ip": "203.0.113.9", "via": "ssh"})

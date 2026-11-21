@@ -1,7 +1,11 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
+import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/painel_cards.dart';
 
 PontoSerie _p(int h, int n) => PontoSerie(DateTime.utc(2026, 3, 5, h), {'acesso': n, 'autenticacao': n, 'vpn': n, 'erros': n});
@@ -58,4 +62,29 @@ void main() {
         largura: 360);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('número e variação usam algarismos tabulares', (t) async {
+    await _mostra(t, CartaoCategoria(categoria: 'acesso', total: 23445, estado: _est('esperado', 4), serie: [_p(1, 2), _p(2, 5)], aoVerDetalhes: () {}));
+    const tab = FontFeature.tabularFigures();
+    expect(t.widget<Text>(find.byKey(const Key('total-acesso'))).style!.fontFeatures, contains(tab));
+    expect(t.widget<Text>(find.text('↗ +4% vs. média 7 dias')).style!.fontFeatures, contains(tab));
+  });
+
+  test('texto das pílulas tem contraste >= 4,5 sobre o fundo tingido, nos dois temas', () {
+    for (final tk in [TradeTokens.light, TradeTokens.dark]) {
+      for (final cor in [tk.info, tk.positive, tk.negative, tk.warning]) {
+        for (final base in [tk.bgSurface, tk.bgPage, tk.bgElevated]) {
+          final fundo = Color.alphaBlend(cor.withValues(alpha: kAlphaPilula), base);
+          expect(_contraste(cor, fundo), greaterThanOrEqualTo(4.5), reason: '$cor sobre $base');
+        }
+      }
+    }
+  });
+}
+
+double _lin(double c) => c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4).toDouble();
+double _lum(Color c) => 0.2126 * _lin(c.r) + 0.7152 * _lin(c.g) + 0.0722 * _lin(c.b);
+double _contraste(Color a, Color b) {
+  final l1 = _lum(a), l2 = _lum(b);
+  return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05);
 }

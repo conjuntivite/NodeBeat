@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/graficos.dart';
 
 Future<void> _mostra(WidgetTester t, Widget w, Brightness b) async {
@@ -50,4 +51,13 @@ void main() {
     await _mostra(t, const GraficoLinha(pontos: [], series: ['acesso']), Brightness.dark);
     expect(find.text('Sem eventos no período'), findsOneWidget);
   });
+
+  for (final b in Brightness.values) {
+    testWidgets('barras: trilho visível (borderSubtle) e número tabular (${b.name})', (t) async {
+      await _mostra(t, const GraficoBarras(dados: [('Alfa', 9)]), b);
+      final tk = b == Brightness.dark ? TradeTokens.dark : TradeTokens.light;
+      expect(t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).backgroundColor, tk.borderSubtle);
+      expect(t.widget<Text>(find.text('9')).style!.fontFeatures, contains(const FontFeature.tabularFigures()));
+    });
+  }
 }

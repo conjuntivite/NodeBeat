@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/painel_eventos.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 
 import 'painel_api_test.dart' show painelJson;
 
@@ -180,5 +181,51 @@ void main() {
   testWidgets('falha da API mostra o erro e Tentar de novo', (t) async {
     await _show(t, corpo: {'detail': 'x'}, status: 500);
     expect(find.text('Tentar de novo'), findsOneWidget);
+  });
+
+  testWidgets('só o ranking por MK usa a cor de marca nas barras', (t) async {
+    await _show(t, altura: 4200);
+    final marca = find.byWidgetPredicate((w) => w is LinearProgressIndicator && w.color == TradeTokens.light.bgBrand);
+    expect(marca, findsNWidgets(2)); // Alfa e Beta no ranking
+  });
+
+  for (final b in Brightness.values) {
+    testWidgets('nome de MK com 60 caracteres em 360 px sem overflow (${b.name})', (t) async {
+      final longo = 'MK ${'X' * 56}';
+      final j = painelJson();
+      for (final m in j['por_mk'] as List) {
+        (m as Map)['nome'] = longo;
+      }
+      (j['atencao'] as List).first['nome'] = longo;
+      for (final c in ['acesso']) {
+        for (final e in ((j['blocos'] as Map)[c] as Map)['por_mk'] as List) {
+          (e as Map)['nome'] = longo;
+        }
+      }
+      await _show(t, corpo: j, b: b, largura: 360, altura: 6000);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('filtrar uma MK não mostra a nota de concentração (seria sempre 100%)', (t) async {
+    await _show(t, altura: 4200);
+    expect(find.textContaining('% dos eventos'), findsOneWidget);
+    await t.tap(find.byType(DropdownButton<String?>));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Beta').last);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.textContaining('% dos eventos'), findsNothing);
+  });
+
+  testWidgets('a nota usa o total de todas as MKs, não só as 10 do ranking', (t) async {
+    final j = painelJson();
+    j['por_mk'] = [
+      for (var i = 0; i < 12; i++)
+        {'mk_id': 'm$i', 'nome': 'MK$i', 'semaforo': 'verde', 'motivos': <String>[], 'contagens': {'acesso': i == 0 ? 30 : 10}},
+    ];
+    // MK0 = 30 de 140 (21%) do total, mas 30 de 120 (25%) só entre as 10 primeiras
+    await _show(t, corpo: j, altura: 4200);
+    expect(find.textContaining('% dos eventos'), findsNothing);
   });
 }

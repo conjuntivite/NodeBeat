@@ -148,7 +148,10 @@ mixin Carrega<W extends StatefulWidget, T> on State<W> {
 Widget eyebrow(String texto, {required Color cor}) =>
     Text(texto.toUpperCase(), style: TradeType.eyebrow.copyWith(color: cor));
 
-/// Pilula em pílula: cor semântica no texto e no ponto, fundo com a mesma cor em 12%.
+/// Opacidade do fundo da [Pilula] (a cor semântica tingindo a superfície): mantém o texto >= 4,5:1.
+const double kAlphaPilula = 0.06;
+
+/// Pílula: cor semântica no texto e no ponto, fundo com a mesma cor tingida.
 class Pilula extends StatelessWidget {
   const Pilula(this.texto, {super.key, required this.cor, this.ponto = false});
   final String texto;
@@ -160,7 +163,7 @@ class Pilula extends StatelessWidget {
     final t = tokensOf(context);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
-      decoration: BoxDecoration(color: cor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(t.radiusPill)),
+      decoration: BoxDecoration(color: cor.withValues(alpha: kAlphaPilula), borderRadius: BorderRadius.circular(t.radiusPill)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (ponto) ...[
           Container(width: 8, height: 8, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),

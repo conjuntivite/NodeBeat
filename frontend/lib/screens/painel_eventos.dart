@@ -146,19 +146,23 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
           borderRadius: BorderRadius.circular(t.radiusPill),
           border: Border.all(color: t.borderSubtle),
         ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String?>(
+        child: SizedBox(
+          width: 260,
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+            isExpanded: true,
             value: _mk,
             borderRadius: BorderRadius.circular(t.radiusMd),
             style: TradeType.label.copyWith(color: t.fgPrimary),
             items: [
               const DropdownMenuItem<String?>(value: null, child: Text('Todas as MKs')),
-              for (final m in _mks) DropdownMenuItem<String?>(value: m.mkId, child: Text(m.nome)),
+              for (final m in _mks) DropdownMenuItem<String?>(value: m.mkId, child: Text(m.nome, overflow: TextOverflow.ellipsis)),
             ],
             onChanged: (v) {
               _mk = v;
               _carregar();
             },
+          ),
           ),
         ),
       );
@@ -176,7 +180,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       for (final m in d.porMk) (m.nome, m.contagens.values.fold<int>(0, (a, b) => a + b)),
     ]..sort((a, b) => b.$2.compareTo(a.$2));
     final ranking = porMk.where((e) => e.$2 > 0).take(10).toList();
-    final nota = notaConcentracao(ranking);
+    final nota = _mk == null ? notaConcentracao([for (final e in porMk) if (e.$2 > 0) e]) : null;
     final blocoAcesso = d.blocos['acesso'];
     final logins = blocoAcesso?.loginsExternos ?? const <Map<String, dynamic>>[];
 
@@ -224,9 +228,9 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       SizedBox(height: t.space4),
       _grade(t, [
         _detalhe(t, 'autenticacao', 'Quem erra a senha por dentro', 'Falhas de login na rede interna e de PPPoE, por tipo e por MK.',
-            d.blocos['autenticacao'], [_subtiposBarras(t, d.blocos['autenticacao'])]),
+            d.blocos['autenticacao'], [_subtiposBarras(t, 'autenticacao', d.blocos['autenticacao'])]),
         _detalhe(t, 'vpn', 'Túneis com falha', 'Falhas ao negociar o túnel, por MK e as últimas ocorrências.', d.blocos['vpn'], [
-          _subtiposBarras(t, d.blocos['vpn']),
+          _subtiposBarras(t, 'vpn', d.blocos['vpn']),
           _lista(t, 'Últimas falhas', [
             for (final u in d.blocos['vpn']?.ultimos ?? const <Map<String, dynamic>>[])
               ('${u['nome']}: ${u['mensagem']}', formatEventoHora(DateTime.parse(u['quando']))),
@@ -234,7 +238,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         ]),
         _detalhe(t, 'erros', 'Problemas nas MKs e no cabo', 'Reinícios, quedas de interface e colisões, por tipo e por MK.',
             d.blocos['erros'], [
-          _subtiposBarras(t, d.blocos['erros']),
+          _subtiposBarras(t, 'erros', d.blocos['erros']),
           _lista(t, 'Colisão / duplex por interface', [
             for (final i in d.blocos['erros']?.interfaces ?? const <Map<String, dynamic>>[]) ('${i['nome']} · ${i['interface']}', '${i['n']}'),
           ]),
@@ -312,7 +316,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
             LayoutBuilder(builder: (context, c) {
               final ips = _lista(t, 'IPs que mais tentaram', [for (final i in b?.topIps ?? const <ContaIp>[]) (i.ip, '${i.n} tentativas')],
                   pilulaCor: t.negative);
-              final vias = _barras(t, 'Serviço atacado', [for (final e in (b?.porVia ?? const <String, int>{}).entries) (e.key.toUpperCase(), e.value)]);
+              final vias = _barras(t, 'Serviço atacado', cor: corCategoria(t, 'acesso'), dados: [for (final e in (b?.porVia ?? const <String, int>{}).entries) (e.key.toUpperCase(), e.value)]);
               final dois = c.maxWidth >= 700;
               return dois
                   ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -332,7 +336,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   Widget _detalhe(TradeTokens t, String cat, String titulo, String sub, BlocoPainel? b, List<Widget> filhos) => Container(
         key: _chaves[cat],
         child: _cartao(t, rotuloCategoria[cat] ?? cat, titulo, sub, [
-          _barras(t, 'Por MK', [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)], topo: false),
+          _barras(t, 'Por MK', cor: corCategoria(t, cat), dados: [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)], topo: false),
           ...filhos,
         ]),
       );
@@ -376,19 +380,19 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         ],
       );
 
-  Widget _barras(TradeTokens t, String titulo, List<(String, int)> dados, {bool topo = true}) => dados.isEmpty
+  Widget _barras(TradeTokens t, String titulo, {required List<(String, int)> dados, required Color cor, bool topo = true}) => dados.isEmpty
       ? const SizedBox.shrink()
       : Padding(
           padding: EdgeInsets.only(top: topo ? t.space3 : 0),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             eyebrow(titulo, cor: t.fgMuted),
             SizedBox(height: t.space2),
-            GraficoBarras(dados: dados, cor: t.bgBrand),
+            GraficoBarras(dados: dados, cor: cor),
           ]),
         );
 
-  Widget _subtiposBarras(TradeTokens t, BlocoPainel? b) =>
-      _barras(t, 'Tipos', [for (final e in (b?.porSubtipo ?? const <String, int>{}).entries) (_subtipos[e.key] ?? e.key, e.value)]);
+  Widget _subtiposBarras(TradeTokens t, String cat, BlocoPainel? b) =>
+      _barras(t, 'Tipos', cor: corCategoria(t, cat), dados: [for (final e in (b?.porSubtipo ?? const <String, int>{}).entries) (_subtipos[e.key] ?? e.key, e.value)]);
 
   Widget _lista(TradeTokens t, String titulo, List<(String, String)> itens, {Color? cor, Color? pilulaCor}) => itens.isEmpty
       ? const SizedBox.shrink()

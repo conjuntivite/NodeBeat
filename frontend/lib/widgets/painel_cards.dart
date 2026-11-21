@@ -138,6 +138,8 @@ class PainelAtencao extends StatelessWidget {
   }
 }
 
+const _tabular = [FontFeature.tabularFigures()];
+
 Color _corEstado(TradeTokens t, String estado) => switch (estado) {
       'esperado' => t.info,
       'normal' => t.positive,
@@ -181,9 +183,11 @@ class CartaoCategoria extends StatelessWidget {
           if (estado != null) Pilula(rotuloEstado(estado!.estado), cor: _corEstado(t, estado!.estado)),
         ]),
         SizedBox(height: t.space3),
-        Text(milhar(total), key: Key('total-$categoria'), style: TradeType.dataXl.copyWith(color: t.fgPrimary)),
+        Text(milhar(total),
+            key: Key('total-$categoria'),
+            style: TradeType.dataXl.copyWith(color: t.fgPrimary, fontFeatures: _tabular)),
         SizedBox(height: t.space1),
-        Text(textoDelta(delta), style: TradeType.dataSm.copyWith(color: corDelta)),
+        Text(textoDelta(delta), style: TradeType.dataSm.copyWith(color: corDelta, fontFeatures: _tabular)),
         SizedBox(height: t.space3),
         SizedBox(
           height: 36,

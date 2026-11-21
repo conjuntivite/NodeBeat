@@ -284,3 +284,67 @@ def test_filtro_mk_mantem_incidente_da_mk():
     evs = [down("a", 2.0), down("b", 2.05), down("c", 2.1)]
     assert len(montar(evs, mks3, CTX, AGORA, "24h", "a")["incidentes"]) == 1
     assert montar(evs + [vida("a")], MKS + [{"id": "d", "nome": "Delta"}], CTX, AGORA, "24h", "d")["incidentes"] == []
+
+
+# ---- Refino: resumo_estado (estado e variação por categoria) ----
+def est(r, cat):
+    return r["resumo_estado"][cat]
+
+
+def historia(n_base=14, mais_antigo_h=192):
+    """n_base falhas na janela dos 7 dias anteriores ao período de 24 h + um evento mais antigo que a janela."""
+    base = [falha("a", atras_h=30 + 10 * i) for i in range(n_base)]
+    return base + [falha("a", atras_h=mais_antigo_h)]
+
+
+def test_resumo_estado_tem_as_quatro_categorias_mesmo_vazio():
+    r = M([])
+    assert set(r["resumo_estado"]) == {"acesso", "autenticacao", "vpn", "erros"}
+    assert est(r, "acesso") == {"estado": "esperado", "delta_pct": None}
+    for cat in ("autenticacao", "vpn", "erros"):
+        assert est(r, cat) == {"estado": "normal", "delta_pct": None}
+
+
+def test_acesso_e_esperado_e_login_de_fora_aceito_e_critico():
+    assert est(M([falha("a")]), "acesso")["estado"] == "esperado"
+    login = EV("a", "login", "user admin logged in from 203.0.113.9 via ssh",
+               campos={"usuario": "admin", "ip": "203.0.113.9", "via": "ssh"})
+    assert est(M([login]), "acesso")["estado"] == "critico"
+
+
+def test_delta_pct_contra_media_diaria_dos_7_dias_anteriores():
+    # base: 14 em 7 dias = 2/dia; período: 4 em 1 dia -> +100%
+    evs = historia() + [falha("a", atras_h=h) for h in (1, 2, 3, 4)]
+    assert est(M(evs), "acesso")["delta_pct"] == 100
+
+
+@pytest.mark.parametrize("evs,periodo", [
+    (historia() + [falha("a", atras_h=1)], "30d"),               # 30 d: não há histórico anterior
+    ([falha("a", atras_h=30), falha("a", atras_h=1)], "24h"),    # menos de 1 dia de base
+    ([falha("a", atras_h=192), falha("a", atras_h=1)], "24h"),   # histórico existe, base contou zero
+])
+def test_delta_nulo_sem_base(evs, periodo):
+    assert est(M(evs, periodo), "acesso")["delta_pct"] is None
+
+
+def _auth(i):
+    return EV("a", "login_falha", "login failure for user x from 192.168.1.9 via winbox", 1 + i * 0.05, "crit")
+
+
+def _reboot(i):
+    return EV("a", "reboot", "router rebooted", 1 + i * 0.05)
+
+
+@pytest.mark.parametrize("cat,fab", [("autenticacao", _auth), ("erros", _reboot)])
+def test_atencao_quando_acima_do_habitual_e_normal_sem_base(cat, fab):
+    periodo = [fab(i) for i in range(25)]
+    assert est(M(historia(7) + periodo), cat)["estado"] == "atencao"   # 25/dia > 3 x 1/dia
+    assert est(M(periodo), cat)["estado"] == "normal"                  # sem base não alarma
+    assert est(M(historia(7) + [fab(0)]), cat)["estado"] == "normal"   # abaixo de HABITUAL_MIN
+
+
+def test_vpn_atencao_so_com_rajada_de_falhas():
+    def f(h):
+        return EV("a", "ipsec", "failed to pre-process ph2 packet.", h)
+    assert est(M([f(1.0), f(1.2)]), "vpn")["estado"] == "normal"
+    assert est(M([f(1.4), f(1.0), f(1.2)]), "vpn")["estado"] == "atencao"  # fora de ordem também conta

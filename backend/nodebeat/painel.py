@@ -86,6 +86,25 @@ def _por_mk(contagem: Counter, nomes: dict) -> list[dict]:
     return [{"mk_id": k, "nome": nomes[k], "n": n} for k, n in contagem.most_common()]
 
 
+def resumo_estado(contagem: dict[str, int], base: dict[str, int], dias_periodo: float, dias_base: float,
+                  login_externo_ok: int, vpn_falhas: list[datetime]) -> dict[str, dict]:
+    """Estado (esperado/normal/atencao/critico) e variação % contra a média diária da base, por categoria."""
+    base_conhecida = dias_base >= 1
+    out = {}
+    for c in CATEGORIAS:
+        taxa = contagem[c] / dias_periodo
+        delta = round((taxa / (base[c] / dias_base) - 1) * 100) if base_conhecida and base[c] > 0 else None
+        acima = base_conhecida and taxa >= HABITUAL_MIN and taxa > HABITUAL_FATOR * base[c] / dias_base
+        if c == "acesso":  # varredura da internet é ruído constante; só login de fora aceito preocupa
+            estado = "critico" if login_externo_ok else "esperado"
+        elif c == "vpn":
+            estado = "atencao" if _rajada(sorted(vpn_falhas), VPN_FALHAS_N, timedelta(hours=1)) else "normal"
+        else:
+            estado = "atencao" if acima else "normal"
+        out[c] = {"estado": estado, "delta_pct": delta}
+    return out
+
+
 def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, periodo: str,
            mk_id: str | None = None) -> dict:
     if periodo not in PERIODOS:
@@ -101,8 +120,20 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
     ips, vias = Counter(), Counter()
     logins, vpn_falhas, ifaces = [], [], Counter()
 
+    base_ini = inicio - timedelta(days=7)
+    primeiro = min((e["recebido_em"] for e in eventos), default=inicio)
+    dias_base = min(7.0, (inicio - primeiro).total_seconds() / 86400)  # <= 0: sem histórico antes do período
+    base = dict.fromkeys(CATEGORIAS, 0)
+    vpn_tempos: list[datetime] = []
     for ev in eventos:
-        if ev["mk_id"] not in nomes or not inicio <= ev["recebido_em"] <= agora:  # depois de agora: chegou durante a leitura
+        if ev["mk_id"] not in nomes:
+            continue
+        if base_ini <= ev["recebido_em"] < inicio:
+            bc = categoria(ev, ctx)
+            if bc and bc[1] not in NORMAIS:
+                base[bc[0]] += 1
+            continue
+        if not inicio <= ev["recebido_em"] <= agora:  # depois de agora: chegou durante a leitura
             continue
         cat = categoria(ev, ctx)
         if not cat:
@@ -124,6 +155,7 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
             logins.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]], "usuario": cp.get("usuario"),
                            "ip": cp.get("ip"), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
         elif st == "falha" and c == "vpn":
+            vpn_tempos.append(ev["recebido_em"])
             vpn_falhas.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]],
                                "quando": ev["recebido_em"].isoformat(), "mensagem": ev["mensagem"]})
         elif st == "link_fisico":
@@ -158,6 +190,8 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
 
     return {
         "periodo": periodo, "gerado_em": agora.isoformat(), "resumo": resumo,
+        "resumo_estado": resumo_estado(resumo, base, PERIODOS[periodo] / 24, dias_base,
+                                       sub["acesso"]["login_externo_ok"], vpn_tempos),
         "serie_hora": [{"hora": h.isoformat(), **v} for h, v in serie.items()],
         "blocos": {
             "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n} for i, n in ips.most_common(10)],

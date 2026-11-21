@@ -257,19 +257,16 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
           ]),
         );
     return LayoutBuilder(builder: (context, c) {
-      final pizza = cartao('Por categoria', GraficoPizza(dados: {for (final k in _categorias) k: d.resumo[k] ?? 0}));
       final barras = cartao('Por MK', GraficoBarras(dados: porMk.where((e) => e.$2 > 0).take(10).toList()));
       final linha = cartao('Ao longo do tempo', GraficoLinha(pontos: d.serieHora, series: _categorias));
       if (c.maxWidth >= 900) {
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: pizza),
+          Expanded(flex: 2, child: linha),
           SizedBox(width: t.space4),
           Expanded(child: barras),
-          SizedBox(width: t.space4),
-          Expanded(flex: 2, child: linha),
         ]);
       }
-      return Column(children: [pizza, SizedBox(height: t.space4), barras, SizedBox(height: t.space4), linha]);
+      return Column(children: [linha, SizedBox(height: t.space4), barras]);
     });
   }
 

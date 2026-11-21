@@ -8,34 +8,6 @@ import 'common.dart';
 import 'graficos.dart';
 import 'painel_textos.dart';
 
-/// Sobretítulo em caixa alta (mono). A caixa alta vem do texto, não de estilo.
-Widget eyebrow(String texto, {required Color cor}) =>
-    Text(texto.toUpperCase(), style: TradeType.eyebrow.copyWith(color: cor));
-
-/// Selo em pílula: cor semântica no texto e no ponto, fundo com a mesma cor em 12%.
-class Selo extends StatelessWidget {
-  const Selo(this.texto, {super.key, required this.cor, this.ponto = false});
-  final String texto;
-  final Color cor;
-  final bool ponto;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
-      decoration: BoxDecoration(color: cor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(t.radiusPill)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (ponto) ...[
-          Container(width: 8, height: 8, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
-          SizedBox(width: t.space2),
-        ],
-        Text(texto, style: TradeType.label.copyWith(color: cor, fontWeight: FontWeight.w600)),
-      ]),
-    );
-  }
-}
-
 class _Hachura extends CustomPainter {
   _Hachura(this.cor);
   final Color cor;
@@ -149,8 +121,8 @@ class PainelAtencao extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: t.space2),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 a.semaforo == 'vermelho'
-                    ? Selo('Vermelho', cor: t.negative, ponto: true)
-                    : Selo('Amarelo', cor: t.warning, ponto: true),
+                    ? Pilula('Vermelho', cor: t.negative, ponto: true)
+                    : Pilula('Amarelo', cor: t.warning, ponto: true),
                 SizedBox(width: t.space3),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -206,7 +178,7 @@ class CartaoCategoria extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: eyebrow(rotuloCategoria[categoria] ?? categoria, cor: t.fgMuted)),
-          if (estado != null) Selo(rotuloEstado(estado!.estado), cor: _corEstado(t, estado!.estado)),
+          if (estado != null) Pilula(rotuloEstado(estado!.estado), cor: _corEstado(t, estado!.estado)),
         ]),
         SizedBox(height: t.space3),
         Text(milhar(total), key: Key('total-$categoria'), style: TradeType.dataXl.copyWith(color: t.fgPrimary)),

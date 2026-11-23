@@ -49,7 +49,6 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   List<MkPainel> _mks = []; // lista completa, vinda da carga sem filtro
   String? _erro;
   int _pedido = 0;
-  final _chaves = {for (final c in _categorias) c: GlobalKey()};
 
   @override
   void initState() {
@@ -181,8 +180,6 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     ]..sort((a, b) => b.$2.compareTo(a.$2));
     final ranking = porMk.where((e) => e.$2 > 0).take(10).toList();
     final nota = _mk == null ? notaConcentracao([for (final e in porMk) if (e.$2 > 0) e]) : null;
-    final blocoAcesso = d.blocos['acesso'];
-    final logins = blocoAcesso?.loginsExternos ?? const <Map<String, dynamic>>[];
 
     final cards = [
       for (final c in _categorias)
@@ -191,10 +188,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
           total: d.resumo[c] ?? 0,
           estado: d.resumoEstado[c],
           serie: d.serieHora,
-          aoVerDetalhes: () {
-            final ctx = _chaves[c]!.currentContext;
-            if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), alignment: 0.05);
-          },
+          aoVerDetalhes: () => _abrirDetalhe(context, t, d, c),
         ),
     ];
 
@@ -224,26 +218,6 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         );
       }),
       SizedBox(height: t.space4),
-      _detalheAcesso(t, blocoAcesso, logins),
-      SizedBox(height: t.space4),
-      _grade(t, [
-        _detalhe(t, 'autenticacao', 'Quem erra a senha por dentro', 'Falhas de login na rede interna e de PPPoE, por tipo e por MK.',
-            d.blocos['autenticacao'], [_subtiposBarras(t, 'autenticacao', d.blocos['autenticacao'])]),
-        _detalhe(t, 'vpn', 'Túneis com falha', 'Falhas ao negociar o túnel, por MK e as últimas ocorrências.', d.blocos['vpn'], [
-          _subtiposBarras(t, 'vpn', d.blocos['vpn']),
-          _lista(t, 'Últimas falhas', [
-            for (final u in d.blocos['vpn']?.ultimos ?? const <Map<String, dynamic>>[])
-              ('${u['nome']}: ${u['mensagem']}', formatEventoHora(DateTime.parse(u['quando']))),
-          ]),
-        ]),
-        _detalhe(t, 'erros', 'Problemas nas MKs e no cabo', 'Reinícios, quedas de interface e colisões, por tipo e por MK.',
-            d.blocos['erros'], [
-          _subtiposBarras(t, 'erros', d.blocos['erros']),
-          _lista(t, 'Colisão / duplex por interface', [
-            for (final i in d.blocos['erros']?.interfaces ?? const <Map<String, dynamic>>[]) ('${i['nome']} · ${i['interface']}', '${i['n']}'),
-          ]),
-        ]),
-      ], [1000, 700]),
       if (d.incidentes.isNotEmpty) ...[SizedBox(height: t.space4), _incidentes(t, d)],
       SizedBox(height: t.space4),
       _config(t, d),
@@ -292,9 +266,59 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
         ]),
       );
 
-  Widget _detalheAcesso(TradeTokens t, BlocoPainel? b, List<Map<String, dynamic>> logins) => Container(
-        key: _chaves['acesso'],
-        child: TradeCard(
+  /// Janela por cima da tela com o detalhe da categoria (mantém período e filtro de MK).
+  void _abrirDetalhe(BuildContext context, TradeTokens t, PainelEventos d, String cat) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: EdgeInsets.all(t.space4),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: SingleChildScrollView(
+            child: Stack(children: [
+              _detalheDe(t, d, cat),
+              Positioned(
+                top: t.space2,
+                right: t.space2,
+                child: IconButton(
+                  tooltip: 'Fechar',
+                  icon: const Icon(Icons.close, size: 20),
+                  color: t.fgSecondary,
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detalheDe(TradeTokens t, PainelEventos d, String cat) {
+    final b = d.blocos[cat];
+    return switch (cat) {
+      'acesso' => _detalheAcesso(t, b, b?.loginsExternos ?? const <Map<String, dynamic>>[]),
+      'autenticacao' => _detalhe(t, cat, 'Quem erra a senha por dentro',
+          'Falhas de login na rede interna e de PPPoE, por tipo e por MK.', b, [_subtiposBarras(t, cat, b)]),
+      'vpn' => _detalhe(t, cat, 'Túneis com falha', 'Falhas ao negociar o túnel, por MK e as últimas ocorrências.', b, [
+          _subtiposBarras(t, cat, b),
+          _lista(t, 'Últimas falhas', [
+            for (final u in b?.ultimos ?? const <Map<String, dynamic>>[])
+              ('${u['nome']}: ${u['mensagem']}', formatEventoHora(DateTime.parse(u['quando']))),
+          ]),
+        ]),
+      _ => _detalhe(t, cat, 'Problemas nas MKs e no cabo', 'Reinícios, quedas de interface e colisões, por tipo e por MK.', b, [
+          _subtiposBarras(t, cat, b),
+          _lista(t, 'Colisão / duplex por interface', [
+            for (final i in b?.interfaces ?? const <Map<String, dynamic>>[]) ('${i['nome']} · ${i['interface']}', '${i['n']}'),
+          ]),
+        ]),
+    };
+  }
+
+  Widget _detalheAcesso(TradeTokens t, BlocoPainel? b, List<Map<String, dynamic>> logins) => TradeCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Wrap(alignment: WrapAlignment.spaceBetween, spacing: t.space3, runSpacing: t.space3, children: [
               ConstrainedBox(
@@ -330,16 +354,13 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
               for (final l in logins) ('${l['usuario']} de ${l['ip']} via ${l['via']}', '${l['nome']}'),
             ], cor: t.negative),
           ]),
-        ),
       );
 
-  Widget _detalhe(TradeTokens t, String cat, String titulo, String sub, BlocoPainel? b, List<Widget> filhos) => Container(
-        key: _chaves[cat],
-        child: _cartao(t, rotuloCategoria[cat] ?? cat, titulo, sub, [
-          _barras(t, 'Por MK', cor: corCategoria(t, cat), dados: [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)], topo: false),
-          ...filhos,
-        ]),
-      );
+  Widget _detalhe(TradeTokens t, String cat, String titulo, String sub, BlocoPainel? b, List<Widget> filhos) =>
+      _cartao(t, rotuloCategoria[cat] ?? cat, titulo, sub, [
+        _barras(t, 'Por MK', cor: corCategoria(t, cat), dados: [for (final m in b?.porMk ?? const <ContaMk>[]) (m.nome, m.n)], topo: false),
+        ...filhos,
+      ]);
 
   Widget _topo(BuildContext context, TradeTokens t, PainelEventos d) {
     int n(String c) => d.porMk.where((m) => m.semaforo == c).length;

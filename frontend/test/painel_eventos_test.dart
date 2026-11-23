@@ -71,10 +71,7 @@ void main() {
       expect(t.widget<Text>(find.byKey(const Key('total-erros'))).data, '5');
       expect(find.text('Esperado'), findsOneWidget);
       expect(find.text('Atenção'), findsOneWidget);
-      expect(find.text('Quem está tentando entrar'), findsOneWidget);
-      expect(find.text('203.0.113.9'), findsWidgets);
-      expect(find.text('7 tentativas'), findsOneWidget);
-      expect(find.text('1 login de fora aceito'), findsOneWidget);
+      expect(find.text('Quem está tentando entrar'), findsNothing); // detalhe só na janela
       expect(find.text('Acesso (hacker)'), findsNothing);
       expect(find.text('Mudanças de configuração'), findsOneWidget);
       expect(find.text('fora do horário'), findsOneWidget);
@@ -87,6 +84,8 @@ void main() {
     final j = painelJson();
     ((j['blocos'] as Map)['acesso'] as Map)['logins_externos'] = <Object>[];
     await _show(t, corpo: j, altura: 4200);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pumpAndSettle();
     expect(find.text('Nenhum login de fora aceito'), findsOneWidget);
     expect(find.textContaining('login de fora aceito'), findsOneWidget);
   });
@@ -103,17 +102,30 @@ void main() {
       y(find.textContaining('SITUAÇÃO')),
       y(find.byKey(const Key('total-acesso'))),
       y(find.text('Quando os eventos aconteceram')),
-      y(find.text('Quem está tentando entrar')),
       y(find.text('Incidentes entre MKs')),
       y(find.text('Mudanças de configuração')),
     ];
     expect(ordem, [...ordem]..sort());
   });
 
-  testWidgets('Ver detalhes rola até o detalhe sem erro', (t) async {
-    await _show(t);
+  testWidgets('Ver detalhes abre a janela com o detalhe e fecha no X', (t) async {
+    await _show(t, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);
     await t.pumpAndSettle();
+    expect(find.text('Quem está tentando entrar'), findsOneWidget);
+    expect(find.text('203.0.113.9'), findsWidgets);
+    expect(find.text('7 tentativas'), findsOneWidget);
+    expect(find.text('1 login de fora aceito'), findsOneWidget);
+    await t.tap(find.byTooltip('Fechar'));
+    await t.pumpAndSettle();
+    expect(find.text('Quem está tentando entrar'), findsNothing);
+    for (var i = 1; i < 4; i++) {
+      await t.tap(find.text('Ver detalhes →').at(i));
+      await t.pumpAndSettle();
+      expect(find.byTooltip('Fechar'), findsOneWidget);
+      await t.tap(find.byTooltip('Fechar'));
+      await t.pumpAndSettle();
+    }
     expect(t.takeException(), isNull);
   });
 

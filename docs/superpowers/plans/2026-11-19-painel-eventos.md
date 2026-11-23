@@ -127,7 +127,7 @@ Layout: AppBar "Eventos" + seletor de período (`SegmentedButton` 24 h / 7 dias 
 ### Task 7: deploy no CT 119 e conferência com dados reais
 **Files:** `docs/andamento.local.md` (gitignored); sem código novo.
 
-- [ ] **Step 1:** merge na `main` só depois da revisão final e do OK do usuário. Deploy: `git archive HEAD | ssh root@192.168.60.200 "pct exec 119 -- tar -x -C /opt/nodebeat"` e `docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build api web` dentro do CT.
+- [ ] **Step 1:** merge na `main` só depois da revisão final e do OK do usuário. Deploy: `git archive HEAD | ssh root@<IP_PROXMOX> "pct exec 119 -- tar -x -C /opt/nodebeat"` e `docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build api web` dentro do CT.
 - [ ] **Step 2:** com `curl`/script no container `api`, chamar `/api/eventos/painel?periodo=30d` e conferir: `resumo.acesso` próximo de 2000, ≥ 1 MK com `link_fisico`, as 19 MKs em `por_mk`, nenhum 500.
 - [ ] **Step 3:** abrir a aba no navegador (tema claro e escuro) e conferir gráficos e semáforo; mostrar ao usuário.
 - [ ] **Step 4:** atualizar `docs/andamento.local.md` (aba pronta, eventos ligados nas 19 MKs, COSMOPOLITANO sem acesso) e a memória.

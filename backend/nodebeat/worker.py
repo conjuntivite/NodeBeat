@@ -185,14 +185,16 @@ async def run_mapa(db, r, settings: Settings, now: datetime, *, ping=probes.ping
     """Pinga os aparelhos vigiados das MKs no ar e guarda o estado; nunca levanta."""
     try:
         estados = await history.load_states(r)
-        sem = asyncio.Semaphore(40)
-        for mk in await store.list_mks(db):
-            if estados.get(mk["id"], {}).get("status") != "no_ar":
-                continue  # MK fora: não pinga e mantém o estado anterior
+        sem = asyncio.Semaphore(40)  # compartilhado: limite total de pings, não por MK
+
+        async def um(mk):
             try:
                 await _mapa_mk(db, r, mk["id"], now, sem, ping)
             except Exception as e:
                 log.warning("mk %s: mapa: %s", mk.get("id"), type(e).__name__)
+
+        await asyncio.gather(*(um(mk) for mk in await store.list_mks(db)
+                               if estados.get(mk["id"], {}).get("status") == "no_ar"))  # fora: mantém estado
     except Exception as e:
         log.warning("mapa falhou: %s", type(e).__name__)
 

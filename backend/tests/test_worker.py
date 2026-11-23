@@ -407,3 +407,40 @@ async def test_check_guarda_portas_link(db, r):
     assert est["portas_link"] == {"ether1": True, "ether2": False}
     await ciclos(db, r, eng, [30], fetch=fetch_fail)
     assert (await history.load_states(r))[mk]["portas_link"] == {}
+
+
+async def test_run_mapa_falha_numa_mk_nao_impede_outra(db, r):
+    mk1 = await _mk_mapa(db, r)
+    mk2 = await store.insert_mk(db, doc(nome="mk2", ip="10.0.0.2"))
+    await history.save_state(r, mk2, {"status": "no_ar"})
+    await store.salvar_inventario(db, mk2, {"redes": [{"rede": "203.0.113.0/24", "tunel": True}]}, T0)
+    await store.registrar_ips(db, mk2, [{"ip": "203.0.113.5", "mac": None, "host_name": None, "fixo": True}], T0)
+    orig = store.get_inventario
+
+    async def get_inv(db_, mk_id):
+        if mk_id == mk1:
+            raise RuntimeError("boom")
+        return await orig(db_, mk_id)
+
+    store.get_inventario = get_inv
+    try:
+        async def ping(ip):
+            return True
+        await run_mapa(db, r, SET, T0, ping=ping)
+    finally:
+        store.get_inventario = orig
+    assert (await history.load_aparelhos(r, mk2))["203.0.113.5"]["online"] is True
+
+
+async def test_run_mapa_duas_rodadas_com_falha_viram_offline(db, r):
+    mk = await _mk_mapa(db, r)
+    await history.save_aparelhos(r, mk, {"192.0.2.5": {"online": True, "falhas": 0, "desde": T0.isoformat()}})
+
+    async def ping(ip):
+        return False
+
+    await run_mapa(db, r, SET, T0, ping=ping)
+    e = (await history.load_aparelhos(r, mk))["192.0.2.5"]
+    assert e["online"] is True and e["falhas"] == 1
+    await run_mapa(db, r, SET, T0 + timedelta(seconds=60), ping=ping)
+    assert (await history.load_aparelhos(r, mk))["192.0.2.5"]["online"] is False

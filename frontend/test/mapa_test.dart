@@ -54,7 +54,83 @@ Future<List<http.Request>> _show(WidgetTester t,
   return reqs;
 }
 
+Map<String, dynamic> _porta(String nome, bool problema, List<Map<String, dynamic>> aps) => {
+      'nome': nome, 'rotulo': null, 'link': 'up', 'vigiados': aps.length, 'no_ar': problema ? 0 : aps.length,
+      'problema': problema, 'causa': null, 'aparelhos': aps,
+    };
+
+Map<String, dynamic> _aninhado({Map<String, dynamic> extra = const {}}) => {
+      'lido_em': '2026-01-01T10:00:00+00:00', 'desatualizado': false, 'mk_no_ar': true,
+      'portas': [
+        _porta('ether2', true, [
+          {
+            ..._ap('10.0.0.2', 'no_ar', nome: 'switch-sala'),
+            'e_switch': true, 'gerenciavel': true, 'snmp_erro': false,
+            'switch_lido_em': DateTime.now().toUtc().toIso8601String(),
+            'portas': [
+              _porta('7', true, [_ap('10.0.0.7', 'offline', nome: 'camera7', desde: '2026-01-01T00:00:00+00:00')]),
+              _porta('8', false, [_ap('10.0.0.8', 'no_ar', nome: 'saudavel8')]),
+            ],
+            ...extra,
+          },
+          {..._ap('10.0.0.3', 'no_ar', nome: 'candidato'), 'e_switch': true, 'gerenciavel': false,
+           'dica': 'gerenciável detectado: ative o SNMP nele'},
+        ]),
+      ],
+    };
+
 void main() {
+  for (final b in [Brightness.light, Brightness.dark]) {
+    testWidgets('switch gerenciável aninhado: selo, portas e dica ($b)', (t) async {
+      await _show(t, b: b, mapa: _aninhado());
+      expect(find.text('Gerenciável'), findsOneWidget);
+      expect(find.text('7'), findsOneWidget);
+      expect(find.text('10.0.0.7'), findsOneWidget); // porta com problema aberta
+      expect(find.text('8'), findsOneWidget);
+      expect(find.text('10.0.0.8'), findsNothing); // sadia recolhida
+      await t.tap(find.text('8'));
+      await t.pump();
+      expect(find.text('10.0.0.8'), findsOneWidget);
+      expect(find.text('gerenciável detectado: ative o SNMP nele'), findsOneWidget);
+      expect(find.textContaining('Sem resposta SNMP'), findsNothing);
+      expect(find.textContaining('leitura do switch há'), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('switch sem resposta SNMP mostra a hora da última leitura', (t) async {
+    await _show(t, mapa: _aninhado(extra: {'snmp_erro': true, 'switch_lido_em': '2026-01-01T10:00:00+00:00'}));
+    expect(find.textContaining('Sem resposta SNMP; dados do switch de '), findsOneWidget);
+    expect(find.textContaining('leitura do switch há'), findsNothing);
+  });
+
+  testWidgets('sem resposta SNMP e sem leitura', (t) async {
+    await _show(t, mapa: _aninhado(extra: {'snmp_erro': true, 'switch_lido_em': null}));
+    expect(find.text('Sem resposta SNMP'), findsOneWidget);
+  });
+
+  testWidgets('leitura do switch antiga avisa há quanto tempo', (t) async {
+    await _show(t, mapa: _aninhado(extra: {'switch_lido_em': '2026-01-01T10:00:00+00:00'}));
+    expect(find.textContaining('leitura do switch há'), findsOneWidget);
+  });
+
+  testWidgets('aninhado em 400 px sem overflow', (t) async {
+    await _show(t, mapa: _aninhado(extra: {'snmp_erro': true}), largura: 400);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('mudar só "É um switch" envia só e_switch', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.text('10.0.0.5'));
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(SwitchListTile, 'É um switch'));
+    await t.pump();
+    await t.tap(find.text('Salvar'));
+    await t.pumpAndSettle();
+    final put = reqs.firstWhere((r) => r.method == 'PUT');
+    expect(jsonDecode(put.body), {'e_switch': true});
+  });
+
   for (final b in [Brightness.light, Brightness.dark]) {
     testWidgets('porta com problema aberta, estados e sadia recolhida ($b)', (t) async {
       await _show(t, b: b);
@@ -104,7 +180,7 @@ void main() {
     final reqs = await _show(t);
     await t.tap(find.text('10.0.0.5'));
     await t.pumpAndSettle();
-    await t.tap(find.byType(Switch).last);
+    await t.tap(find.widgetWithText(SwitchListTile, 'Vigiar este aparelho'));
     await t.pump();
     await t.tap(find.text('Salvar'));
     await t.pumpAndSettle();

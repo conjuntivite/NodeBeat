@@ -406,7 +406,8 @@ def create_app(db, r, settings) -> FastAPI:
             await store.listar_ips(db, id), link=row.get("portas_link") or {},
             rotulos=await store.rotulos_portas(db, id), estados=await history.load_aparelhos(r, id),
             mk_no_ar=no_ar, redes_tunel=[x["rede"] for x in inv.get("redes", []) if x.get("tunel")],
-            busca=q, so_problema=so_problema, agora=datetime.now(UTC))
+            busca=q, so_problema=so_problema, agora=datetime.now(UTC),
+            switches=await store.listar_switches(db, id))
         return {"lido_em": lido, "desatualizado": inventario.desatualizado(lido, datetime.now(UTC)),
                 "mk_no_ar": no_ar, "portas": portas}
 

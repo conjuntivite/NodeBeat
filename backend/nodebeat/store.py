@@ -107,6 +107,7 @@ async def listar_ips(db, mk_id: str) -> list[dict]:
 
 
 async def esquecer_ip(db, mk_id: str, ip: str) -> bool:
+    await db.switches.delete_one({"mk_id": mk_id, "ip": ip})  # sem doc órfão de switch
     return (await db.inventario_ips.delete_one({"mk_id": mk_id, "ip": ip})).deleted_count > 0
 
 

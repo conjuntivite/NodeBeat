@@ -402,10 +402,17 @@ class MapaAparelho {
         estado = j['estado'] ?? 'desconhecido',
         desde = j['desde'],
         ultimoVisto = j['ultimo_visto'],
-        portaDesconhecida = j['porta_desconhecida'] == true;
+        portaDesconhecida = j['porta_desconhecida'] == true,
+        gerenciavel = j['gerenciavel'] as bool?,
+        portas = [for (final p in j['portas'] ?? []) MapaPorta.fromJson(p)],
+        snmpErro = j['snmp_erro'] == true,
+        switchLidoEm = j['switch_lido_em'],
+        dica = j['dica'];
   final String ip, estado;
-  final String? mac, fabricante, nome, apelido, desde, ultimoVisto;
-  final bool vigiado, eSwitch, portaDesconhecida;
+  final String? mac, fabricante, nome, apelido, desde, ultimoVisto, switchLidoEm, dica;
+  final bool vigiado, eSwitch, portaDesconhecida, snmpErro;
+  final bool? gerenciavel; // null: campo ausente (não é switch nem candidato)
+  final List<MapaPorta> portas; // só switch gerenciável
 }
 
 class MapaPorta {

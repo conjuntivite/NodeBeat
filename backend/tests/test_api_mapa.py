@@ -98,3 +98,25 @@ async def test_apagar_mk_apaga_rotulos(client, db):
     await client.put(f"/api/mks/{id}/mapa/rotulo-porta", json={"porta": "ether2", "rotulo": "A"})
     assert (await client.delete(f"/api/mks/{id}")).status_code == 204
     assert await store.rotulos_portas(db, id) == {}
+
+
+async def test_mapa_switch_aninhado_e_dica(client, db):
+    id = await criar(client)
+    await _ap(db, id, "192.168.1.2", e_switch_manual=True)
+    await _ap(db, id, "192.168.1.3", switch_ip="192.168.1.2", switch_porta="3")
+    body = (await client.get(f"/api/mks/{id}/mapa")).json()
+    sw = body["portas"][0]["aparelhos"][0]
+    assert sw["gerenciavel"] is False and "SNMP" in sw["dica"]  # sem docs de switch: dica
+    await store.salvar_switch(db, id, "192.168.1.2", {"gerenciavel": True, "portas": {"3": {"up": True}}})
+    sw = next(a for a in (await client.get(f"/api/mks/{id}/mapa")).json()["portas"][0]["aparelhos"])
+    assert sw["gerenciavel"] is True and "dica" not in sw
+    assert sw["portas"][0]["nome"] == "3" and sw["portas"][0]["aparelhos"][0]["ip"] == "192.168.1.3"
+
+
+async def test_esquecer_ip_apaga_switch(db):
+    await _ap(db, "m1", "192.168.1.2")
+    await store.salvar_switch(db, "m1", "192.168.1.2", {"gerenciavel": True})
+    assert await store.esquecer_ip(db, "m1", "192.168.1.2")
+    assert await store.listar_switches(db, "m1") == []
+    await store.salvar_switch(db, "m1", "192.168.1.9", {"gerenciavel": True})
+    assert not await store.esquecer_ip(db, "m1", "192.168.1.9")

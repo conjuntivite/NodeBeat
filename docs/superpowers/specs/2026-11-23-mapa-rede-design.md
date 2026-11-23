@@ -119,6 +119,7 @@ Pedido do usuário: ao instalar um switch gerenciável num condomínio, o NodeBe
 - **Status:** porta do switch com link caído ou com todos os filhos sem resposta vira causa única no nível dela, como na fase A. Switch gerenciável que parar de responder ao ping vira offline e seus filhos viram **desconhecido** (não vermelho), pois a causa é o pai.
 - **Limites honestos:** depende do modelo ter SNMP (a maioria dos gerenciáveis tem, mas costuma vir desligado: o usuário ativa uma vez). Switch burro no meio continua invisível; os aparelhos dele ficam agrupados na porta do switch gerenciável acima.
 - **Leitura mais frequente do switch:** a tabela de MAC de switch gerenciável lê **a cada 10 min** (configurável), não de hora em hora, porque é nela que está o "onde está".
+- **Decisão (B1, 2026-11-23): cliente SNMP próprio, só stdlib** (`nodebeat/snmp.py`: BER mínimo + asyncio UDP, GET e GETBULK, sem SET). O `pysnmp` 7.1.33 instalou limpo no Python 3.14 e respondeu no spike, mas traz `pysnmp` + `pyasn1` e um motor SNMP inteiro (v3, MIBs) para usar só dois comandos, com API que já mudou muito entre versões. O cliente próprio tem ~200 linhas, zero dependência nova, e o teste compara o GET gerado com o BER de referência do `pysnmp`. Sem retransmissão: pacote perdido falha a leitura e o próximo ciclo tenta de novo.
 
 ## API
 

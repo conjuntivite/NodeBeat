@@ -88,3 +88,33 @@ def test_fatos_por_ip_raw_sem_chaves_novas():
     from nodebeat.mapa import fatos_por_ip
     f = fatos_por_ip({"arp": []}, IPS)["10.0.0.5"]
     assert f["porta"] is None and f["identidade"] is None
+
+
+from datetime import UTC, datetime
+
+from nodebeat.mapa import estado_de, proximo_estado
+
+T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+def test_proximo_estado_offline_so_apos_duas_falhas():
+    e1 = proximo_estado({"online": True, "falhas": 0, "desde": T0.isoformat()}, False, T0)
+    assert e1["online"] is True and e1["falhas"] == 1
+    e2 = proximo_estado(e1, False, T0)
+    assert e2["online"] is False and e2["desde"] == T0.isoformat()
+    assert proximo_estado(e2, True, T0)["online"] is True
+
+
+def test_proximo_estado_primeira_falha_sem_anterior():
+    assert proximo_estado(None, False, T0)["online"] is None
+    assert proximo_estado(None, True, T0)["online"] is True
+
+
+def test_estado_de():
+    assert estado_de(True, True, False, {"online": False}) == "desconhecido"
+    assert estado_de(True, False, True, {"online": False}) == "nao_vigiado"
+    assert estado_de(True, True, True, {"online": False}) == "offline"
+    assert estado_de(True, True, True, {"online": True}) == "no_ar"
+    assert estado_de(True, True, True, {"online": None}) == "desconhecido"
+    assert estado_de(True, True, True, None) == "desconhecido"
+    assert estado_de(False, True, True, None) == "nao_vigiado"

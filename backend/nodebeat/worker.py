@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import redis.asyncio
@@ -73,6 +74,7 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
         "status": status, "detalhe": obs.detalhe, "desde": desde,
         "cpu": obs.cpu if ok else None, "mem": obs.mem if ok else None,
         "uptime": snap.uptime if ok else None, "ifaces": obs.ifaces if ok else {},
+        "portas_link": dict(snap.ifaces) if ok else {},
         "versao": snap.version if ok else None, "atualizado_em": now.isoformat()})
 
 
@@ -159,6 +161,42 @@ async def _inventariar(db, settings, now, fetch) -> None:
     await asyncio.gather(*(um(m) for m in await store.list_mks(db)))
 
 
+async def _mapa_mk(db, r, mk_id: str, agora: datetime, sem, ping) -> None:
+    inv = await store.get_inventario(db, mk_id) or {}
+    tuneis = [ipaddress.ip_network(x["rede"]) for x in inv.get("redes", []) if x.get("tunel")]
+    alvos = [a["ip"] for a in await store.listar_ips(db, mk_id)
+             if mapa.vigiado(a) and agora - a["ultimo_visto"] <= timedelta(days=inventario.DIAS_EM_USO)
+             and any(ipaddress.ip_address(a["ip"]) in n for n in tuneis)]
+    if not alvos:
+        return
+
+    async def um(ip):
+        async with sem:
+            return ip, await ping(ip)
+
+    resp = await asyncio.gather(*(um(ip) for ip in alvos))
+    est = await history.load_aparelhos(r, mk_id)
+    for ip, ok in resp:
+        est[ip] = mapa.proximo_estado(est.get(ip), ok, agora)
+    await history.save_aparelhos(r, mk_id, est)
+
+
+async def run_mapa(db, r, settings: Settings, now: datetime, *, ping=probes.ping) -> None:
+    """Pinga os aparelhos vigiados das MKs no ar e guarda o estado; nunca levanta."""
+    try:
+        estados = await history.load_states(r)
+        sem = asyncio.Semaphore(40)
+        for mk in await store.list_mks(db):
+            if estados.get(mk["id"], {}).get("status") != "no_ar":
+                continue  # MK fora: não pinga e mantém o estado anterior
+            try:
+                await _mapa_mk(db, r, mk["id"], now, sem, ping)
+            except Exception as e:
+                log.warning("mk %s: mapa: %s", mk.get("id"), type(e).__name__)
+    except Exception as e:
+        log.warning("mapa falhou: %s", type(e).__name__)
+
+
 def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido: bool) -> bool:
     return pedido or ultimo is None or agora - ultimo >= intervalo
 
@@ -186,6 +224,7 @@ async def main() -> None:
         sender = asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))
         loop = asyncio.get_running_loop()
         inv_task, ultimo_inv = None, None
+        mapa_task, ultimo_mapa = None, None
 
         async def _inv(s):
             nonlocal ultimo_inv
@@ -210,6 +249,13 @@ async def main() -> None:
                     await r.set(PEDIDO_INVENTARIO, "1")
             except Exception as e:
                 log.warning("agendamento do inventário falhou: %s", type(e).__name__)
+            try:  # idem o mapa: tarefa própria, nunca derruba o laço
+                if (not engine.frozen and (mapa_task is None or mapa_task.done())
+                        and (ultimo_mapa is None or loop.time() - ultimo_mapa >= s.mapa_s)):
+                    mapa_task = asyncio.create_task(run_mapa(db, r, s, datetime.now(UTC)))
+                    ultimo_mapa = loop.time()
+            except Exception as e:
+                log.warning("agendamento do mapa falhou: %s", type(e).__name__)
             await asyncio.sleep(max(0, s.interval_s - (loop.time() - t0)))
 
 

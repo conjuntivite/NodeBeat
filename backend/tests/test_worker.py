@@ -11,7 +11,7 @@ from nodebeat.config import Settings
 from nodebeat.routeros import CertMismatch, RouterOsError, Snapshot
 from nodebeat.rules import AlertEngine
 from nodebeat.webhook import QUEUE
-from nodebeat.worker import atualizar_mk, inventario_devido, load_engine, run_cycle, run_inventario
+from nodebeat.worker import atualizar_mk, inventario_devido, load_engine, run_cycle, run_inventario, run_mapa
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 KEY = Fernet.generate_key().decode()
@@ -347,3 +347,63 @@ async def test_registrar_ips_sem_fatos(db):
     await store.registrar_ips(db, "m1", [{"ip": "10.0.0.1", "fixo": False}], T0)
     (d,) = await store.listar_ips(db, "m1")
     assert "porta" not in d
+
+
+async def _mk_mapa(db, r, status="no_ar"):
+    mk = await store.insert_mk(db, doc())
+    await history.save_state(r, mk, {"status": status})
+    await store.salvar_inventario(db, mk, {"redes": [
+        {"rede": "192.0.2.0/24", "tunel": True}, {"rede": "198.51.100.0/24", "tunel": False}]}, T0)
+    base = {"mac": None, "host_name": None, "fixo": False}
+    await store.registrar_ips(db, mk, [
+        {**base, "ip": "192.0.2.5"}, {**base, "ip": "192.0.2.6"}, {**base, "ip": "192.0.2.7"},
+        {**base, "ip": "192.0.2.8"}, {**base, "ip": "198.51.100.5"}], T0, {
+        "192.0.2.5": {"fabricante": "Hikvision"}, "192.0.2.6": {"fabricante": "MAC privado"},
+        "192.0.2.7": {"fabricante": "Hikvision"}, "198.51.100.5": {"fabricante": "Hikvision"}})
+    # 192.0.2.8 sem fabricante mas fixo
+    await db.inventario_ips.update_one({"ip": "192.0.2.8"}, {"$set": {"fixo": True}})
+    # 192.0.2.7 velho demais
+    await db.inventario_ips.update_one({"ip": "192.0.2.7"}, {"$set": {"ultimo_visto": T0 - timedelta(days=20)}})
+    return mk
+
+
+async def test_run_mapa_pinga_so_vigiados_em_tunel(db, r):
+    mk = await _mk_mapa(db, r)
+    chamados = []
+
+    async def ping(ip):
+        chamados.append(ip)
+        return True
+
+    await run_mapa(db, r, SET, T0, ping=ping)
+    assert sorted(chamados) == ["192.0.2.5", "192.0.2.8"]
+    est = await history.load_aparelhos(r, mk)
+    assert est["192.0.2.5"]["online"] is True
+
+
+async def test_run_mapa_mk_fora_do_ar_nao_pinga_e_preserva_estado(db, r):
+    mk = await _mk_mapa(db, r, status="offline")
+    await history.save_aparelhos(r, mk, {"192.0.2.5": {"online": True, "falhas": 0, "desde": "x"}})
+    chamados = []
+
+    async def ping(ip):
+        chamados.append(ip)
+        return False
+
+    await run_mapa(db, r, SET, T0, ping=ping)
+    assert chamados == []
+    assert (await history.load_aparelhos(r, mk))["192.0.2.5"]["online"] is True
+
+
+async def test_check_guarda_portas_link(db, r):
+    mk = await store.insert_mk(db, doc(interfaces_vigiadas=["ether1"]))
+    eng = AlertEngine(recover_s=600)
+
+    def fetch(*a):
+        return Snapshot("7.1", 10.0, 20.0, "1d", {"ether1": True, "ether2": False}), "abc"
+
+    await ciclos(db, r, eng, [0], fetch=fetch)
+    est = (await history.load_states(r))[mk]
+    assert est["portas_link"] == {"ether1": True, "ether2": False}
+    await ciclos(db, r, eng, [30], fetch=fetch_fail)
+    assert (await history.load_states(r))[mk]["portas_link"] == {}

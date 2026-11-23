@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 # OUIs (MA-L) conferidos no registro IEEE (https://standards-oui.ieee.org/oui/oui.csv,
 # consultado em 2026-11-23). Lista parcial: alguns por fabricante.
@@ -117,3 +118,24 @@ def fatos_por_ip(raw: dict, ips: list[dict]) -> dict[str, dict]:
             "identidade": _txt(n.get("identity")), "plataforma": _txt(n.get("platform")),
             "e_switch": "bridge" in str(n.get("system-caps") or "").lower()}
     return out
+
+
+def proximo_estado(ant: dict | None, respondeu: bool, agora: datetime) -> dict:
+    """Estado do aparelho após um ping: offline só depois de 2 falhas seguidas."""
+    falhas = 0 if respondeu else (ant or {}).get("falhas", 0) + 1
+    if respondeu:
+        online = True
+    elif falhas >= 2:
+        online = False
+    else:
+        online = (ant or {}).get("online")  # 1ª falha: mantém o anterior (None se não havia)
+    desde = ant["desde"] if ant and ant.get("online") == online and ant.get("desde") else agora.isoformat()
+    return {"online": online, "falhas": falhas, "desde": desde}
+
+
+def estado_de(vig: bool, em_tunel: bool, mk_no_ar: bool, est: dict | None) -> str:
+    if not vig or not em_tunel:
+        return "nao_vigiado"
+    if not mk_no_ar or not est or est.get("online") is None:
+        return "desconhecido"
+    return "no_ar" if est["online"] else "offline"

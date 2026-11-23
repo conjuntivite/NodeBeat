@@ -121,19 +121,26 @@ mixin Carrega<W extends StatefulWidget, T> on State<W> {
   T? dados;
   String? erro;
   Future<T> buscar();
+  int _pedido = 0; // resposta de um pedido antigo (mais lento) nunca sobrescreve a do mais novo
+  bool get carregando => _carregando;
+  bool _carregando = false;
 
   Future<void> carregar() async {
+    final n = ++_pedido;
+    _carregando = true;
     try {
       final d = await buscar();
-      if (mounted) {
+      if (mounted && n == _pedido) {
         setState(() {
           dados = d;
           erro = null;
         });
       }
     } catch (e) {
-      if (!mounted || sessionExpired(context, e)) return;
+      if (!mounted || n != _pedido || sessionExpired(context, e)) return;
       setState(() => erro = errorText(e));
+    } finally {
+      if (n == _pedido) _carregando = false;
     }
   }
 

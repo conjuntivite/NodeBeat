@@ -24,7 +24,7 @@ class MapaRedeCard extends StatefulWidget {
 class _MapaRedeCardState extends State<MapaRedeCard>
     with Carrega<MapaRedeCard, MapaMk> {
   final _busca = TextEditingController();
-  Timer? _debounce;
+  Timer? _debounce, _auto;
   bool _soProblema = false;
   final _abertas =
       <
@@ -40,7 +40,18 @@ class _MapaRedeCardState extends State<MapaRedeCard>
   );
 
   @override
+  void initState() {
+    super.initState();
+    // estado vivo (MK caiu, aparelho ficou offline) sem recarregar a página; abertas e busca
+    // ficam porque moram neste State. Diálogo aberto (rota por cima) ou pedido em voo: pula.
+    _auto = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!carregando && (ModalRoute.of(context)?.isCurrent ?? true)) carregar();
+    });
+  }
+
+  @override
   void dispose() {
+    _auto?.cancel();
     _debounce?.cancel();
     _busca.dispose();
     super.dispose();

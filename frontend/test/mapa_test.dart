@@ -75,6 +75,7 @@ Future<List<http.Request>> _show(
   Brightness b = Brightness.light,
   Map<String, dynamic>? mapa,
   double largura = 400,
+  Future<http.Response> Function(http.Request req, int n)? responder,
 }) async {
   t.view.physicalSize = Size(largura, 1400);
   t.view.devicePixelRatio = 1;
@@ -84,6 +85,9 @@ Future<List<http.Request>> _show(
     client: MockClient((req) async {
       reqs.add(req);
       if (req.method == 'PUT') return http.Response('', 204);
+      if (responder != null && req.url.path == '/api/mks/x/mapa') {
+        return responder(req, reqs.length);
+      }
       return req.url.path == '/api/mks/x/mapa'
           ? _json(mapa ?? _mapa)
           : http.Response('', 404);
@@ -339,5 +343,85 @@ void main() {
     await _show(t, mapa: {});
     expect(t.takeException(), isNull);
     expect(find.text('Nenhum aparelho mapeado.'), findsOneWidget);
+  });
+
+  List<http.Request> gets(List<http.Request> reqs) =>
+      reqs.where((r) => r.method == 'GET').toList();
+
+  testWidgets('recarrega a cada 30 s mantendo aberto/fechado e a busca', (
+    t,
+  ) async {
+    final reqs = await _show(
+      t,
+      responder: (req, n) async =>
+          _json(n == 1 ? _mapa : {..._mapa, 'mk_no_ar': false}),
+    );
+    await t.tap(find.text('ether3')); // aberta por problema: fecha
+    await t.tap(find.text('ether4')); // sadia: abre
+    await t.pump();
+    await t.enterText(find.byType(TextField), 'cam');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump();
+    final antes = gets(reqs).length;
+    await t.pump(const Duration(seconds: 30));
+    await t.pump();
+    expect(gets(reqs).length, antes + 1);
+    expect(gets(reqs).last.url.query, 'q=cam');
+    expect(
+      find.text('MK fora do ar: estado dos aparelhos desconhecido'),
+      findsOneWidget,
+    );
+    expect(find.text('10.0.0.5'), findsNothing); // ether3 continua fechada
+    expect(find.text('10.0.0.9'), findsOneWidget); // ether4 continua aberta
+  });
+
+  testWidgets('não recarrega com diálogo aberto', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.text('10.0.0.5'));
+    await t.pumpAndSettle();
+    final antes = gets(reqs).length;
+    await t.pump(const Duration(seconds: 31));
+    expect(gets(reqs).length, antes);
+    await t.tap(find.text('Cancelar'));
+    await t.pumpAndSettle();
+  });
+
+  testWidgets('resposta velha mais lenta não sobrescreve a nova', (t) async {
+    Map<String, dynamic> so(String porta) => {
+      ..._mapa,
+      'portas': [
+        _porta(porta, true, [_ap('10.0.0.5', 'offline')]),
+      ],
+    };
+    await _show(
+      t,
+      responder: (req, n) async {
+        final q = req.url.queryParameters['q'];
+        if (q == 'a') {
+          await Future.delayed(const Duration(seconds: 2));
+          return _json(so('portaVelha'));
+        }
+        return _json(so(q == 'ab' ? 'portaNova' : 'ether3'));
+      },
+    );
+    await t.enterText(find.byType(TextField), 'a');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.enterText(find.byType(TextField), 'ab');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump();
+    expect(find.text('portaNova'), findsOneWidget);
+    await t.pump(const Duration(seconds: 3));
+    await t.pump();
+    expect(find.text('portaNova'), findsOneWidget);
+    expect(find.text('portaVelha'), findsNothing);
+  });
+
+  testWidgets('sair da tela cancela a recarga', (t) async {
+    final reqs = await _show(t);
+    await t.pumpWidget(const SizedBox());
+    final antes = gets(reqs).length;
+    await t.pump(const Duration(minutes: 2));
+    expect(gets(reqs).length, antes);
+    expect(t.takeException(), isNull);
   });
 }

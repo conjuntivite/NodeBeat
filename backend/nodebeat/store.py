@@ -147,6 +147,12 @@ async def registrar_ligacoes(db, mk_id: str, ligacoes: dict[str, dict]) -> None:
             {"mk_id": mk_id, "ip": ip}, {"$set": {"switch_ip": lig["switch_ip"], "switch_porta": lig["porta"]}})
 
 
+async def limpar_ligacoes(db, mk_id: str, ips) -> None:
+    """Tira (switch_ip, switch_porta) dos IPs da MK: switch raiz cortado no ciclo (mapa.ligacoes_e_raizes)."""
+    for ip in ips:
+        await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, {"$unset": {"switch_ip": "", "switch_porta": ""}})
+
+
 async def salvar_switch(db, mk_id: str, ip: str, doc: dict) -> None:
     """Mescla os campos no doc do switch: campo ausente mantém o valor anterior."""
     await db.switches.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"mk_id": mk_id, "ip": ip, **doc}},

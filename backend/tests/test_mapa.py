@@ -252,7 +252,7 @@ def test_arvore_ultimo_visto_antigo_nao_vigiado():
 
 import copy
 
-from nodebeat.mapa import ligacoes
+from nodebeat.mapa import ligacoes, ligacoes_e_raizes
 
 
 def _sw(ip, fdb, mac=None, base_mac=None, gerenciavel=True):
@@ -334,6 +334,43 @@ def test_ligacoes_cascata_real_tres_niveis():
         "10.0.0.3": {"switch_ip": "10.0.0.2", "porta": "0/48"}}
     assert ligacoes([s1, s2, s3], aps) == esperado
     assert ligacoes([s3, s1, s2], list(reversed(aps))) == esperado  # ordem da entrada não importa
+
+
+def _cascata(ip1, ip2):
+    # MK -> S1 (0/48) -> S2; S2 vê S1 no uplink (0/1); S1 vê S2 no downlink (0/48)
+    cam = _mac(1)
+    s1 = _sw(ip1, {cam: "0/48", _mac(21): "0/48", **_acima(3)}, mac=_mac(30))
+    s2 = _sw(ip2, {cam: "0/5", _mac(30): "0/1", **_acima(10)}, mac=_mac(21))
+    aps = [{"ip": "10.0.0.5", "mac": cam}, {"ip": ip1, "mac": _mac(30)}, {"ip": ip2, "mac": _mac(21)}]
+    return [s1, s2], aps
+
+
+def test_ligacoes_e_raizes_cascata_devolve_a_raiz():
+    for ip1, ip2 in (("10.0.0.2", "10.0.0.3"), ("10.0.0.3", "10.0.0.2")):  # raiz com menor/maior IP
+        sws, aps = _cascata(ip1, ip2)
+        ligs, raizes = ligacoes_e_raizes(sws, aps)
+        assert ligs == ligacoes(sws, aps) == {
+            "10.0.0.5": {"switch_ip": ip2, "porta": "0/5"}, ip2: {"switch_ip": ip1, "porta": "0/48"}}
+        assert raizes == {ip1}
+
+
+def test_ligacoes_e_raizes_tres_niveis_so_a_raiz_do_topo():
+    cam, m1, m2, m3 = _mac(1), _mac(31), _mac(32), _mac(33)
+    s1 = _sw("10.0.0.2", {cam: "0/48", m2: "0/48", m3: "0/48", **_acima(3)}, mac=m1)
+    s2 = _sw("10.0.0.3", {cam: "0/24", m3: "0/24", m1: "0/1", **_acima(10)}, mac=m2)
+    s3 = _sw("10.0.0.4", {cam: "0/5", m1: "0/1", m2: "0/1", **_acima(10)}, mac=m3)
+    aps = [{"ip": "10.0.0.5", "mac": cam}, {"ip": "10.0.0.2", "mac": m1},
+           {"ip": "10.0.0.3", "mac": m2}, {"ip": "10.0.0.4", "mac": m3}]
+    assert ligacoes_e_raizes([s1, s2, s3], aps)[1] == {"10.0.0.2"}
+
+
+def test_ligacoes_e_raizes_switch_que_ninguem_conhece_nao_e_raiz():
+    # S2 sumiu da tabela de S1 e não vê S1: sem candidato agora não é raiz (fica a ligação gravada)
+    s1 = _sw("10.0.0.2", {_mac(1): "0/48"}, mac=_mac(30))
+    s2 = _sw("10.0.0.3", {_mac(1): "0/5"}, mac=_mac(21))
+    aps = [{"ip": "10.0.0.5", "mac": _mac(1)}, {"ip": "10.0.0.2", "mac": _mac(30)},
+           {"ip": "10.0.0.3", "mac": _mac(21)}]
+    assert ligacoes_e_raizes([s1, s2], aps)[1] == set()
 
 
 def test_ligacoes_corte_usa_o_proximo_candidato():

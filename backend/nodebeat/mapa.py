@@ -336,7 +336,15 @@ def montar_arvore(aparelhos: list[dict], *, link: dict[str, bool], rotulos: dict
 
 
 def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
-    """{ip: {"switch_ip", "porta"}} de cada aparelho que algum switch gerenciável conhece.
+    """Só as ligações de `ligacoes_e_raizes`."""
+    return ligacoes_e_raizes(switches, aparelhos)[0]
+
+
+def ligacoes_e_raizes(switches: list[dict], aparelhos: list[dict]) -> tuple[dict[str, dict], set[str]]:
+    """({ip: {"switch_ip", "porta"}} de cada aparelho que algum switch gerenciável conhece, raízes).
+
+    Raiz: switch que tinha candidato e perdeu todos no corte de ciclo (a ligação gravada dele está
+    errada e deve ser limpa). Quem nenhuma tabela conhece agora não é raiz: mantém a gravada.
 
     Vale a (switch, porta) com menos MACs aprendidos (a mais perto da folha: uplink aprende
     muitos); empate -> menor (switch_ip, porta). Switch é ligado pelo MAC dele e pelo base_mac,
@@ -359,6 +367,7 @@ def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
         macs = {m for m in [norm_mac(ap.get("mac"))] if m} | base.get(ap["ip"], set())
         if c := sorted({c for m in macs for c in vistos.get(m, []) if c[1] != ap["ip"]}):
             cands[ap["ip"]] = c
+    com_candidato = set(cands)
     # cada volta tira ao menos um candidato de alguém: termina em sum(len(cands)) voltas
     while cortados := _cortar_ciclos({ip: c[0][1] for ip, c in cands.items()},
                                      {ip: c[0][0] for ip, c in cands.items()}):
@@ -366,4 +375,4 @@ def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
             cands[ip].pop(0)
             if not cands[ip]:
                 del cands[ip]
-    return {ip: {"switch_ip": c[0][1], "porta": c[0][2]} for ip, c in cands.items()}
+    return {ip: {"switch_ip": c[0][1], "porta": c[0][2]} for ip, c in cands.items()}, com_candidato - set(cands)

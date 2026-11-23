@@ -718,6 +718,59 @@ async def test_registrar_ligacoes_grava_nao_limpa_nem_insere(db):
     assert ap["switch_ip"] == "192.0.2.10" and ap["switch_porta"] == "0/3"
 
 
+async def test_limpar_ligacoes_so_os_ips_da_mk(db):
+    lig = {"192.0.2.5": {"switch_ip": "192.0.2.10", "porta": "0/3"},
+           "192.0.2.6": {"switch_ip": "192.0.2.10", "porta": "0/4"}}
+    for mk in ("m1", "m2"):
+        await store.registrar_ips(db, mk, [{"ip": "192.0.2.5", "mac": "AA:BB:CC:00:00:01"},
+                                           {"ip": "192.0.2.6", "mac": "AA:BB:CC:00:00:02"}], T0)
+        await store.registrar_ligacoes(db, mk, lig)
+    await store.limpar_ligacoes(db, "m1", {"192.0.2.5", "192.0.2.77"})  # 192.0.2.77 sem doc: nada
+    await store.limpar_ligacoes(db, "m1", set())
+    m1 = {a["ip"]: a for a in await store.listar_ips(db, "m1")}
+    assert set(m1) == {"192.0.2.5", "192.0.2.6"}
+    assert "switch_ip" not in m1["192.0.2.5"] and "switch_porta" not in m1["192.0.2.5"]
+    assert m1["192.0.2.6"]["switch_ip"] == "192.0.2.10" and m1["192.0.2.6"]["switch_porta"] == "0/4"
+    for a in await store.listar_ips(db, "m2"):  # outra MK, mesmo IP: intacta
+        assert a["switch_ip"] == "192.0.2.10"
+
+
+async def test_run_switches_limpa_ligacao_errada_da_raiz(db, r):
+    # MK -> S1 (192.0.2.2, raiz) -> S2 (192.0.2.3); S1 tem o menor IP, então na leitura do
+    # mapa o corte por maior IP derrubaria a ligação certa de S2 se a errada de S1 ficasse
+    mk = await store.insert_mk(db, doc())
+    await history.save_state(r, mk, {"status": "no_ar"})
+    await store.salvar_inventario(db, mk, {"redes": [{"rede": "192.0.2.0/24", "tunel": True}]}, T0)
+    m1, m2 = "18:E8:29:00:00:02", "18:E8:29:00:00:03"
+    await store.registrar_ips(db, mk, [{"ip": "192.0.2.2", "mac": m1, "host_name": None, "fixo": False},
+                                       {"ip": "192.0.2.3", "mac": m2, "host_name": None, "fixo": False}],
+                              T0, {"192.0.2.2": {"fabricante": "Ubiquiti"}, "192.0.2.3": {"fabricante": "Ubiquiti"}})
+    acima = {f"AA:BB:CC:00:01:{i:02X}": "0/1" for i in range(10)}  # o uplink de S2 aprende a rede acima
+    fdb = {"192.0.2.2": {}, "192.0.2.3": {m1: "0/1", **acima}}
+
+    async def ler(ip, community):
+        return {**LIDO, "base_mac": None, "fdb": fdb[ip]}
+
+    _, descobrir, _ = fakes()
+
+    async def ligacoes():
+        return {a["ip"]: (a.get("switch_ip"), a.get("switch_porta")) for a in await store.listar_ips(db, mk)}
+
+    # 1ª: só S2 vê S1 (S1 ainda não aprendeu S2): sem ciclo, grava a ligação errada S1 -> (S2, 0/1)
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert await ligacoes() == {"192.0.2.2": ("192.0.2.3", "0/1"), "192.0.2.3": (None, None)}
+    # 2ª: os dois se veem: o corte deixa S1 raiz e a ligação errada some do doc
+    fdb["192.0.2.2"] = {m2: "0/48"}
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=10), descobrir=descobrir, ler=ler)
+    assert await ligacoes() == {"192.0.2.2": (None, None), "192.0.2.3": ("192.0.2.2", "0/48")}
+    s1 = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.2")
+    assert "switch_ip" not in s1 and "switch_porta" not in s1
+    # 3ª: ninguém conhece ninguém (tabelas esqueceram): não é corte, a ligação de S2 fica
+    fdb.update({"192.0.2.2": {"AA:BB:CC:00:02:01": "0/5"}, "192.0.2.3": acima})
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=20), descobrir=descobrir, ler=ler)
+    assert await ligacoes() == {"192.0.2.2": (None, None), "192.0.2.3": ("192.0.2.2", "0/48")}
+
+
 async def _com_aparelho_no_fdb(db, mk):
     await store.registrar_ips(db, mk, [{"ip": "192.0.2.20", "mac": "aa:bb:cc:00:00:01", "host_name": None,
                                         "fixo": False}], T0, {"192.0.2.20": {"fabricante": "Outro"}})
@@ -745,7 +798,7 @@ async def test_ligacoes_falha_numa_mk_nao_impede_outra(db, r, monkeypatch, caplo
     mk2 = await _mk_sw(db, r, nome="mk2")
     for mk in (mk1, mk2):
         await _com_aparelho_no_fdb(db, mk)
-    orig = mapa.ligacoes
+    orig = mapa.ligacoes_e_raizes
     chamadas = []
 
     def lig(sws, aps):
@@ -754,7 +807,7 @@ async def test_ligacoes_falha_numa_mk_nao_impede_outra(db, r, monkeypatch, caplo
             raise RuntimeError(SEGREDO)
         return orig(sws, aps)
 
-    monkeypatch.setattr(mapa, "ligacoes", lig)
+    monkeypatch.setattr(mapa, "ligacoes_e_raizes", lig)
     _, descobrir, ler = fakes()
     await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
     assert sorted(chamadas) == sorted([mk1, mk2])

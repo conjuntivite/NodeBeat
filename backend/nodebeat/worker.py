@@ -265,7 +265,9 @@ async def _switches_mk(db, settings, mk_id: str, agora: datetime, sem, descobrir
     # switch com erro ainda tem o fdb anterior: velho, mas serve para a ligação
     sws = await store.listar_switches(db, mk_id)
     if any(s.get("gerenciavel") and s.get("fdb") for s in sws):
-        await store.registrar_ligacoes(db, mk_id, mapa.ligacoes(sws, await store.listar_ips(db, mk_id)))
+        ligs, raizes = mapa.ligacoes_e_raizes(sws, await store.listar_ips(db, mk_id))
+        await store.limpar_ligacoes(db, mk_id, raizes)  # raiz cortada: a ligação gravada antes está errada
+        await store.registrar_ligacoes(db, mk_id, ligs)
 
 
 async def run_switches(db, r, settings: Settings, now: datetime, *,

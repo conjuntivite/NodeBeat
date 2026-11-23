@@ -317,7 +317,9 @@ class _MapaRedeCardState extends State<MapaRedeCard>
                               Flexible(
                                 child: Text(
                                   linkTxt,
-                                  style: TradeType.label.copyWith(color: linkCor),
+                                  style: TradeType.label.copyWith(
+                                    color: linkCor,
+                                  ),
                                 ),
                               ),
                             ],
@@ -336,13 +338,14 @@ class _MapaRedeCardState extends State<MapaRedeCard>
                         ],
                       ),
                     ),
-                    TextButton(
-                      onPressed: () => _rotular(p),
-                      child: Text(
-                        p.rotulo?.isNotEmpty == true ? p.rotulo! : 'rotular',
-                        semanticsLabel: 'Editar rótulo da porta ${p.nome}',
+                    if (pai.isEmpty) // rótulo só nas portas da MK
+                      TextButton(
+                        onPressed: () => _rotular(p),
+                        child: Text(
+                          p.rotulo?.isNotEmpty == true ? p.rotulo! : 'rotular',
+                          semanticsLabel: 'Editar rótulo da porta ${p.nome}',
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -416,7 +419,7 @@ class _MapaRedeCardState extends State<MapaRedeCard>
                     a.fabricante!,
                     style: TradeType.bodyMd.copyWith(color: t.fgSecondary),
                   ),
-                if (a.gerenciavel == true) Selo('Gerenciável', t.positive),
+                if (a.gerenciavel == true) Selo('Gerenciável', t.info),
                 if (a.eSwitch) Selo('switch', t.info),
                 if (a.portaDesconhecida) Selo('porta desconhecida', t.warning),
                 if (visto.isNotEmpty)
@@ -434,7 +437,7 @@ class _MapaRedeCardState extends State<MapaRedeCard>
                 Icons.warning_amber_rounded,
                 lido == null
                     ? 'Sem resposta SNMP'
-                    : 'Sem resposta SNMP; dados do switch de ${formatHora(a.switchLidoEm)}/${formatDia(a.switchLidoEm)}',
+                    : 'Sem resposta SNMP; dados do switch de ${formatHora(a.switchLidoEm)} ${formatDia(a.switchLidoEm)}',
                 aviso,
                 topo: t.space1,
               ),

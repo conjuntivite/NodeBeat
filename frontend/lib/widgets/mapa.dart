@@ -99,7 +99,11 @@ class _MapaRedeCardState extends State<MapaRedeCard> with Carrega<MapaRedeCard, 
     if (!ok) return;
     try {
       // apelido vazio limpa (o servidor trata '' como null)
-      await widget.api.editarAparelho(widget.id, a.ip, apelido: apelido, vigiar: vigiar);
+      // só o que mudou: evita fixar vigiar_manual sem o usuário pedir
+      final mudouApelido = apelido != (a.apelido ?? '');
+      if (!mudouApelido && vigiar == a.vigiado) return;
+      await widget.api.editarAparelho(widget.id, a.ip,
+          apelido: mudouApelido ? apelido : null, vigiar: vigiar != a.vigiado ? vigiar : null);
       await carregar();
     } catch (e) {
       _erroSnack(e);

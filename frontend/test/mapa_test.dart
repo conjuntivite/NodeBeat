@@ -97,7 +97,19 @@ void main() {
     await t.pumpAndSettle();
     final put = reqs.firstWhere((r) => r.method == 'PUT');
     expect(put.url.path, '/api/mks/x/mapa/aparelhos/10.0.0.5');
-    expect(jsonDecode(put.body), {'apelido': 'Câmera pátio', 'vigiar': true});
+    expect(jsonDecode(put.body), {'apelido': 'Câmera pátio'});
+  });
+
+  testWidgets('mudar só a chave vigiar envia só vigiar', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.text('10.0.0.5'));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(Switch).last);
+    await t.pump();
+    await t.tap(find.text('Salvar'));
+    await t.pumpAndSettle();
+    final put = reqs.firstWhere((r) => r.method == 'PUT');
+    expect(jsonDecode(put.body), {'vigiar': false});
   });
 
   testWidgets('rótulo da porta envia PUT', (t) async {

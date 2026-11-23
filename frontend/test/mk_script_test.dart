@@ -24,6 +24,14 @@ void main() {
     expect(s, contains(r':if (!$semIpsec) do={')); // a regra monitor-api (so via IPsec) nao entra
   });
 
+  test('WAN informada entra higienizada; vazia mantém a descoberta automática', () {
+    expect(s, contains(':local wan ""'));
+    final com = scriptPreparar(ipOrigem: '10.9.9.9', ipsSede: ['203.0.113.5'], senha: 'x', wan: r'pppoe-out1"; /x $');
+    expect(com, contains(':local wan "pppoe-out1 x "'));
+    expect(com, isNot(contains('"; /x')));
+    expect(com, isNot(contains('@')));
+  });
+
   test('só ASCII (terminal da MK)', () {
     expect(s.codeUnits.every((c) => c <= 0x7f), isTrue);
     expect(scriptDesfazer.codeUnits.every((c) => c <= 0x7f), isTrue);

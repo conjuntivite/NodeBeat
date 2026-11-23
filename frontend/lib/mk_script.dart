@@ -11,8 +11,10 @@ String gerarSenha([Random? rng]) {
 
 /// Cole inteiro no terminal da MK (Winbox → New Terminal). Um bloco `{}` só: sem ele as `:local` somem a cada linha.
 /// Só ASCII. Tudo que pode falhar é checado antes da primeira alteração (`:error` aborta o bloco).
+/// [wan]: interface da WAN, só para MK com duas WANs (a descoberta automática para nesse caso).
 /// [ipsSede]: todas as saídas públicas da sede (load balance), liberadas para ping numa address-list.
-String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
+String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha, String wan = ''}) => _modelo
+    .replaceAll('@WAN@', wan.replaceAll(RegExp(r'[^A-Za-z0-9 ._\-]'), '')) // nome de interface: nada que quebre a string
     .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
     .replaceAll('@TRAVA_WAN@', _travaWan)
     .replaceAll('@NAT_MOVE@', _natMove)
@@ -161,11 +163,15 @@ const _modelo = r'''{
 }
 :local novo (($maior > 7) || ($maior = 7 && $menor >= 24))
 
+:local wan "@WAN@"
+:if ([:len $wan] = 0) do={
 :local rotas [/ip route find where dst-address=0.0.0.0/0 && active]
 :if ([:len $rotas] = 0) do={:error "Sem rota padrao ativa: nao deu para descobrir a WAN. Nada foi alterado."}
-:if ([:len $rotas] > 1) do={:error "Mais de uma rota padrao ativa (duas WANs): nao deu para escolher a WAN. Nada foi alterado."}
+:if ([:len $rotas] > 1) do={
+  :foreach x in=$rotas do={:put ("Rota padrao ativa, gateway: " . [/ip route get $x gateway])}
+  :error "Duas WANs: informe a interface da WAN na pagina Preparar MK. Nada foi alterado."
+}
 :local rota [:pick $rotas 0]
-:local wan ""
 # gateway que ja e uma interface (PPPoE, inclusive com espaco no nome) vale inteiro;
 # a rota pode ter varios gateways (ex.: pppoe-out1,*7): vale o primeiro que for interface existente
 :foreach g in=[/ip route get $rota gateway] do={
@@ -187,6 +193,7 @@ const _modelo = r'''{
   }
 }
 :while ([:pick $wan 0 1] = " ") do={:set wan [:pick $wan 1 [:len $wan]]}
+}
 :if ([:len [/interface find where name=$wan]] = 0) do={:error ("WAN nao reconhecida (\"" . $wan . "\"). Nada foi alterado.")}
 
 :local ipPub "nao encontrado"

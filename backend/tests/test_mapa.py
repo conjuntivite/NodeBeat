@@ -463,7 +463,13 @@ def test_arvore_sem_switches_igual_ao_anterior():
     for kw in ({}, {"so_problema": True}, {"busca": "10.0.0.4"}):
         base = _arv(aps, est, **kw)
         assert _arv(aps, est, switches=None, **kw) == base
-        assert _arv(aps, est, switches=[], **kw) == base
+        vazio = _arv(aps, est, switches=[], **kw)
+        cand = _aparelho(vazio, "10.0.0.9")
+        if cand is not None:  # candidato a switch ganha a dica; o resto fica igual
+            assert cand.pop("dica") == DICA and cand.pop("gerenciavel") is False
+        assert vazio == base
+    assert _aparelho(_arv(aps, est, switches=[]), "10.0.0.9")["dica"] == DICA
+    assert _aparelho(_arv(aps, est, switches=[]), "10.0.0.5") in _porta(_arv(aps, est, switches=[]), "ether4")["aparelhos"]
     assert "dica" not in _aparelho(_arv(aps, est), "10.0.0.9")
 
 

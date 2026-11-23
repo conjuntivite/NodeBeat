@@ -193,6 +193,8 @@ def _casa(a: dict, busca: str) -> bool:
     return any(busca in str(a[c] or "").lower() for c in ("ip", "mac", "nome", "fabricante"))
 
 
+# ponytail: _todos, _podar e preencher são recursivos; cadeia de ~1000 switches estouraria a
+# recursão do Python (topologia real não chega perto). Trocar por pilha explícita se chegar.
 def _todos(aps: list[dict]):
     """Os aparelhos e tudo o que está abaixo dos switches gerenciáveis entre eles."""
     for a in aps:
@@ -317,7 +319,7 @@ def montar_arvore(aparelhos: list[dict], *, link: dict[str, bool], rotulos: dict
     Contadores e causa valem para a sub-árvore inteira da porta; `busca` e `so_problema` só
     filtram o que é listado (mantendo o caminho até o que fica)."""
     saidas = [(ap, _aparelho_saida(ap, estados, mk_no_ar, redes_tunel, agora)) for ap in aparelhos]
-    if switches:
+    if switches is not None:  # [] ainda marca candidatos com a dica
         saidas = _arvore_switches(saidas, switches, mk_no_ar)
     grupos: dict[str, list[dict]] = {}
     for ap, a in saidas:

@@ -87,13 +87,17 @@ async def listar_inventarios(db) -> list[dict]:
     return [_utc(d) async for d in db.inventario.find()]
 
 
-async def registrar_ips(db, mk_id: str, ips: list[dict], quando: datetime) -> None:
+async def registrar_ips(db, mk_id: str, ips: list[dict], quando: datetime,
+                        fatos: dict[str, dict] | None = None) -> None:
     await db.inventario_ips.create_index([("mk_id", 1), ("ip", 1)], unique=True)
     for i in ips:
+        f = dict((fatos or {}).get(i["ip"], {}))
+        if f.get("porta") is None:
+            f.pop("porta", None)  # leitura sem porta não apaga a última conhecida
         await db.inventario_ips.update_one(
             {"mk_id": mk_id, "ip": i["ip"]},
             {"$set": {"mac": i.get("mac"), "host_name": i.get("host_name"),
-                      "fixo": i.get("fixo", False), "ultimo_visto": quando},
+                      "fixo": i.get("fixo", False), "ultimo_visto": quando, **f},
              "$setOnInsert": {"primeiro_visto": quando}}, upsert=True)
 
 
@@ -103,12 +107,67 @@ async def listar_ips(db, mk_id: str) -> list[dict]:
 
 
 async def esquecer_ip(db, mk_id: str, ip: str) -> bool:
+    await db.switches.delete_one({"mk_id": mk_id, "ip": ip})  # sem doc órfão de switch
     return (await db.inventario_ips.delete_one({"mk_id": mk_id, "ip": ip})).deleted_count > 0
+
+
+async def editar_aparelho(db, mk_id: str, ip: str, campos: dict) -> bool:
+    """Grava apelido/vigiar_manual/e_switch_manual; None limpa. False se o IP não existe."""
+    permitidos = {"apelido", "vigiar_manual", "e_switch_manual"}
+    sets = {k: v for k, v in campos.items() if k in permitidos and v is not None}
+    unsets = {k: "" for k, v in campos.items() if k in permitidos and v is None}
+    upd = ({"$set": sets} if sets else {}) | ({"$unset": unsets} if unsets else {})
+    if not upd:
+        return await db.inventario_ips.count_documents({"mk_id": mk_id, "ip": ip}) > 0
+    return (await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, upd)).matched_count > 0
+
+
+async def set_rotulo_porta(db, mk_id: str, porta: str, rotulo: str | None) -> None:
+    # coleção própria: salvar_inventario faz replace_one e apagaria rótulos guardados no inventário
+    if rotulo:
+        await db.mapa_rotulos.update_one({"mk_id": mk_id, "porta": porta}, {"$set": {"rotulo": rotulo}}, upsert=True)
+    else:
+        await db.mapa_rotulos.delete_one({"mk_id": mk_id, "porta": porta})
+
+
+async def rotulos_portas(db, mk_id: str) -> dict[str, str]:
+    return {d["porta"]: d["rotulo"] async for d in db.mapa_rotulos.find({"mk_id": mk_id})}
+
+
+async def marcar_gerenciavel(db, mk_id: str, ip: str, valor: bool) -> None:
+    """Switch que responde SNMP passa a ser vigiado (mapa.vigiado). Só o worker grava."""
+    await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"gerenciavel": valor}})
+
+
+async def registrar_ligacoes(db, mk_id: str, ligacoes: dict[str, dict]) -> None:
+    """Grava (switch_ip, switch_porta) no aparelho; IP ausente mantém a última ligação conhecida
+    (a tabela MAC do switch esquece aparelho desligado) e IP sem doc não é criado."""
+    for ip, lig in ligacoes.items():
+        await db.inventario_ips.update_one(
+            {"mk_id": mk_id, "ip": ip}, {"$set": {"switch_ip": lig["switch_ip"], "switch_porta": lig["porta"]}})
+
+
+async def limpar_ligacoes(db, mk_id: str, ips) -> None:
+    """Tira (switch_ip, switch_porta) dos IPs da MK: switch raiz cortado no ciclo (mapa.ligacoes_e_raizes)."""
+    for ip in ips:
+        await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, {"$unset": {"switch_ip": "", "switch_porta": ""}})
+
+
+async def salvar_switch(db, mk_id: str, ip: str, doc: dict) -> None:
+    """Mescla os campos no doc do switch: campo ausente mantém o valor anterior."""
+    await db.switches.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"mk_id": mk_id, "ip": ip, **doc}},
+                                 upsert=True)
+
+
+async def listar_switches(db, mk_id: str) -> list[dict]:
+    return [_utc(d) async for d in db.switches.find({"mk_id": mk_id})]
 
 
 async def apagar_inventario(db, mk_id: str) -> None:
     await db.inventario.delete_many({"mk_id": mk_id})
     await db.inventario_ips.delete_many({"mk_id": mk_id})
+    await db.mapa_rotulos.delete_many({"mk_id": mk_id})
+    await db.switches.delete_many({"mk_id": mk_id})
 
 
 async def garantir_indices_eventos(db, dias: int) -> None:

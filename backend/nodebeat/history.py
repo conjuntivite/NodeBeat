@@ -39,4 +39,13 @@ async def load_states(r) -> dict[str, dict]:
 
 
 async def delete_mk(r, mk_id: str) -> None:
-    await r.delete(f"hist:{mk_id}", f"state:mk:{mk_id}")
+    await r.delete(f"hist:{mk_id}", f"state:mk:{mk_id}", f"state:ap:{mk_id}")
+
+
+async def save_aparelhos(r, mk_id: str, estados: dict[str, dict]) -> None:
+    await r.set(f"state:ap:{mk_id}", json.dumps(estados, ensure_ascii=False))
+
+
+async def load_aparelhos(r, mk_id: str) -> dict[str, dict]:
+    v = await r.get(f"state:ap:{mk_id}")
+    return json.loads(v) if v else {}

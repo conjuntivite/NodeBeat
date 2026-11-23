@@ -21,6 +21,9 @@ class Settings:
     ips_publicos_sede: list[str] = field(default_factory=list)  # saídas da sede (load balance): regra de ICMP do script
     redes_tunel_extra: list[str] = field(default_factory=list)  # LANs de MK fora da faixa privada aceitas como IP do túnel
     syslog_dias: int = 30  # retenção dos eventos das MKs (TTL)
+    mapa_s: int = 60  # intervalo do ping dos aparelhos vigiados (mapa de rede)
+    snmp_communities: list[str] = field(default_factory=lambda: ["public"])  # segredo: nunca logar
+    switch_s: int = 600  # intervalo da leitura SNMP dos switches gerenciáveis
 
 
 def _req(nome: str) -> str:
@@ -72,4 +75,6 @@ def load_settings() -> Settings:
         _req("NODEBEAT_REFERENCE_HOST"), int(os.environ.get("NODEBEAT_INTERVAL_S") or 30),
         int(os.environ.get("NODEBEAT_INVENTARIO_S") or 3600), _redes("NODEBEAT_SEDE_REDES"),
         _ip_opcional("NODEBEAT_IP_ORIGEM"), _ips("NODEBEAT_IPS_PUBLICOS_SEDE"), _redes("NODEBEAT_REDES_TUNEL_EXTRA"),
-        _dias("NODEBEAT_SYSLOG_DIAS", 30))
+        _dias("NODEBEAT_SYSLOG_DIAS", 30), _dias("NODEBEAT_MAPA_S", 60),
+        [c.strip() for c in (os.environ.get("NODEBEAT_SNMP_COMMUNITIES") or "").split(",") if c.strip()]
+        or ["public"], _dias("NODEBEAT_SWITCH_S", 600))

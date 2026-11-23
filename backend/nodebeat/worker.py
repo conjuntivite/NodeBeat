@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import redis.asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from . import crypto, history, inventario, probes, routeros, store, webhook
+from . import crypto, history, inventario, mapa, probes, routeros, snmp, store, switches, webhook
 from .classify import classify
 from .config import Settings, load_settings
 from .rules import AlertEngine, MkRef, MkState
@@ -73,6 +74,7 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
         "status": status, "detalhe": obs.detalhe, "desde": desde,
         "cpu": obs.cpu if ok else None, "mem": obs.mem if ok else None,
         "uptime": snap.uptime if ok else None, "ifaces": obs.ifaces if ok else {},
+        "portas_link": dict(snap.ifaces) if ok else {},
         "versao": snap.version if ok else None, "atualizado_em": now.isoformat()})
 
 
@@ -118,6 +120,11 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
             doc = inventario.montar(raw)
             vistos = inventario.ips_vistos(
                 raw.get("lease", []), raw.get("arp", []), [r["rede"] for r in doc["redes"]])
+            try:
+                fatos = mapa.fatos_por_ip(raw, vistos)
+            except Exception as e:  # o mapa não pode impedir o inventário
+                log.warning("mk %s: fatos do mapa falharam: %s", mk["id"], type(e).__name__)
+                fatos = {}
         except routeros.RouterOsError as e:
             erro = e.detalhe
         except Exception as e:
@@ -125,7 +132,7 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
             erro = "Resposta inesperada da API"
         else:
             await store.salvar_inventario(db, mk["id"], doc, now)
-            await store.registrar_ips(db, mk["id"], vistos, now)
+            await store.registrar_ips(db, mk["id"], vistos, now, fatos)
             return None
     await store.inventario_erro(db, mk["id"], erro)
     return erro
@@ -152,6 +159,134 @@ async def _inventariar(db, settings, now, fetch) -> None:
                 log.warning("mk %s: inventário: %s", mk.get("id"), type(e).__name__)
 
     await asyncio.gather(*(um(m) for m in await store.list_mks(db)))
+
+
+async def _em_uso_no_tunel(db, mk_id: str, agora: datetime, filtro) -> list[dict]:
+    """IPs da MK que passam no filtro, vistos há <= DIAS_EM_USO e numa rede de túnel."""
+    inv = await store.get_inventario(db, mk_id) or {}
+    tuneis = [ipaddress.ip_network(x["rede"]) for x in inv.get("redes", []) if x.get("tunel")]
+    return [a for a in await store.listar_ips(db, mk_id)
+            if filtro(a) and agora - a["ultimo_visto"] <= timedelta(days=inventario.DIAS_EM_USO)
+            and any(ipaddress.ip_address(a["ip"]) in n for n in tuneis)]
+
+
+async def _mapa_mk(db, r, mk_id: str, agora: datetime, sem, ping) -> None:
+    alvos = [a["ip"] for a in await _em_uso_no_tunel(db, mk_id, agora, mapa.vigiado)]
+
+    async def um(ip):
+        async with sem:
+            return ip, await ping(ip)
+
+    resp = await asyncio.gather(*(um(ip) for ip in alvos))
+    ant = await history.load_aparelhos(r, mk_id)
+    # só os alvos: quem deixou de ser vigiado sai e, se voltar, começa do zero
+    await history.save_aparelhos(r, mk_id, {ip: mapa.proximo_estado(ant.get(ip), ok, agora) for ip, ok in resp})
+
+
+async def run_mapa(db, r, settings: Settings, now: datetime, *, ping=probes.ping) -> None:
+    """Pinga os aparelhos vigiados das MKs no ar e guarda o estado; nunca levanta."""
+    try:
+        estados = await history.load_states(r)
+        sem = asyncio.Semaphore(40)  # compartilhado: limite total de pings, não por MK
+
+        async def um(mk):
+            try:
+                await _mapa_mk(db, r, mk["id"], now, sem, ping)
+            except Exception as e:
+                log.warning("mk %s: mapa: %s", mk.get("id"), type(e).__name__)
+
+        await asyncio.gather(*(um(mk) for mk in await store.list_mks(db)
+                               if estados.get(mk["id"], {}).get("status") == "no_ar"))  # fora: mantém estado
+    except Exception as e:
+        log.warning("mapa falhou: %s", type(e).__name__)
+
+
+SEM_RESPOSTA_SNMP = "Sem resposta SNMP"
+SEM_BRIDGE = "Sem tabela de bridge"  # responde SNMP (ex.: câmera) mas não é switch
+
+
+async def _switch(db, settings, mk_id: str, ap: dict, ant: dict, agora: datetime, descobrir, ler) -> None:
+    # a community é segredo: nunca no log, no erro ou em texto puro no banco
+    ip = ap["ip"]
+    community = None
+    if ant.get("community_cifrada"):
+        try:
+            community = crypto.decrypt(ant["community_cifrada"], settings.secret_key)
+        except ValueError:
+            pass  # cifrada inválida (ex.: chave trocada): descobre de novo
+    ja_descoberto = community is not None
+    base = {"mac": ap.get("mac"), "tentado_em": agora}  # lido_em só quando a leitura dá certo
+    dados = None
+    if community is not None:
+        try:
+            dados = await ler(ip, community)
+        except snmp.SnmpErro:
+            pass  # a community pode ter mudado: tenta descobrir
+    if dados is None:
+        achou = await descobrir(ip, settings.snmp_communities)
+        if achou is None:
+            if ja_descoberto:  # timeout passageiro: mantém a árvore e o vigiado
+                await store.salvar_switch(db, mk_id, ip, {**base, "erro": SEM_RESPOSTA_SNMP})
+            else:
+                await store.salvar_switch(db, mk_id, ip, {**base, "gerenciavel": False, "erro": SEM_RESPOSTA_SNMP})
+                await store.marcar_gerenciavel(db, mk_id, ip, False)
+            return
+        community, descr = achou
+        base |= {"community_cifrada": crypto.encrypt(community, settings.secret_key),
+                 "gerenciavel": True, "descr": descr}
+        try:
+            dados = await ler(ip, community)
+        except snmp.SnmpErro:
+            await store.salvar_switch(db, mk_id, ip, {**base, "erro": SEM_RESPOSTA_SNMP})
+            await store.marcar_gerenciavel(db, mk_id, ip, True)
+            return
+    ger = bool(dados.get("base_mac") or dados.get("portas"))  # sem BRIDGE-MIB não é switch
+    await store.salvar_switch(db, mk_id, ip, {**base, **dados, "gerenciavel": ger,
+                                              "erro": None if ger else SEM_BRIDGE, "lido_em": agora})
+    await store.marcar_gerenciavel(db, mk_id, ip, ger)
+
+
+async def _switches_mk(db, settings, mk_id: str, agora: datetime, sem, descobrir, ler) -> None:
+    antes = {s["ip"]: s for s in await store.listar_switches(db, mk_id)}
+    # "É um switch" desmarcado: deixa de ser candidato, então desfaz o gerenciável aqui
+    for ap in await store.listar_ips(db, mk_id):
+        if ap.get("e_switch_manual") is False and (antes.get(ap["ip"], {}).get("gerenciavel") or ap.get("gerenciavel")):
+            await store.salvar_switch(db, mk_id, ap["ip"], {"gerenciavel": False})
+            await store.marcar_gerenciavel(db, mk_id, ap["ip"], False)
+
+    async def um(ap):
+        async with sem:
+            try:
+                await _switch(db, settings, mk_id, ap, antes.get(ap["ip"], {}), agora, descobrir, ler)
+            except Exception as e:
+                log.warning("mk %s: switch: %s", mk_id, type(e).__name__)
+
+    await asyncio.gather(*(um(a) for a in await _em_uso_no_tunel(db, mk_id, agora, switches.candidato)))
+    # switch com erro ainda tem o fdb anterior: velho, mas serve para a ligação
+    sws = await store.listar_switches(db, mk_id)
+    if any(s.get("gerenciavel") and s.get("fdb") for s in sws):
+        ligs, raizes = mapa.ligacoes_e_raizes(sws, await store.listar_ips(db, mk_id))
+        await store.limpar_ligacoes(db, mk_id, raizes)  # raiz cortada: a ligação gravada antes está errada
+        await store.registrar_ligacoes(db, mk_id, ligs)
+
+
+async def run_switches(db, r, settings: Settings, now: datetime, *,
+                       descobrir=switches.descobrir, ler=switches.ler_switch) -> None:
+    """Descobre/lê por SNMP os switches candidatos das MKs no ar; nunca levanta."""
+    try:
+        estados = await history.load_states(r)
+        sem = asyncio.Semaphore(10)  # compartilhado: limite total de switches lidos ao mesmo tempo
+
+        async def um(mk):
+            try:
+                await _switches_mk(db, settings, mk["id"], now, sem, descobrir, ler)
+            except Exception as e:
+                log.warning("mk %s: switches: %s", mk.get("id"), type(e).__name__)
+
+        await asyncio.gather(*(um(mk) for mk in await store.list_mks(db)
+                               if estados.get(mk["id"], {}).get("status") == "no_ar"))  # fora: mantém o doc
+    except Exception as e:
+        log.warning("switches falharam: %s", type(e).__name__)
 
 
 def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido: bool) -> bool:
@@ -181,6 +316,8 @@ async def main() -> None:
         sender = asyncio.create_task(webhook.run_sender(r, client, s.webhook_url, s.webhook_token))
         loop = asyncio.get_running_loop()
         inv_task, ultimo_inv = None, None
+        mapa_task, ultimo_mapa = None, None
+        sw_task, ultimo_sw = None, None
 
         async def _inv(s):
             nonlocal ultimo_inv
@@ -205,6 +342,20 @@ async def main() -> None:
                     await r.set(PEDIDO_INVENTARIO, "1")
             except Exception as e:
                 log.warning("agendamento do inventário falhou: %s", type(e).__name__)
+            try:  # idem o mapa: tarefa própria, nunca derruba o laço
+                if (not engine.frozen and (mapa_task is None or mapa_task.done())
+                        and (ultimo_mapa is None or loop.time() - ultimo_mapa >= s.mapa_s)):
+                    mapa_task = asyncio.create_task(run_mapa(db, r, s, datetime.now(UTC)))
+                    ultimo_mapa = loop.time()
+            except Exception as e:
+                log.warning("agendamento do mapa falhou: %s", type(e).__name__)
+            try:  # idem os switches (SNMP)
+                if (not engine.frozen and (sw_task is None or sw_task.done())
+                        and (ultimo_sw is None or loop.time() - ultimo_sw >= s.switch_s)):
+                    sw_task = asyncio.create_task(run_switches(db, r, s, datetime.now(UTC)))
+                    ultimo_sw = loop.time()
+            except Exception as e:
+                log.warning("agendamento dos switches falhou: %s", type(e).__name__)
             await asyncio.sleep(max(0, s.interval_s - (loop.time() - t0)))
 
 

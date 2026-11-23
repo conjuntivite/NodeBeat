@@ -130,11 +130,24 @@ _MENUS_INVENTARIO = {
     "lease": "/ip/dhcp-server/lease/print", "arp": "/ip/arp/print"}
 
 
+_MENUS_OPCIONAIS = {  # menu ausente/sem permissão (TrapError) vira lista vazia
+    "bridge_host": "/interface/bridge/host/print",
+    "bridge_port": "/interface/bridge/port/print",
+    "neighbor": "/ip/neighbor/print"}
+
+
 def fetch_inventario(host: str, user: str, password: str, pinned_sha256: str | None,
                      timeout: float = 10.0) -> dict:
     """Síncrono, só leitura: uma lista de linhas por menu, numa única sessão."""
-    return _com_api(host, user, password, pinned_sha256, timeout,
-                    lambda api, seen: {k: list(api(cmd)) for k, cmd in _MENUS_INVENTARIO.items()})
+    def usar(api, seen):
+        out = {k: list(api(cmd)) for k, cmd in _MENUS_INVENTARIO.items()}
+        for k, cmd in _MENUS_OPCIONAIS.items():
+            try:
+                out[k] = list(api(cmd))
+            except TrapError:
+                out[k] = []
+        return out
+    return _com_api(host, user, password, pinned_sha256, timeout, usar)
 
 
 PORTA_API_ALT = 18729  # operadora que bloqueia a 8729: NAT na WAN da MK leva a 18729 para a 8729

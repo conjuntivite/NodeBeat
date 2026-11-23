@@ -171,16 +171,13 @@ def test_closes_on_failure_after_connect(monkeypatch):
     assert api.closed
 
 
-def test_fetch_inventario_le_todos_os_menus(monkeypatch):
-    menus = {"address": "/ip/address/print", "dhcp_network": "/ip/dhcp-server/network/print",
-             "pool": "/ip/pool/print", "ipsec_policy": "/ip/ipsec/policy/print",
-             "nat": "/ip/firewall/nat/print", "service": "/ip/service/print",
-             "lease": "/ip/dhcp-server/lease/print", "arp": "/ip/arp/print"}
-    api = FakeApi(extra={cmd: [{"k": chave}] for chave, cmd in menus.items()})
-    _patch_connect(monkeypatch, api)
-    out = routeros.fetch_inventario("h", "u", "p", None)
-    assert out == {chave: [{"k": chave}] for chave in menus}
-    assert api.closed
+_MENUS_TESTE = {
+    "address": "/ip/address/print", "dhcp_network": "/ip/dhcp-server/network/print",
+    "pool": "/ip/pool/print", "ipsec_policy": "/ip/ipsec/policy/print",
+    "nat": "/ip/firewall/nat/print", "service": "/ip/service/print",
+    "lease": "/ip/dhcp-server/lease/print", "arp": "/ip/arp/print",
+    "bridge_host": "/interface/bridge/host/print",
+    "bridge_port": "/interface/bridge/port/print", "neighbor": "/ip/neighbor/print"}
 
 
 def _derruba(exc):
@@ -188,6 +185,33 @@ def _derruba(exc):
         raise exc
         yield
     return gen()
+
+
+def test_fetch_inventario_le_todos_os_menus(monkeypatch):
+    api = FakeApi(extra={cmd: [{"k": chave}] for chave, cmd in _MENUS_TESTE.items()})
+    _patch_connect(monkeypatch, api)
+    out = routeros.fetch_inventario("h", "u", "p", None)
+    assert out == {chave: [{"k": chave}] for chave in _MENUS_TESTE}
+    assert len(out) == 11
+    assert api.closed
+
+
+def test_fetch_inventario_menu_opcional_com_trap(monkeypatch):
+    extra = {cmd: [{"k": chave}] for chave, cmd in _MENUS_TESTE.items()}
+    extra["/interface/bridge/host/print"] = _derruba(TrapError("no such command"))
+    _patch_connect(monkeypatch, FakeApi(extra=extra))
+    out = routeros.fetch_inventario("h", "u", "p", None)
+    assert out["bridge_host"] == []
+    assert {k: v for k, v in out.items() if k != "bridge_host"} == {
+        c: [{"k": c}] for c in _MENUS_TESTE if c != "bridge_host"}
+
+
+def test_fetch_inventario_menu_obrigatorio_com_trap_continua_falhando(monkeypatch):
+    extra = {cmd: [{"k": chave}] for chave, cmd in _MENUS_TESTE.items()}
+    extra["/ip/address/print"] = _derruba(TrapError("failure"))
+    _patch_connect(monkeypatch, FakeApi(extra=extra))
+    with pytest.raises(RouterOsError):
+        routeros.fetch_inventario("h", "u", "p", None)
 
 
 def test_reboot_envia_comando_e_aceita_conexao_caindo(monkeypatch):

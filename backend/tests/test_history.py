@@ -66,3 +66,11 @@ async def test_state_roundtrip_and_delete(r):
     await delete_mk(r, "1")
     assert await load_states(r) == {"2": {"nome": "Beta"}}
     assert await r.exists("hist:1") == 0
+
+
+async def test_aparelhos_salvos_e_apagados_com_a_mk(r):
+    from nodebeat.history import load_aparelhos, save_aparelhos
+    await save_aparelhos(r, "1", {"10.0.0.5": {"online": True}})
+    assert (await load_aparelhos(r, "1"))["10.0.0.5"]["online"] is True
+    await delete_mk(r, "1")
+    assert await load_aparelhos(r, "1") == {}

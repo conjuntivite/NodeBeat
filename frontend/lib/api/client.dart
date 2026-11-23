@@ -390,6 +390,59 @@ class InventarioMk {
   final List<Servico> servicos;
 }
 
+class MapaAparelho {
+  MapaAparelho.fromJson(Map<String, dynamic> j)
+      : ip = j['ip'] ?? '',
+        mac = j['mac'],
+        fabricante = j['fabricante'],
+        nome = j['nome'],
+        apelido = j['apelido'],
+        vigiado = j['vigiado'] == true,
+        eSwitch = j['e_switch'] == true,
+        estado = j['estado'] ?? 'desconhecido',
+        desde = j['desde'],
+        ultimoVisto = j['ultimo_visto'],
+        portaDesconhecida = j['porta_desconhecida'] == true,
+        gerenciavel = j['gerenciavel'] as bool?,
+        portas = [for (final p in j['portas'] ?? []) MapaPorta.fromJson(p)],
+        snmpErro = j['snmp_erro'] == true,
+        switchLidoEm = j['switch_lido_em'],
+        dica = j['dica'];
+  final String ip, estado;
+  final String? mac, fabricante, nome, apelido, desde, ultimoVisto, switchLidoEm, dica;
+  final bool vigiado, eSwitch, portaDesconhecida, snmpErro;
+  final bool? gerenciavel; // null: campo ausente (não é switch nem candidato)
+  final List<MapaPorta> portas; // só switch gerenciável
+}
+
+class MapaPorta {
+  MapaPorta.fromJson(Map<String, dynamic> j)
+      : nome = j['nome'] ?? '',
+        rotulo = j['rotulo'],
+        link = j['link'] ?? 'desconhecido',
+        vigiados = j['vigiados'] ?? 0,
+        noAr = j['no_ar'] ?? 0,
+        problema = j['problema'] == true,
+        causa = j['causa'],
+        aparelhos = [for (final a in j['aparelhos'] ?? []) MapaAparelho.fromJson(a)];
+  final String nome, link;
+  final String? rotulo, causa;
+  final int vigiados, noAr;
+  final bool problema;
+  final List<MapaAparelho> aparelhos;
+}
+
+class MapaMk {
+  MapaMk.fromJson(Map<String, dynamic> j)
+      : lidoEm = j['lido_em'],
+        desatualizado = j['desatualizado'] == true,
+        mkNoAr = j['mk_no_ar'] != false,
+        portas = [for (final p in j['portas'] ?? []) MapaPorta.fromJson(p)];
+  final String? lidoEm;
+  final bool desatualizado, mkNoAr;
+  final List<MapaPorta> portas;
+}
+
 class ApiClient {
   ApiClient({http.Client? client, this.base = '/api'}) : _http = client ?? http.Client();
   final http.Client _http;
@@ -500,4 +553,23 @@ class ApiClient {
   }
 
   Future<void> esquecerIp(String id, String ip) => _send('DELETE', '/mks/$id/ips/$ip');
+
+  Future<MapaMk> mapa(String id, {String? q, bool soProblema = false}) async {
+    final query = [
+      if (q != null && q.isNotEmpty) 'q=${Uri.encodeQueryComponent(q)}',
+      if (soProblema) 'so_problema=true',
+    ].join('&');
+    return MapaMk.fromJson(await _send('GET', '/mks/$id/mapa${query.isEmpty ? '' : '?$query'}'));
+  }
+
+  /// Só os campos informados vão no corpo (ausente = não mexe).
+  Future<void> editarAparelho(String id, String ip, {String? apelido, bool? vigiar, bool? eSwitch}) =>
+      _send('PUT', '/mks/$id/mapa/aparelhos/${Uri.encodeComponent(ip)}', body: {
+        'apelido': ?apelido,
+        'vigiar': ?vigiar,
+        'e_switch': ?eSwitch,
+      });
+
+  Future<void> rotularPorta(String id, String porta, String? rotulo) =>
+      _send('PUT', '/mks/$id/mapa/rotulo-porta', body: {'porta': porta, 'rotulo': rotulo});
 }

@@ -78,6 +78,50 @@ docker compose logs syslog
 docker compose exec mongo mongosh ... db.eventos.countDocuments()
 ```
 
+## Mapa de rede
+
+No detalhe da MK, a tela mostra a árvore MK → porta → aparelhos, com online/offline por aparelho. Variável: `NODEBEAT_MAPA_S` (padrão 60) = intervalo, em segundos, do ping dos aparelhos (já presente em `deploy/compose.yml` e `deploy/.env.example`).
+
+- Offline só depois de 2 ciclos sem resposta (~2 min).
+- Só são pingados os aparelhos "vigiados": fabricante de equipamento (Hikvision, Dahua, Intelbras, Control iD, Haiz) ou lease fixa. Um clique por aparelho inverte a marcação.
+- Só são pingadas as redes que vão pelo túnel IPsec.
+- Se a MK está fora do ar, os aparelhos ficam "sem informação" (cinza), nunca offline. Aparelho offline continua sob a última porta onde foi visto.
+- Rótulo de porta e apelido do aparelho são opcionais.
+
+Limites:
+
+- Switch burro (não gerenciável) não aparece; seus aparelhos ficam agrupados na porta da MK.
+- A tabela de fabricantes (OUI) é parcial. A Haiz ainda não tem OUI e aparece como "Outro" até ser adicionada; aparelhos Haiz só são vigiados com lease fixa ou marcados à mão.
+- Sem alerta, ticket ou webhook por aparelho: só tela.
+
+### Switches gerenciáveis (SNMP)
+
+O NodeBeat descobre sozinho os switches gerenciáveis, lê a tabela de MAC e mostra os aparelhos aninhados sob a porta certa do switch. Variáveis (já presentes em `backend/nodebeat/config.py`, `deploy/compose.yml` e `deploy/.env.example`):
+
+- `NODEBEAT_SNMP_COMMUNITIES` (padrão `public`): lista separada por vírgula, tentadas em ordem. A que funcionar fica guardada, cifrada com a chave do NodeBeat.
+- `NODEBEAT_SWITCH_S` (padrão 600): intervalo, em segundos, da leitura dos switches.
+
+Para o switch aparecer, faça uma vez no próprio switch: ative o SNMP v2c somente leitura com uma community presente na lista e libere a UDP 161 do IP de origem do NodeBeat (`<IP_DO_NODEBEAT>`, o mesmo que as MKs veem) até o switch.
+
+Como funciona:
+
+- Candidatos a switch: aparelhos de fabricantes de rede (Intelbras, Haiz, Hikvision, TP-Link, MikroTik, Ubiquiti, Dahua) ou marcados "É um switch" no diálogo do aparelho. O NodeBeat tenta SNMP neles.
+- Quem responde com a tabela de bridge (BRIDGE-MIB) ganha o selo "Gerenciável", passa a ser vigiado (ping) e mostra as portas com os aparelhos atrás. Quem responde SNMP sem tabela de bridge (ex.: câmera com `public` ligado) não vira "Gerenciável".
+- Desmarcar "É um switch" no diálogo do aparelho desfaz o "Gerenciável" na leitura seguinte.
+- A ligação (switch, porta) de cada aparelho fica guardada: o aparelho offline continua sob a última porta onde foi visto.
+- Switch fora do ar: os aparelhos atrás dele ficam cinza ("sem informação"), nunca vermelhos.
+- Aparelho que se anuncia como switch no LLDP (ou marcado "É um switch") e não responde SNMP mostra a dica "gerenciável detectado: ative o SNMP nele". Candidato só pelo fabricante não mostra a dica.
+
+Limites e cuidados:
+
+- Switch não gerenciável continua invisível; seus aparelhos ficam agrupados na porta da MK acima.
+- Só leitura (GET/GETBULK); o NodeBeat nunca escreve no switch.
+- Se a community do switch for trocada para uma fora da lista, ele continua "Gerenciável" mostrando "Sem resposta SNMP" até a nova community entrar na lista (ou até desmarcar "É um switch" no diálogo do aparelho).
+- Aparelho que muda de switch para uma porta direta da MK mantém a ligação antiga guardada até algum switch gerenciável voltar a enxergá-lo.
+- A tabela de MAC só aprende aparelhos que transmitiram recentemente (por isso a ligação é guardada).
+- A tela considera "leitura do switch antiga" após 30 min (limite fixo na tela, não acompanha `NODEBEAT_SWITCH_S`). Em "Sem resposta SNMP", a hora mostrada é a da última leitura boa.
+- O mapa se atualiza sozinho a cada 30 s.
+
 ## 4. Checklist de verificação (manual)
 
 - [ ] `docker compose ... ps`: os 5 serviços `running`.

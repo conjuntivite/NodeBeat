@@ -396,6 +396,26 @@ async def test_run_mapa_mk_fora_do_ar_nao_pinga_e_preserva_estado(db, r):
     assert (await history.load_aparelhos(r, mk))["192.0.2.5"]["online"] is True
 
 
+async def test_run_mapa_descarta_estado_de_quem_nao_e_mais_alvo(db, r):
+    mk = await _mk_mapa(db, r)
+    velho = {"online": False, "falhas": 5, "desde": "x"}
+    await history.save_aparelhos(r, mk, {"192.0.2.5": velho, "192.0.2.6": velho, "192.0.2.99": velho})
+
+    async def ping(ip):
+        return False
+
+    await run_mapa(db, r, SET, T0, ping=ping)
+    est = await history.load_aparelhos(r, mk)
+    assert set(est) == {"192.0.2.5", "192.0.2.8"}  # só os alvos desta rodada
+    # deixa de ser vigiado e volta: começa do zero
+    await db.inventario_ips.update_many({"mk_id": mk}, {"$set": {"vigiar_manual": False}})
+    await run_mapa(db, r, SET, T0, ping=ping)
+    assert await history.load_aparelhos(r, mk) == {}
+    await db.inventario_ips.update_many({"mk_id": mk}, {"$unset": {"vigiar_manual": ""}})
+    await run_mapa(db, r, SET, T0, ping=ping)
+    assert (await history.load_aparelhos(r, mk))["192.0.2.5"]["falhas"] == 1
+
+
 async def test_check_guarda_portas_link(db, r):
     mk = await store.insert_mk(db, doc(interfaces_vigiadas=["ether1"]))
     eng = AlertEngine(recover_s=600)
@@ -562,6 +582,65 @@ async def test_switch_ja_descoberto_sem_resposta_mantem_dados(db, r):
     assert crypto.decrypt(sw["community_cifrada"], KEY) == SEGREDO
     ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
     assert ap["gerenciavel"] is True
+
+
+async def test_switch_falha_depois_de_sucesso_mantem_lido_em(db, r):
+    mk = await _mk_sw(db, r)
+    _, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    depois = T0 + timedelta(minutes=10)
+    for achou in (None, (SEGREDO, "Switch X")):  # nem descobre / descobre mas a leitura falha
+        _, descobrir, ler = fakes(achou=achou, ler_falha=True)
+        await run_switches(db, r, SW_SET, depois, descobrir=descobrir, ler=ler)
+        (sw,) = await store.listar_switches(db, mk)
+        assert sw["lido_em"] == T0 and sw["tentado_em"] == depois  # "dados de" = da última leitura boa
+        assert sw["fdb"] == LIDO["fdb"] and sw["portas"] == LIDO["portas"] and sw["erro"] == "Sem resposta SNMP"
+
+
+async def test_switch_que_nunca_leu_nao_tem_lido_em(db, r):
+    mk = await _mk_sw(db, r)
+    for achou in (None, (SEGREDO, "Switch X")):
+        await db.switches.delete_many({})
+        _, descobrir, ler = fakes(achou=achou, ler_falha=True)
+        await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+        (sw,) = await store.listar_switches(db, mk)
+        assert "lido_em" not in sw and sw["tentado_em"] == T0
+
+
+async def test_camera_com_snmp_sem_bridge_nao_e_gerenciavel(db, r):
+    mk = await _mk_sw(db, r)
+
+    async def ler(ip, community):  # responde sysDescr, mas BRIDGE-MIB vazia
+        return {"descr": "IP Camera", "base_mac": None, "portas": {}, "fdb": {}, "vizinhos": {}}
+
+    _, descobrir, _ = fakes(achou=(SEGREDO, "IP Camera"))
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["gerenciavel"] is False and sw["erro"] == "Sem tabela de bridge"
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
+    assert ap["gerenciavel"] is False
+    # switch de verdade: base_mac ou portas bastam
+    for parcial in ({"base_mac": "AA:BB:CC:00:00:99", "portas": {}}, {"base_mac": None}):
+        async def ler_sw(ip, community, parcial=parcial):
+            return {**LIDO, **parcial}
+        await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler_sw)
+        (sw,) = await store.listar_switches(db, mk)
+        assert sw["gerenciavel"] is True and sw["erro"] is None
+
+
+async def test_desmarcar_e_switch_desfaz_gerenciavel(db, r):
+    mk = await _mk_sw(db, r)
+    _, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert (await store.listar_switches(db, mk))[0]["gerenciavel"] is True
+    await store.editar_aparelho(db, mk, "192.0.2.10", {"e_switch_manual": False})
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=10), descobrir=descobrir, ler=ler)
+    assert ch == {"descobrir": [], "ler": []}
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["gerenciavel"] is False
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
+    assert ap["gerenciavel"] is False
 
 
 async def test_switch_descoberto_mas_leitura_falha(db, r):

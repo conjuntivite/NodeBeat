@@ -172,18 +172,15 @@ async def _em_uso_no_tunel(db, mk_id: str, agora: datetime, filtro) -> list[dict
 
 async def _mapa_mk(db, r, mk_id: str, agora: datetime, sem, ping) -> None:
     alvos = [a["ip"] for a in await _em_uso_no_tunel(db, mk_id, agora, mapa.vigiado)]
-    if not alvos:
-        return
 
     async def um(ip):
         async with sem:
             return ip, await ping(ip)
 
     resp = await asyncio.gather(*(um(ip) for ip in alvos))
-    est = await history.load_aparelhos(r, mk_id)
-    for ip, ok in resp:
-        est[ip] = mapa.proximo_estado(est.get(ip), ok, agora)
-    await history.save_aparelhos(r, mk_id, est)
+    ant = await history.load_aparelhos(r, mk_id)
+    # só os alvos: quem deixou de ser vigiado sai e, se voltar, começa do zero
+    await history.save_aparelhos(r, mk_id, {ip: mapa.proximo_estado(ant.get(ip), ok, agora) for ip, ok in resp})
 
 
 async def run_mapa(db, r, settings: Settings, now: datetime, *, ping=probes.ping) -> None:
@@ -205,6 +202,7 @@ async def run_mapa(db, r, settings: Settings, now: datetime, *, ping=probes.ping
 
 
 SEM_RESPOSTA_SNMP = "Sem resposta SNMP"
+SEM_BRIDGE = "Sem tabela de bridge"  # responde SNMP (ex.: câmera) mas não é switch
 
 
 async def _switch(db, settings, mk_id: str, ap: dict, ant: dict, agora: datetime, descobrir, ler) -> None:
@@ -217,7 +215,7 @@ async def _switch(db, settings, mk_id: str, ap: dict, ant: dict, agora: datetime
         except ValueError:
             pass  # cifrada inválida (ex.: chave trocada): descobre de novo
     ja_descoberto = community is not None
-    base = {"mac": ap.get("mac"), "lido_em": agora}
+    base = {"mac": ap.get("mac"), "tentado_em": agora}  # lido_em só quando a leitura dá certo
     dados = None
     if community is not None:
         try:
@@ -242,12 +240,19 @@ async def _switch(db, settings, mk_id: str, ap: dict, ant: dict, agora: datetime
             await store.salvar_switch(db, mk_id, ip, {**base, "erro": SEM_RESPOSTA_SNMP})
             await store.marcar_gerenciavel(db, mk_id, ip, True)
             return
-    await store.salvar_switch(db, mk_id, ip, {**base, "gerenciavel": True, "erro": None, **dados})
-    await store.marcar_gerenciavel(db, mk_id, ip, True)
+    ger = bool(dados.get("base_mac") or dados.get("portas"))  # sem BRIDGE-MIB não é switch
+    await store.salvar_switch(db, mk_id, ip, {**base, **dados, "gerenciavel": ger,
+                                              "erro": None if ger else SEM_BRIDGE, "lido_em": agora})
+    await store.marcar_gerenciavel(db, mk_id, ip, ger)
 
 
 async def _switches_mk(db, settings, mk_id: str, agora: datetime, sem, descobrir, ler) -> None:
     antes = {s["ip"]: s for s in await store.listar_switches(db, mk_id)}
+    # "É um switch" desmarcado: deixa de ser candidato, então desfaz o gerenciável aqui
+    for ap in await store.listar_ips(db, mk_id):
+        if ap.get("e_switch_manual") is False and (antes.get(ap["ip"], {}).get("gerenciavel") or ap.get("gerenciavel")):
+            await store.salvar_switch(db, mk_id, ap["ip"], {"gerenciavel": False})
+            await store.marcar_gerenciavel(db, mk_id, ap["ip"], False)
 
     async def um(ap):
         async with sem:

@@ -77,7 +77,8 @@ def vigiado(ap: dict) -> bool:
     manual = ap.get("vigiar_manual")
     if manual is not None:
         return bool(manual)
-    return e_equipamento(ap.get("fabricante", "")) or bool(ap.get("fixo"))
+    # switch que respondeu SNMP (worker.run_switches) também é vigiado
+    return e_equipamento(ap.get("fabricante", "")) or bool(ap.get("fixo")) or bool(ap.get("gerenciavel"))
 
 
 def porta_do_aparelho(mac, arp_iface, host: dict[str, str], bridges: set[str]):

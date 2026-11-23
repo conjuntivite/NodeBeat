@@ -133,10 +133,26 @@ async def rotulos_portas(db, mk_id: str) -> dict[str, str]:
     return {d["porta"]: d["rotulo"] async for d in db.mapa_rotulos.find({"mk_id": mk_id})}
 
 
+async def marcar_gerenciavel(db, mk_id: str, ip: str, valor: bool) -> None:
+    """Switch que responde SNMP passa a ser vigiado (mapa.vigiado). Só o worker grava."""
+    await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"gerenciavel": valor}})
+
+
+async def salvar_switch(db, mk_id: str, ip: str, doc: dict) -> None:
+    """Mescla os campos no doc do switch: campo ausente mantém o valor anterior."""
+    await db.switches.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"mk_id": mk_id, "ip": ip, **doc}},
+                                 upsert=True)
+
+
+async def listar_switches(db, mk_id: str) -> list[dict]:
+    return [_utc(d) async for d in db.switches.find({"mk_id": mk_id})]
+
+
 async def apagar_inventario(db, mk_id: str) -> None:
     await db.inventario.delete_many({"mk_id": mk_id})
     await db.inventario_ips.delete_many({"mk_id": mk_id})
     await db.mapa_rotulos.delete_many({"mk_id": mk_id})
+    await db.switches.delete_many({"mk_id": mk_id})
 
 
 async def garantir_indices_eventos(db, dias: int) -> None:

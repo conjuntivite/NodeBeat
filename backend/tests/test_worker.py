@@ -6,12 +6,13 @@ import pytest
 from cryptography.fernet import Fernet
 from mongomock_motor import AsyncMongoMockClient
 
-from nodebeat import config, crypto, history, store
+from nodebeat import config, crypto, history, snmp, store
 from nodebeat.config import Settings
 from nodebeat.routeros import CertMismatch, RouterOsError, Snapshot
 from nodebeat.rules import AlertEngine
 from nodebeat.webhook import QUEUE
-from nodebeat.worker import atualizar_mk, inventario_devido, load_engine, run_cycle, run_inventario, run_mapa
+from nodebeat.worker import (atualizar_mk, inventario_devido, load_engine, run_cycle, run_inventario, run_mapa,
+                             run_switches)
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 KEY = Fernet.generate_key().decode()
@@ -444,3 +445,182 @@ async def test_run_mapa_duas_rodadas_com_falha_viram_offline(db, r):
     assert e["online"] is True and e["falhas"] == 1
     await run_mapa(db, r, SET, T0 + timedelta(seconds=60), ping=ping)
     assert (await history.load_aparelhos(r, mk))["192.0.2.5"]["online"] is False
+
+
+# --- switches (SNMP) ---
+
+SEGREDO = "comunidade-secreta"
+SW_SET = Settings("m", "r", KEY, "https://hook.example", None, "ref.example", snmp_communities=["x", SEGREDO])
+LIDO = {"descr": "Switch X", "base_mac": "AA:BB:CC:00:00:99", "portas": {"Port1": {"up": True}},
+        "fdb": {"AA:BB:CC:00:00:01": "Port1"}, "vizinhos": {}}
+
+
+async def _mk_sw(db, r, status="no_ar", nome="mk1"):
+    mk = await store.insert_mk(db, doc(nome=nome))
+    await history.save_state(r, mk, {"status": status})
+    await store.salvar_inventario(db, mk, {"redes": [
+        {"rede": "192.0.2.0/24", "tunel": True}, {"rede": "198.51.100.0/24", "tunel": False}]}, T0)
+    base = {"mac": "18:E8:29:00:00:01", "host_name": None, "fixo": False}
+    await store.registrar_ips(db, mk, [
+        {**base, "ip": "192.0.2.10"}, {**base, "ip": "192.0.2.11"}, {**base, "ip": "192.0.2.12"},
+        {**base, "ip": "198.51.100.10"}], T0, {
+        "192.0.2.10": {"fabricante": "Ubiquiti"}, "192.0.2.11": {"fabricante": "Outro"},
+        "192.0.2.12": {"fabricante": "Ubiquiti"}, "198.51.100.10": {"fabricante": "Ubiquiti"}})
+    await db.inventario_ips.update_one({"mk_id": mk, "ip": "192.0.2.12"},
+                                       {"$set": {"ultimo_visto": T0 - timedelta(days=20)}})
+    return mk
+
+
+def fakes(achou=(SEGREDO, "Switch X"), ler_falha=False):
+    chamadas = {"descobrir": [], "ler": []}
+
+    async def descobrir(ip, communities):
+        chamadas["descobrir"].append((ip, list(communities)))
+        return achou
+
+    async def ler(ip, community):
+        chamadas["ler"].append((ip, community))
+        if ler_falha if isinstance(ler_falha, bool) else ler_falha(community):
+            raise snmp.SnmpErro("timeout")
+        return LIDO
+
+    return chamadas, descobrir, ler
+
+
+async def test_switch_descoberto_vira_gerenciavel_com_community_cifrada(db, r):
+    mk = await _mk_sw(db, r)
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert ch["descobrir"] == [("192.0.2.10", ["x", SEGREDO])]  # só o candidato em túnel, visto há pouco
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["ip"] == "192.0.2.10" and sw["gerenciavel"] is True and sw["fdb"] == LIDO["fdb"]
+    assert sw["community_cifrada"] != SEGREDO and crypto.decrypt(sw["community_cifrada"], KEY) == SEGREDO
+    assert SEGREDO not in json.dumps({k: v for k, v in sw.items() if k != "community_cifrada"}, default=str)
+    assert sw["lido_em"] == T0 and sw["erro"] is None and sw["mac"] == "18:E8:29:00:00:01"
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
+    assert ap["gerenciavel"] is True
+
+
+async def test_switch_sem_resposta_nao_gerenciavel(db, r):
+    mk = await _mk_sw(db, r)
+    ch, descobrir, ler = fakes(achou=None)
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["gerenciavel"] is False and not sw.get("community_cifrada") and ch["ler"] == []
+    assert sw["erro"] and SEGREDO not in sw["erro"]
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
+    assert ap["gerenciavel"] is False
+
+
+async def test_switch_mk_fora_do_ar_nao_le_e_mantem_doc(db, r):
+    mk = await _mk_sw(db, r, status="offline")
+    await store.salvar_switch(db, mk, "192.0.2.10", {"gerenciavel": True, "fdb": {"a": "b"}})
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert ch == {"descobrir": [], "ler": []}
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["fdb"] == {"a": "b"} and sw["gerenciavel"] is True
+
+
+async def test_switch_segunda_rodada_usa_community_guardada(db, r):
+    await _mk_sw(db, r)
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    ch2, descobrir2, ler2 = fakes()
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=10), descobrir=descobrir2, ler=ler2)
+    assert ch2["descobrir"] == [] and ch2["ler"] == [("192.0.2.10", SEGREDO)]
+
+
+async def test_switch_community_guardada_parou_volta_a_descobrir(db, r):
+    mk = await _mk_sw(db, r)
+    await store.salvar_switch(db, mk, "192.0.2.10", {
+        "gerenciavel": True, "community_cifrada": crypto.encrypt("velha", KEY)})
+    ch, descobrir, ler = fakes(ler_falha=lambda c: c == "velha")
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert len(ch["descobrir"]) == 1 and ch["ler"] == [("192.0.2.10", "velha"), ("192.0.2.10", SEGREDO)]
+    (sw,) = await store.listar_switches(db, mk)
+    assert crypto.decrypt(sw["community_cifrada"], KEY) == SEGREDO and sw["erro"] is None
+
+
+async def test_switch_community_cifrada_invalida_redescobre(db, r):
+    mk = await _mk_sw(db, r)
+    await store.salvar_switch(db, mk, "192.0.2.10", {"gerenciavel": True, "community_cifrada": "lixo"})
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert len(ch["descobrir"]) == 1 and ch["ler"] == [("192.0.2.10", SEGREDO)]
+
+
+async def test_switch_ja_descoberto_sem_resposta_mantem_dados(db, r):
+    mk = await _mk_sw(db, r)
+    ch, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    ch, descobrir, ler = fakes(achou=None, ler_falha=True)  # timeout: nem a descoberta responde
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=10), descobrir=descobrir, ler=ler)
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["gerenciavel"] is True and sw["fdb"] == LIDO["fdb"] and sw["portas"] == LIDO["portas"]
+    assert sw["erro"] == "Sem resposta SNMP" and SEGREDO not in sw["erro"]
+    assert crypto.decrypt(sw["community_cifrada"], KEY) == SEGREDO
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.10")
+    assert ap["gerenciavel"] is True
+
+
+async def test_switch_descoberto_mas_leitura_falha(db, r):
+    mk = await _mk_sw(db, r)
+    ch, descobrir, ler = fakes(ler_falha=True)
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    (sw,) = await store.listar_switches(db, mk)
+    assert sw["gerenciavel"] is True and sw["descr"] == "Switch X" and sw["erro"] == "Sem resposta SNMP"
+    assert crypto.decrypt(sw["community_cifrada"], KEY) == SEGREDO
+
+
+async def test_switch_falha_numa_mk_nao_impede_outra(db, r, caplog):
+    mk1 = await _mk_sw(db, r)
+    mk2 = await _mk_sw(db, r, nome="mk2")
+    _, descobrir, ler = fakes()
+
+    async def descobrir_boom(ip, communities):
+        raise RuntimeError(SEGREDO)
+
+    orig = store.listar_ips
+
+    async def listar(db_, mk_id):
+        if mk_id == mk1:
+            raise RuntimeError("boom")
+        return await orig(db_, mk_id)
+
+    store.listar_ips = listar
+    try:
+        await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    finally:
+        store.listar_ips = orig
+    assert await store.listar_switches(db, mk1) == []
+    assert len(await store.listar_switches(db, mk2)) == 1
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir_boom, ler=ler)  # nunca levanta
+    assert SEGREDO not in caplog.text
+
+
+async def test_apagar_inventario_apaga_switches(db):
+    await store.salvar_switch(db, "m1", "192.0.2.10", {"gerenciavel": True})
+    await store.salvar_switch(db, "m2", "192.0.2.10", {"gerenciavel": True})
+    await store.apagar_inventario(db, "m1")
+    assert await store.listar_switches(db, "m1") == []
+    assert len(await store.listar_switches(db, "m2")) == 1
+
+
+def test_settings_switches(monkeypatch):
+    for k in ("MONGO_URL", "REDIS_URL", "SECRET_KEY", "WEBHOOK_URL", "REFERENCE_HOST"):
+        monkeypatch.setenv(f"NODEBEAT_{k}", "x")
+    monkeypatch.delenv("NODEBEAT_SNMP_COMMUNITIES", raising=False)
+    monkeypatch.delenv("NODEBEAT_SWITCH_S", raising=False)
+    s = config.load_settings()
+    assert s.snmp_communities == ["public"] and s.switch_s == 600
+    monkeypatch.setenv("NODEBEAT_SNMP_COMMUNITIES", " a , ,b ")
+    monkeypatch.setenv("NODEBEAT_SWITCH_S", "120")
+    s = config.load_settings()
+    assert s.snmp_communities == ["a", "b"] and s.switch_s == 120
+    monkeypatch.setenv("NODEBEAT_SNMP_COMMUNITIES", " , ")
+    assert config.load_settings().snmp_communities == ["public"]
+    for v in ("0", "abc"):
+        monkeypatch.setenv("NODEBEAT_SWITCH_S", v)
+        with pytest.raises(RuntimeError, match="NODEBEAT_SWITCH_S inválida"):
+            config.load_settings()

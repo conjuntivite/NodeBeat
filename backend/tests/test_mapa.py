@@ -31,6 +31,12 @@ def test_vigiado():
     assert vigiado({"fabricante": "Outro", "fixo": False, "vigiar_manual": True})
 
 
+def test_vigiado_switch_gerenciavel():
+    assert vigiado({"fabricante": "Ubiquiti", "fixo": False, "gerenciavel": True})
+    assert not vigiado({"fabricante": "Ubiquiti", "fixo": False, "gerenciavel": True, "vigiar_manual": False})
+    assert not vigiado({"fabricante": "Ubiquiti", "fixo": False, "gerenciavel": False})
+
+
 def test_porta_do_aparelho():
     host = {"AA:BB:CC:00:00:01": "ether2"}
     br = {"bridge1"}

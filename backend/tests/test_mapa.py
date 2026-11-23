@@ -118,3 +118,124 @@ def test_estado_de():
     assert estado_de(True, True, True, {"online": None}) == "desconhecido"
     assert estado_de(True, True, True, None) == "desconhecido"
     assert estado_de(False, True, True, None) == "nao_vigiado"
+
+
+# ---- montar_arvore ----
+from datetime import datetime, timedelta
+from nodebeat.mapa import montar_arvore
+
+HIK = "44:19:B6:00:00:0"
+
+
+def _ap(ip, porta="ether2", mac_fim="1", **kw):
+    return {"ip": ip, "mac": HIK + mac_fim, "fabricante": "Hikvision", "porta": porta, **kw}
+
+
+def _on(ok=True, falhas=0):
+    return {"online": ok, "falhas": falhas, "desde": "2026-11-23T10:00:00"}
+
+
+def _arv(aps, estados=None, **kw):
+    kw.setdefault("link", {})
+    kw.setdefault("rotulos", {})
+    kw.setdefault("mk_no_ar", True)
+    kw.setdefault("redes_tunel", ["10.0.0.0/24"])
+    return montar_arvore(aps, estados=estados or {}, **kw)
+
+
+def _porta(arv, nome):
+    return next(p for p in arv if p["nome"] == nome)
+
+
+def test_arvore_um_offline_com_dois_no_ar():
+    aps = [_ap("10.0.0.1"), _ap("10.0.0.2"), _ap("10.0.0.3")]
+    est = {"10.0.0.1": _on(), "10.0.0.2": _on(), "10.0.0.3": _on(False, 2)}
+    p = _porta(_arv(aps, est), "ether2")
+    assert p["problema"] is True and p["causa"] is None
+    assert p["no_ar"] == 2 and p["vigiados"] == 3
+    assert p["link"] == "desconhecido"
+
+
+def test_arvore_todos_sem_resposta_precisa_de_dois():
+    aps = [_ap("10.0.0.1"), _ap("10.0.0.2")]
+    off = _on(False, 2)
+    p = _porta(_arv(aps, {"10.0.0.1": off, "10.0.0.2": off}), "ether2")
+    assert p["causa"] == "todos sem resposta"
+    p = _porta(_arv(aps[:1], {"10.0.0.1": off}), "ether2")
+    assert p["causa"] is None and p["problema"] is True
+
+
+def test_arvore_link_caido():
+    aps = [_ap("10.0.0.1", "ether3")]
+    p = _porta(_arv(aps, {"10.0.0.1": _on()}, link={"ether3": False}), "ether3")
+    assert p["causa"] == "link caído" and p["problema"] is True and p["link"] == "down"
+    assert _porta(_arv(aps, link={"ether3": True}), "ether3")["link"] == "up"
+
+
+def test_arvore_mk_fora_do_ar_sem_problema():
+    aps = [_ap("10.0.0.1", "ether3")]
+    arv = _arv(aps, {"10.0.0.1": _on(False, 2)}, mk_no_ar=False, link={"ether3": False})
+    assert arv[0]["aparelhos"][0]["estado"] == "desconhecido"
+    assert arv[0]["problema"] is False and arv[0]["causa"] is None
+
+
+def test_arvore_fora_da_rede_de_tunel():
+    arv = _arv([_ap("192.168.9.9")], {"192.168.9.9": _on()})
+    assert arv[0]["aparelhos"][0]["estado"] == "nao_vigiado"
+
+
+def test_arvore_sem_porta_usa_bridge():
+    arv = _arv([_ap("10.0.0.1", None, bridge="bridge1"), _ap("10.0.0.2", None)])
+    nomes = {p["nome"] for p in arv}
+    assert nomes == {"bridge1 (porta desconhecida)", "Sem porta"}
+    g = _porta(arv, "bridge1 (porta desconhecida)")
+    assert g["rotulo"] == "" and g["aparelhos"][0]["porta_desconhecida"] is True
+
+
+def test_arvore_busca():
+    aps = [_ap("10.0.0.45", "ether2", "1"),
+           {"ip": "10.0.0.46", "mac": "00:00:5E:00:00:02", "fabricante": "Outro", "porta": "ether5",
+            "identidade": "Roteador"}]
+    assert [p["nome"] for p in _arv(aps, busca="HIKvision")] == ["ether2"]
+    assert [p["nome"] for p in _arv(aps, busca="10.0.0.45")] == ["ether2"]
+    assert [p["nome"] for p in _arv(aps, busca="roteador")] == ["ether5"]
+
+
+def test_arvore_so_problema():
+    aps = [_ap("10.0.0.1"), _ap("10.0.0.2"),            # ether2: 1 offline de 2
+           _ap("10.0.0.3", "ether3"), _ap("10.0.0.4", "ether3"),  # ether3: todos offline (causa)
+           _ap("10.0.0.5", "ether4")]                  # ether4: ok
+    off = _on(False, 2)
+    est = {"10.0.0.1": _on(), "10.0.0.2": off, "10.0.0.3": off, "10.0.0.4": off, "10.0.0.5": _on()}
+    arv = _arv(aps, est, so_problema=True)
+    assert [p["nome"] for p in arv] == ["ether2", "ether3"]
+    assert [a["ip"] for a in arv[0]["aparelhos"]] == ["10.0.0.2"]
+    assert len(arv[1]["aparelhos"]) == 2
+
+
+def test_arvore_offline_continua_na_ultima_porta_e_ordem():
+    aps = [_ap("10.0.0.10"), _ap("10.0.0.9", e_switch=True), _ap("10.0.0.2")]
+    arv = _arv(aps, {"10.0.0.2": _on(False, 2)})
+    assert arv[0]["aparelhos"][0]["estado"] == "desconhecido"
+    assert [a["ip"] for a in arv[0]["aparelhos"]] == ["10.0.0.9", "10.0.0.2", "10.0.0.10"]
+    assert arv[0]["aparelhos"][1]["estado"] == "offline"
+
+
+def test_arvore_ordem_portas_e_campos():
+    aps = [_ap("10.0.0.1", "ether9"), _ap("10.0.0.2", "Ether1"), _ap("10.0.0.3", "ether5", apelido="Cam",
+           identidade="id", e_switch_manual=True)]
+    est = {"10.0.0.1": _on(False, 2)}
+    arv = _arv(aps, est, rotulos={"Ether1": "Portaria"})
+    assert [p["nome"] for p in arv] == ["ether9", "Ether1", "ether5"]
+    a = _porta(arv, "ether5")["aparelhos"][0]
+    assert a["nome"] == "Cam" and a["e_switch"] is True and a["desde"] is None
+    assert _porta(arv, "Ether1")["rotulo"] == "Portaria"
+
+
+def test_arvore_ultimo_visto_antigo_nao_vigiado():
+    agora = datetime(2026, 11, 23)
+    aps = [_ap("10.0.0.1", ultimo_visto=agora - timedelta(days=16)),
+           _ap("10.0.0.2", ultimo_visto=agora - timedelta(days=1))]
+    est = {"10.0.0.1": _on(), "10.0.0.2": _on()}
+    a = {x["ip"]: x["estado"] for x in _arv(aps, est, agora=agora)[0]["aparelhos"]}
+    assert a == {"10.0.0.1": "nao_vigiado", "10.0.0.2": "no_ar"}

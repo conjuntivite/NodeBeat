@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from ipaddress import ip_address, ip_network
+
+from . import inventario
 
 # OUIs (MA-L) conferidos no registro IEEE (https://standards-oui.ieee.org/oui/oui.csv,
 # consultado em 2026-11-23). Lista parcial: alguns por fabricante.
@@ -139,3 +142,87 @@ def estado_de(vig: bool, em_tunel: bool, mk_no_ar: bool, est: dict | None) -> st
     if not mk_no_ar or not est or est.get("online") is None:
         return "desconhecido"
     return "no_ar" if est["online"] else "offline"
+
+
+def _em_tunel(ip: str, redes: list[str]) -> bool:
+    try:
+        a = ip_address(ip)
+        return any(a in ip_network(r, strict=False) for r in redes)
+    except ValueError:
+        return False
+
+
+def _aparelho_saida(ap: dict, estados: dict, mk_no_ar: bool, redes: list[str], agora: datetime | None) -> dict:
+    est = estados.get(ap["ip"])
+    vig = vigiado(ap)
+    visto = ap.get("ultimo_visto")
+    antigo = agora is not None and visto is not None and agora - visto > timedelta(days=inventario.DIAS_EM_USO)
+    estado = "nao_vigiado" if antigo else estado_de(vig, _em_tunel(ap["ip"], redes), mk_no_ar, est)
+    manual = ap.get("e_switch_manual")
+    return {
+        "ip": ap["ip"], "mac": ap.get("mac"), "fabricante": ap.get("fabricante", ""),
+        "nome": ap.get("apelido") or ap.get("identidade") or ap.get("host_name") or "",
+        "apelido": ap.get("apelido"), "vigiado": vig,
+        "e_switch": bool(manual if manual is not None else ap.get("e_switch")),
+        "estado": estado, "desde": est.get("desde") if est else None, "ultimo_visto": visto,
+        "porta_desconhecida": not ap.get("porta")}
+
+
+def _nome_porta(ap: dict) -> str:
+    if ap.get("porta"):
+        return ap["porta"]
+    return f"{ap['bridge']} (porta desconhecida)" if ap.get("bridge") else "Sem porta"
+
+
+def _causa(nome: str, aps: list[dict], link: dict[str, bool], mk_no_ar: bool) -> str | None:
+    # MK fora do ar: dados de link/ping são velhos, então não há causa.
+    if not mk_no_ar:
+        return None
+    if link.get(nome) is False:
+        return "link caído"
+    estados = [a["estado"] for a in aps if a["estado"] in ("no_ar", "offline")]
+    if len(estados) >= 2 and all(e == "offline" for e in estados):
+        return "todos sem resposta"
+    return None
+
+
+def _casa(a: dict, busca: str) -> bool:
+    return any(busca in str(a[c] or "").lower() for c in ("ip", "mac", "nome", "fabricante"))
+
+
+def _porta_saida(nome: str, aps: list[dict], *, link, rotulos, mk_no_ar) -> dict:
+    causa = _causa(nome, aps, link, mk_no_ar)
+    aps = sorted(aps, key=lambda a: (not a["e_switch"], ip_address(a["ip"])))
+    return {
+        "nome": nome,
+        "rotulo": rotulos.get(nome, "") if not all(a["porta_desconhecida"] for a in aps) else "",
+        "link": "desconhecido" if nome not in link else ("up" if link[nome] else "down"),
+        "vigiados": sum(a["estado"] in ("no_ar", "offline") for a in aps),
+        "no_ar": sum(a["estado"] == "no_ar" for a in aps),
+        "problema": causa is not None or any(a["estado"] == "offline" for a in aps),
+        "causa": causa, "aparelhos": aps}
+
+
+def montar_arvore(aparelhos: list[dict], *, link: dict[str, bool], rotulos: dict[str, str],
+                  estados: dict[str, dict], mk_no_ar: bool, redes_tunel: list[str],
+                  busca: str | None = None, so_problema: bool = False,
+                  agora: datetime | None = None) -> list[dict]:
+    """Árvore porta -> aparelhos de uma MK. Contadores e causa valem para a porta inteira;
+    `busca` e `so_problema` só filtram o que é listado."""
+    grupos: dict[str, list[dict]] = {}
+    for ap in aparelhos:
+        grupos.setdefault(_nome_porta(ap), []).append(
+            _aparelho_saida(ap, estados, mk_no_ar, redes_tunel, agora))
+    portas = [_porta_saida(n, aps, link=link, rotulos=rotulos, mk_no_ar=mk_no_ar)
+              for n, aps in grupos.items()]
+    if so_problema:
+        portas = [p for p in portas if p["problema"]]
+        for p in portas:
+            if not p["causa"]:
+                p["aparelhos"] = [a for a in p["aparelhos"] if a["estado"] == "offline"]
+    if busca:
+        b = busca.strip().lower()
+        for p in portas:
+            p["aparelhos"] = [a for a in p["aparelhos"] if _casa(a, b)]
+        portas = [p for p in portas if p["aparelhos"]]
+    return sorted(portas, key=lambda p: (not p["problema"], p["nome"].lower()))

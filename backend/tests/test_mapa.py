@@ -304,6 +304,79 @@ def test_ligacoes_ciclo_corta_o_maior_ip():
     assert set(ligacoes([s1, s2, s3], aps)) == {"10.0.0.2", "10.0.0.3"}
 
 
+def _acima(n):  # MACs que o uplink aprende (MK e o resto da rede acima)
+    return {_mac(100 + i): "0/1" for i in range(n)}
+
+
+def test_ligacoes_cascata_real_switches_se_veem():
+    # MK -> S1 (0/48) -> S2: S2 aprende o MAC de S1 no uplink dele (0/1, muitos MACs)
+    cam = _mac(1)
+    s1 = _sw("10.0.0.2", {cam: "0/48", _mac(21): "0/48", **_acima(3)}, mac=_mac(30))
+    s2 = _sw("10.0.0.3", {cam: "0/5", _mac(30): "0/1", **_acima(10)}, mac=_mac(21))
+    aps = [{"ip": "10.0.0.5", "mac": cam}, {"ip": "10.0.0.2", "mac": _mac(30)},
+           {"ip": "10.0.0.3", "mac": _mac(21)}]
+    assert ligacoes([s1, s2], aps) == {
+        "10.0.0.5": {"switch_ip": "10.0.0.3", "porta": "0/5"},
+        "10.0.0.3": {"switch_ip": "10.0.0.2", "porta": "0/48"}}  # S1 é a raiz
+
+
+def test_ligacoes_cascata_real_tres_niveis():
+    # MK -> S1 (0/48) -> S2 (0/24) -> S3 (0/5) -> câmera; cada uplink aprende tudo acima
+    cam, m1, m2, m3 = _mac(1), _mac(31), _mac(32), _mac(33)
+    s1 = _sw("10.0.0.2", {cam: "0/48", m2: "0/48", m3: "0/48", **_acima(3)}, mac=m1)
+    s2 = _sw("10.0.0.3", {cam: "0/24", m3: "0/24", m1: "0/1", **_acima(10)}, mac=m2)
+    s3 = _sw("10.0.0.4", {cam: "0/5", m1: "0/1", m2: "0/1", **_acima(10)}, mac=m3)
+    aps = [{"ip": "10.0.0.5", "mac": cam}, {"ip": "10.0.0.2", "mac": m1},
+           {"ip": "10.0.0.3", "mac": m2}, {"ip": "10.0.0.4", "mac": m3}]
+    esperado = {
+        "10.0.0.5": {"switch_ip": "10.0.0.4", "porta": "0/5"},
+        "10.0.0.4": {"switch_ip": "10.0.0.3", "porta": "0/24"},
+        "10.0.0.3": {"switch_ip": "10.0.0.2", "porta": "0/48"}}
+    assert ligacoes([s1, s2, s3], aps) == esperado
+    assert ligacoes([s3, s1, s2], list(reversed(aps))) == esperado  # ordem da entrada não importa
+
+
+def test_ligacoes_corte_usa_o_proximo_candidato():
+    # S3 prefere (S2, 0/2: 2 MACs), mas S2 também está em S3 (0/3: 1 MAC): o ciclo corta a
+    # ligação de S3 (mais MACs) e S3 vai para o próximo candidato, (S1, 0/9)
+    m1, m2, m3 = _mac(31), _mac(32), _mac(33)
+    s1 = _sw("10.0.0.2", {m3: "0/9", **{_mac(40 + i): "0/9" for i in range(4)}}, mac=m1)
+    s2 = _sw("10.0.0.3", {m3: "0/2", _mac(50): "0/2"}, mac=m2)
+    s3 = _sw("10.0.0.4", {m2: "0/3"}, mac=m3)
+    aps = [{"ip": "10.0.0.2", "mac": m1}, {"ip": "10.0.0.3", "mac": m2}, {"ip": "10.0.0.4", "mac": m3}]
+    assert ligacoes([s1, s2, s3], aps) == {
+        "10.0.0.3": {"switch_ip": "10.0.0.4", "porta": "0/3"},
+        "10.0.0.4": {"switch_ip": "10.0.0.2", "porta": "0/9"}}
+
+
+def test_ligacoes_empate_na_contagem_corta_o_maior_ip():
+    s1 = _sw("10.0.0.2", {_mac(3): "0/1", _mac(9): "0/1"}, mac=_mac(2))
+    s2 = _sw("10.0.0.3", {_mac(2): "0/1", _mac(8): "0/1"}, mac=_mac(3))
+    aps = [{"ip": "10.0.0.2", "mac": _mac(2)}, {"ip": "10.0.0.3", "mac": _mac(3)}]
+    esperado = {"10.0.0.2": {"switch_ip": "10.0.0.3", "porta": "0/1"}}
+    assert ligacoes([s1, s2], aps) == esperado
+    assert ligacoes([s2, s1], aps[::-1]) == esperado
+
+
+def test_ligacoes_termina_e_nunca_tem_ciclo():
+    import random
+    rnd = random.Random(7)
+    for _ in range(300):
+        n = rnd.randint(1, 6)
+        ips = [f"10.0.0.{i + 2}" for i in range(n)]
+        sws = [_sw(ip, {_mac(rnd.randrange(n + 3)): f"0/{rnd.randrange(3)}" for _ in range(rnd.randrange(6))},
+                   mac=_mac(i), base_mac=_mac(rnd.randrange(n + 3)) if rnd.random() < 0.3 else None)
+               for i, ip in enumerate(ips)]
+        aps = [{"ip": ip, "mac": _mac(i)} for i, ip in enumerate(ips)] + [{"ip": "10.0.0.99", "mac": _mac(n)}]
+        out = ligacoes(sws, aps)
+        for ip in out:  # subir pelas ligações sempre chega a uma raiz
+            visto, n_ = set(), ip
+            while n_ in out:
+                assert n_ not in visto
+                visto.add(n_)
+                n_ = out[n_]["switch_ip"]
+
+
 def test_ligacoes_sem_mac_ou_desconhecido_fica_de_fora():
     s1 = _sw("10.0.0.2", {_mac(1): "0/1"})
     aps = [{"ip": "10.0.0.5", "mac": None}, {"ip": "10.0.0.6", "mac": "zz"}, {"ip": "10.0.0.7"},

@@ -238,16 +238,17 @@ def _podar(portas: list[dict], fica, causa_mantem: bool = False) -> list[dict]:
     return [p for p in portas if p["aparelhos"]]
 
 
-def _cortar_ciclos(pai: dict[str, str]) -> set[str]:
-    """IPs que perdem a ligação para não haver ciclo: o de maior IP (texto) de cada ciclo."""
-    pai, cortados = dict(pai), set()
+def _cortar_ciclos(pai: dict[str, str], peso: dict[str, int] | None = None) -> set[str]:
+    """IPs que perdem a ligação para não haver ciclo: em cada ciclo, o de maior `peso` (MACs
+    aprendidos na porta da ligação: o uplink aprende muitos); empate ou sem peso, maior IP (texto)."""
+    pai, cortados, peso = dict(pai), set(), peso or {}
     for inicio in sorted(pai):  # cada nó tem um pai só: andar para cima acha os ciclos
         caminho, n = [], inicio
         while n in pai and n not in caminho:
             caminho.append(n)
             n = pai[n]
         if n in caminho:
-            c = max(caminho[caminho.index(n):])
+            c = max(caminho[caminho.index(n):], key=lambda x: (peso.get(x, 0), x))
             del pai[c]
             cortados.add(c)
     return cortados
@@ -339,7 +340,8 @@ def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
 
     Vale a (switch, porta) com menos MACs aprendidos (a mais perto da folha: uplink aprende
     muitos); empate -> menor (switch_ip, porta). Switch é ligado pelo MAC dele e pelo base_mac,
-    nunca a si mesmo. Ciclo entre switches: o de maior IP (texto) fica sem ligação."""
+    nunca a si mesmo. Ciclo entre switches (cada um vê o outro): perde a ligação a ponta cuja
+    porta aprendeu mais MACs (o uplink), que tenta o próximo candidato; empate -> maior IP."""
     vistos: dict[str, list[tuple[int, str, str]]] = {}  # MAC -> [(contagem, switch_ip, porta)]
     for s in switches:
         if not (s.get("gerenciavel") and s.get("fdb")):
@@ -352,13 +354,16 @@ def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
     for s in switches:
         if n := norm_mac(s.get("base_mac")):
             base.setdefault(s["ip"], set()).add(n)
-    out = {}
+    cands: dict[str, list[tuple[int, str, str]]] = {}  # IP -> candidatos, melhor primeiro
     for ap in aparelhos:
         macs = {m for m in [norm_mac(ap.get("mac"))] if m} | base.get(ap["ip"], set())
-        cands = [c for m in macs for c in vistos.get(m, []) if c[1] != ap["ip"]]
-        if cands:
-            _, sw, porta = min(cands)
-            out[ap["ip"]] = {"switch_ip": sw, "porta": porta}
-    for ip in _cortar_ciclos({k: v["switch_ip"] for k, v in out.items()}):
-        del out[ip]
-    return out
+        if c := sorted({c for m in macs for c in vistos.get(m, []) if c[1] != ap["ip"]}):
+            cands[ap["ip"]] = c
+    # cada volta tira ao menos um candidato de alguém: termina em sum(len(cands)) voltas
+    while cortados := _cortar_ciclos({ip: c[0][1] for ip, c in cands.items()},
+                                     {ip: c[0][0] for ip, c in cands.items()}):
+        for ip in cortados:
+            cands[ip].pop(0)
+            if not cands[ip]:
+                del cands[ip]
+    return {ip: {"switch_ip": c[0][1], "porta": c[0][2]} for ip, c in cands.items()}

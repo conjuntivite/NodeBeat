@@ -94,6 +94,32 @@ Limites:
 - A tabela de fabricantes (OUI) é parcial. A Haiz ainda não tem OUI e aparece como "Outro" até ser adicionada; aparelhos Haiz só são vigiados com lease fixa ou marcados à mão.
 - Sem alerta, ticket ou webhook por aparelho: só tela.
 
+### Switches gerenciáveis (SNMP)
+
+O NodeBeat descobre sozinho os switches gerenciáveis, lê a tabela de MAC e mostra os aparelhos aninhados sob a porta certa do switch. Variáveis (já presentes em `backend/nodebeat/config.py`, `deploy/compose.yml` e `deploy/.env.example`):
+
+- `NODEBEAT_SNMP_COMMUNITIES` (padrão `public`): lista separada por vírgula, tentadas em ordem. A que funcionar fica guardada, cifrada com a chave do NodeBeat.
+- `NODEBEAT_SWITCH_S` (padrão 600): intervalo, em segundos, da leitura dos switches.
+
+Para o switch aparecer, faça uma vez no próprio switch: ative o SNMP v2c somente leitura com uma community presente na lista e libere a UDP 161 do IP de origem do NodeBeat (`<IP_DO_NODEBEAT>`, o mesmo que as MKs veem) até o switch.
+
+Como funciona:
+
+- Candidatos a switch: aparelhos de fabricantes de rede (Intelbras, Haiz, Hikvision, TP-Link, MikroTik, Ubiquiti, Dahua) ou marcados "É um switch" no diálogo do aparelho. O NodeBeat tenta SNMP neles.
+- Quem responde ganha o selo "Gerenciável", passa a ser vigiado (ping) e mostra as portas com os aparelhos atrás.
+- A ligação (switch, porta) de cada aparelho fica guardada: o aparelho offline continua sob a última porta onde foi visto.
+- Switch fora do ar: os aparelhos atrás dele ficam cinza ("sem informação"), nunca vermelhos.
+- Candidato que não responde mostra a dica "gerenciável detectado: ative o SNMP nele".
+
+Limites e cuidados:
+
+- Switch não gerenciável continua invisível; seus aparelhos ficam agrupados na porta da MK acima.
+- Só leitura (GET/GETBULK); o NodeBeat nunca escreve no switch.
+- Se a community do switch for trocada para uma fora da lista, ele continua "Gerenciável" mostrando "Sem resposta SNMP" até a nova community entrar na lista (ou até desmarcar a vigilância no diálogo do aparelho).
+- Aparelho que muda de switch para uma porta direta da MK mantém a ligação antiga guardada até algum switch gerenciável voltar a enxergá-lo.
+- A tabela de MAC só aprende aparelhos que transmitiram recentemente (por isso a ligação é guardada).
+- A tela considera "leitura do switch antiga" após 30 min (3 × o padrão de 600 s).
+
 ## 4. Checklist de verificação (manual)
 
 - [ ] `docker compose ... ps`: os 5 serviços `running`.

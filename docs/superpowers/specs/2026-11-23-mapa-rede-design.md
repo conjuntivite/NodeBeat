@@ -121,6 +121,9 @@ Pedido do usuário: ao instalar um switch gerenciável num condomínio, o NodeBe
 - **Leitura mais frequente do switch:** a tabela de MAC de switch gerenciável lê **a cada 10 min** (configurável), não de hora em hora, porque é nela que está o "onde está".
 - **Decisão (B1, 2026-11-23): cliente SNMP próprio, só stdlib** (`nodebeat/snmp.py`: BER mínimo + asyncio UDP, GET e GETBULK, sem SET). O `pysnmp` 7.1.33 instalou limpo no Python 3.14 e respondeu no spike, mas traz `pysnmp` + `pyasn1` e um motor SNMP inteiro (v3, MIBs) para usar só dois comandos, com API que já mudou muito entre versões. O cliente próprio tem ~200 linhas, zero dependência nova, e o teste compara o GET gerado com o BER de referência do `pysnmp`. Sem retransmissão: pacote perdido falha a leitura e o próximo ciclo tenta de novo.
 
+- **Validado em campo:** UniFi USW-Pro-48 (firmware 7.6.11): a tabela BRIDGE-MIB dot1dTpFdb vem vazia e a de MAC está na Q-BRIDGE (dot1qTpFdb), o que o parser cobre. Nomes de porta "0/1".."3/26". O LLDP respondeu com sysName vazio.
+  Leitura de ~80 portas e ~130 MACs funcionou com o cliente SNMP próprio.
+
 ## API
 
 Todos os endpoints exigem login. Nomes ficam a cargo de quem construir. Funções:

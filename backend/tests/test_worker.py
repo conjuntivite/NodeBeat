@@ -624,3 +624,62 @@ def test_settings_switches(monkeypatch):
         monkeypatch.setenv("NODEBEAT_SWITCH_S", v)
         with pytest.raises(RuntimeError, match="NODEBEAT_SWITCH_S inválida"):
             config.load_settings()
+
+
+# --- ligações aparelho -> (switch, porta) ---
+
+async def test_registrar_ligacoes_grava_nao_limpa_nem_insere(db):
+    await store.registrar_ips(db, "m1", [{"ip": "192.0.2.5", "mac": "AA:BB:CC:00:00:01"}], T0)
+    await store.registrar_ligacoes(db, "m1", {"192.0.2.5": {"switch_ip": "192.0.2.10", "porta": "0/3"},
+                                              "192.0.2.6": {"switch_ip": "192.0.2.10", "porta": "0/4"}})
+    (ap,) = await store.listar_ips(db, "m1")  # 192.0.2.6 não existe: não cria
+    assert ap["switch_ip"] == "192.0.2.10" and ap["switch_porta"] == "0/3"
+    await store.registrar_ligacoes(db, "m1", {})
+    (ap,) = await store.listar_ips(db, "m1")
+    assert ap["switch_ip"] == "192.0.2.10" and ap["switch_porta"] == "0/3"
+
+
+async def _com_aparelho_no_fdb(db, mk):
+    await store.registrar_ips(db, mk, [{"ip": "192.0.2.20", "mac": "aa:bb:cc:00:00:01", "host_name": None,
+                                        "fixo": False}], T0, {"192.0.2.20": {"fabricante": "Outro"}})
+
+
+async def test_run_switches_grava_ligacao_e_mantem_quando_some(db, r):
+    mk = await _mk_sw(db, r)
+    await _com_aparelho_no_fdb(db, mk)
+    _, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.20")
+    assert ap["switch_ip"] == "192.0.2.10" and ap["switch_porta"] == "Port1"
+
+    async def ler_sem(ip, community):  # a tabela MAC esqueceu o aparelho
+        return {**LIDO, "fdb": {"AA:BB:CC:00:00:77": "Port2"}}
+
+    await run_switches(db, r, SW_SET, T0 + timedelta(minutes=10), descobrir=descobrir, ler=ler_sem)
+    ap = next(a for a in await store.listar_ips(db, mk) if a["ip"] == "192.0.2.20")
+    assert ap["switch_ip"] == "192.0.2.10" and ap["switch_porta"] == "Port1"
+
+
+async def test_ligacoes_falha_numa_mk_nao_impede_outra(db, r, monkeypatch, caplog):
+    from nodebeat import mapa
+    mk1 = await _mk_sw(db, r)
+    mk2 = await _mk_sw(db, r, nome="mk2")
+    for mk in (mk1, mk2):
+        await _com_aparelho_no_fdb(db, mk)
+    orig = mapa.ligacoes
+    chamadas = []
+
+    def lig(sws, aps):
+        chamadas.append(sws[0]["mk_id"])
+        if sws[0]["mk_id"] == mk1:
+            raise RuntimeError(SEGREDO)
+        return orig(sws, aps)
+
+    monkeypatch.setattr(mapa, "ligacoes", lig)
+    _, descobrir, ler = fakes()
+    await run_switches(db, r, SW_SET, T0, descobrir=descobrir, ler=ler)
+    assert sorted(chamadas) == sorted([mk1, mk2])
+    aps = {a["ip"]: a for a in await store.listar_ips(db, mk2)}
+    assert aps["192.0.2.20"]["switch_ip"] == "192.0.2.10"
+    assert "switch_ip" not in {a["ip"]: a for a in await store.listar_ips(db, mk1)}["192.0.2.20"]
+    assert SEGREDO not in caplog.text

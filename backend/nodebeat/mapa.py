@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime, timedelta
 from ipaddress import ip_address, ip_network
 
@@ -228,3 +229,38 @@ def montar_arvore(aparelhos: list[dict], *, link: dict[str, bool], rotulos: dict
             p["aparelhos"] = [a for a in p["aparelhos"] if _casa(a, b)]
         portas = [p for p in portas if p["aparelhos"]]
     return sorted(portas, key=lambda p: (not p["problema"], p["nome"].lower()))
+
+
+def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
+    """{ip: {"switch_ip", "porta"}} de cada aparelho que algum switch gerenciável conhece.
+
+    Vale a (switch, porta) com menos MACs aprendidos (a mais perto da folha: uplink aprende
+    muitos); empate -> menor (switch_ip, porta). Switch é ligado pelo MAC dele e pelo base_mac,
+    nunca a si mesmo. Ciclo entre switches: o de maior IP (texto) fica sem ligação."""
+    vistos: dict[str, list[tuple[int, str, str]]] = {}  # MAC -> [(contagem, switch_ip, porta)]
+    for s in switches:
+        if not (s.get("gerenciavel") and s.get("fdb")):
+            continue
+        cont = Counter(str(p) for p in s["fdb"].values())
+        for m, p in s["fdb"].items():
+            if n := norm_mac(m):
+                vistos.setdefault(n, []).append((cont[str(p)], s["ip"], str(p)))
+    base = {}
+    for s in switches:
+        if n := norm_mac(s.get("base_mac")):
+            base.setdefault(s["ip"], set()).add(n)
+    out = {}
+    for ap in aparelhos:
+        macs = {m for m in [norm_mac(ap.get("mac"))] if m} | base.get(ap["ip"], set())
+        cands = [c for m in macs for c in vistos.get(m, []) if c[1] != ap["ip"]]
+        if cands:
+            _, sw, porta = min(cands)
+            out[ap["ip"]] = {"switch_ip": sw, "porta": porta}
+    for inicio in sorted(out):  # cada nó tem um pai só: andar para cima acha os ciclos
+        caminho, n = [], inicio
+        while n in out and n not in caminho:
+            caminho.append(n)
+            n = out[n]["switch_ip"]
+        if n in caminho:
+            del out[max(caminho[caminho.index(n):])]
+    return out

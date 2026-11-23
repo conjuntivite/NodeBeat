@@ -246,3 +246,87 @@ def test_arvore_ultimo_visto_antigo_nao_vigiado():
     est = {"10.0.0.1": _on(), "10.0.0.2": _on()}
     a = {x["ip"]: x["estado"] for x in _arv(aps, est, agora=agora)[0]["aparelhos"]}
     assert a == {"10.0.0.1": "nao_vigiado", "10.0.0.2": "no_ar"}
+
+
+# --- ligações aparelho -> (switch, porta) ---
+
+import copy
+
+from nodebeat.mapa import ligacoes
+
+
+def _sw(ip, fdb, mac=None, base_mac=None, gerenciavel=True):
+    return {"ip": ip, "mac": mac, "base_mac": base_mac, "gerenciavel": gerenciavel, "fdb": fdb, "portas": {}}
+
+
+def _mac(n):
+    return f"AA:BB:CC:00:00:{n:02X}"
+
+
+def test_ligacoes_aparelho_na_porta_do_switch():
+    s1 = _sw("10.0.0.2", {_mac(1): "0/3", _mac(9): "0/1"})
+    aps = [{"ip": "10.0.0.5", "mac": _mac(1)}, {"ip": "10.0.0.2", "mac": _mac(2)}]
+    assert ligacoes([s1], aps) == {"10.0.0.5": {"switch_ip": "10.0.0.2", "porta": "0/3"}}
+
+
+def test_ligacoes_cascata_vai_para_a_folha():
+    cam = _mac(1)
+    s1 = _sw("10.0.0.2", {cam: "0/48", **{_mac(i): "0/48" for i in range(10, 15)}, _mac(20): "0/48"},
+             mac=_mac(30))
+    s2 = _sw("10.0.0.3", {cam: "0/5"}, mac=_mac(21), base_mac=_mac(20))
+    aps = [{"ip": "10.0.0.5", "mac": cam}, {"ip": "10.0.0.2", "mac": _mac(30)},
+           {"ip": "10.0.0.3", "mac": _mac(21)}]
+    assert ligacoes([s1, s2], aps) == {
+        "10.0.0.5": {"switch_ip": "10.0.0.3", "porta": "0/5"},
+        "10.0.0.3": {"switch_ip": "10.0.0.2", "porta": "0/48"}}  # pelo base_mac
+
+
+def test_ligacoes_mac_em_duas_portas_do_mesmo_switch():
+    s1 = _sw("10.0.0.2", {"aa:bb:cc:00:00:01": "0/1", _mac(2): "0/1", "AA-BB-CC-00-00-01": "0/7"})
+    assert ligacoes([s1], [{"ip": "10.0.0.5", "mac": _mac(1)}])["10.0.0.5"]["porta"] == "0/7"
+    # empate: menor (switch_ip, porta)
+    s1 = _sw("10.0.0.2", {"aa:bb:cc:00:00:01": "0/9", "AA-BB-CC-00-00-01": "0/3"})
+    s0 = _sw("10.0.0.10", {_mac(1): "0/1"})
+    assert ligacoes([s0, s1], [{"ip": "10.0.0.5", "mac": _mac(1)}]) == {
+        "10.0.0.5": {"switch_ip": "10.0.0.10", "porta": "0/1"}}  # "10.0.0.10" < "10.0.0.2"
+
+
+def test_ligacoes_ciclo_corta_o_maior_ip():
+    s1 = _sw("10.0.0.2", {_mac(3): "0/1"}, mac=_mac(2))
+    s2 = _sw("10.0.0.3", {_mac(2): "0/1"}, mac=_mac(3))
+    aps = [{"ip": "10.0.0.2", "mac": _mac(2)}, {"ip": "10.0.0.3", "mac": _mac(3)}]
+    assert ligacoes([s1, s2], aps) == {"10.0.0.2": {"switch_ip": "10.0.0.3", "porta": "0/1"}}
+    # ciclo de 3: corta só o maior IP
+    s3 = _sw("10.0.0.4", {_mac(2): "0/1"}, mac=_mac(4))
+    s1 = _sw("10.0.0.2", {_mac(3): "0/1"}, mac=_mac(2))
+    s2 = _sw("10.0.0.3", {_mac(4): "0/1"}, mac=_mac(3))
+    aps.append({"ip": "10.0.0.4", "mac": _mac(4)})
+    assert set(ligacoes([s1, s2, s3], aps)) == {"10.0.0.2", "10.0.0.3"}
+
+
+def test_ligacoes_sem_mac_ou_desconhecido_fica_de_fora():
+    s1 = _sw("10.0.0.2", {_mac(1): "0/1"})
+    aps = [{"ip": "10.0.0.5", "mac": None}, {"ip": "10.0.0.6", "mac": "zz"}, {"ip": "10.0.0.7"},
+           {"ip": "10.0.0.8", "mac": _mac(8)}]
+    assert ligacoes([s1], aps) == {}
+
+
+def test_ligacoes_mac_em_qualquer_formato():
+    s1 = _sw("10.0.0.2", {"aa-bb-cc-00-00-01": "0/1", "AABB.CC00.0002": "0/2"})
+    aps = [{"ip": "10.0.0.5", "mac": "AA:BB:CC:00:00:01"}, {"ip": "10.0.0.6", "mac": "aa:bb:cc:00:00:02"}]
+    assert set(ligacoes([s1], aps)) == {"10.0.0.5", "10.0.0.6"}
+
+
+def test_ligacoes_switch_nunca_no_proprio():
+    s1 = _sw("10.0.0.2", {_mac(2): "CPU", _mac(9): "0/1"}, mac=_mac(2), base_mac=_mac(9))
+    assert ligacoes([s1], [{"ip": "10.0.0.2", "mac": _mac(2)}]) == {}
+
+
+def test_ligacoes_sem_switch_gerenciavel_e_nao_muta():
+    aps = [{"ip": "10.0.0.5", "mac": _mac(1)}]
+    assert ligacoes([], aps) == {}
+    assert ligacoes([_sw("10.0.0.2", {_mac(1): "0/1"}, gerenciavel=False), _sw("10.0.0.3", {})], aps) == {}
+    sws = [_sw("10.0.0.2", {"aa-bb-cc-00-00-01": "0/1"})]
+    antes = copy.deepcopy((sws, aps))
+    ligacoes(sws, aps)
+    assert (sws, aps) == antes

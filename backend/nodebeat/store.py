@@ -138,6 +138,14 @@ async def marcar_gerenciavel(db, mk_id: str, ip: str, valor: bool) -> None:
     await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"gerenciavel": valor}})
 
 
+async def registrar_ligacoes(db, mk_id: str, ligacoes: dict[str, dict]) -> None:
+    """Grava (switch_ip, switch_porta) no aparelho; IP ausente mantém a última ligação conhecida
+    (a tabela MAC do switch esquece aparelho desligado) e IP sem doc não é criado."""
+    for ip, lig in ligacoes.items():
+        await db.inventario_ips.update_one(
+            {"mk_id": mk_id, "ip": ip}, {"$set": {"switch_ip": lig["switch_ip"], "switch_porta": lig["porta"]}})
+
+
 async def salvar_switch(db, mk_id: str, ip: str, doc: dict) -> None:
     """Mescla os campos no doc do switch: campo ausente mantém o valor anterior."""
     await db.switches.update_one({"mk_id": mk_id, "ip": ip}, {"$set": {"mk_id": mk_id, "ip": ip, **doc}},

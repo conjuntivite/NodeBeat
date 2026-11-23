@@ -257,6 +257,10 @@ async def _switches_mk(db, settings, mk_id: str, agora: datetime, sem, descobrir
                 log.warning("mk %s: switch: %s", mk_id, type(e).__name__)
 
     await asyncio.gather(*(um(a) for a in await _em_uso_no_tunel(db, mk_id, agora, switches.candidato)))
+    # switch com erro ainda tem o fdb anterior: velho, mas serve para a ligação
+    sws = await store.listar_switches(db, mk_id)
+    if any(s.get("gerenciavel") and s.get("fdb") for s in sws):
+        await store.registrar_ligacoes(db, mk_id, mapa.ligacoes(sws, await store.listar_ips(db, mk_id)))
 
 
 async def run_switches(db, r, settings: Settings, now: datetime, *,

@@ -110,9 +110,33 @@ async def esquecer_ip(db, mk_id: str, ip: str) -> bool:
     return (await db.inventario_ips.delete_one({"mk_id": mk_id, "ip": ip})).deleted_count > 0
 
 
+async def editar_aparelho(db, mk_id: str, ip: str, campos: dict) -> bool:
+    """Grava apelido/vigiar_manual/e_switch_manual; None limpa. False se o IP não existe."""
+    permitidos = {"apelido", "vigiar_manual", "e_switch_manual"}
+    sets = {k: v for k, v in campos.items() if k in permitidos and v is not None}
+    unsets = {k: "" for k, v in campos.items() if k in permitidos and v is None}
+    upd = ({"$set": sets} if sets else {}) | ({"$unset": unsets} if unsets else {})
+    if not upd:
+        return await db.inventario_ips.count_documents({"mk_id": mk_id, "ip": ip}) > 0
+    return (await db.inventario_ips.update_one({"mk_id": mk_id, "ip": ip}, upd)).matched_count > 0
+
+
+async def set_rotulo_porta(db, mk_id: str, porta: str, rotulo: str | None) -> None:
+    # coleção própria: salvar_inventario faz replace_one e apagaria rótulos guardados no inventário
+    if rotulo:
+        await db.mapa_rotulos.update_one({"mk_id": mk_id, "porta": porta}, {"$set": {"rotulo": rotulo}}, upsert=True)
+    else:
+        await db.mapa_rotulos.delete_one({"mk_id": mk_id, "porta": porta})
+
+
+async def rotulos_portas(db, mk_id: str) -> dict[str, str]:
+    return {d["porta"]: d["rotulo"] async for d in db.mapa_rotulos.find({"mk_id": mk_id})}
+
+
 async def apagar_inventario(db, mk_id: str) -> None:
     await db.inventario.delete_many({"mk_id": mk_id})
     await db.inventario_ips.delete_many({"mk_id": mk_id})
+    await db.mapa_rotulos.delete_many({"mk_id": mk_id})
 
 
 async def garantir_indices_eventos(db, dias: int) -> None:

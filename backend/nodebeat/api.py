@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from nodebeat import auth, crypto, eventos, history, inventario, painel, routeros, store, webhook, worker
+from nodebeat import auth, crypto, eventos, history, inventario, mapa, painel, routeros, store, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
@@ -50,6 +50,17 @@ class MkIn(BaseModel):
         if not ok:
             raise ValueError("faixa de IP inválida")
         return v
+
+
+class AparelhoIn(BaseModel):
+    apelido: str | None = Field(None, max_length=60)
+    vigiar: bool | None = None
+    e_switch: bool | None = None
+
+
+class RotuloPortaIn(BaseModel):
+    porta: str = Field(min_length=1, max_length=100)
+    rotulo: str | None = Field(None, max_length=40)
 
 
 class VigiadasIn(BaseModel):
@@ -382,6 +393,37 @@ def create_app(db, r, settings) -> FastAPI:
         await _achar(id)
         if not await store.esquecer_ip(db, id, ip):
             raise HTTPException(404, "IP não encontrado")
+        return Response(status_code=204)
+
+    @mks.get("/mks/{id}/mapa")
+    async def mapa_mk(id: str, q: str | None = Query(None, max_length=100), so_problema: bool = False) -> dict:
+        await _achar(id)
+        inv = await store.get_inventario(db, id) or {}
+        lido = inv.get("lido_em")
+        row = (await history.load_states(r)).get(id) or {}
+        no_ar = row.get("status") == "no_ar"
+        portas = mapa.montar_arvore(
+            await store.listar_ips(db, id), link=row.get("portas_link") or {},
+            rotulos=await store.rotulos_portas(db, id), estados=await history.load_aparelhos(r, id),
+            mk_no_ar=no_ar, redes_tunel=[x["rede"] for x in inv.get("redes", []) if x.get("tunel")],
+            busca=q, so_problema=so_problema, agora=datetime.now(UTC))
+        return {"lido_em": lido, "desatualizado": inventario.desatualizado(lido, datetime.now(UTC)),
+                "mk_no_ar": no_ar, "portas": portas}
+
+    @mks.put("/mks/{id}/mapa/aparelhos/{ip}", status_code=204)
+    async def editar_aparelho(id: str, ip: str, body: AparelhoIn) -> Response:
+        await _achar(id)
+        campos = {"apelido": body.apelido or None, "vigiar_manual": body.vigiar, "e_switch_manual": body.e_switch}
+        dados = {"apelido": "apelido", "vigiar_manual": "vigiar", "e_switch_manual": "e_switch"}
+        campos = {k: v for k, v in campos.items() if dados[k] in body.model_fields_set}
+        if not await store.editar_aparelho(db, id, ip, campos):
+            raise HTTPException(404, "Aparelho não encontrado")
+        return Response(status_code=204)
+
+    @mks.put("/mks/{id}/mapa/rotulo-porta", status_code=204)
+    async def rotulo_porta(id: str, body: RotuloPortaIn) -> Response:
+        await _achar(id)
+        await store.set_rotulo_porta(db, id, body.porta, body.rotulo or None)
         return Response(status_code=204)
 
     app.include_router(mks)

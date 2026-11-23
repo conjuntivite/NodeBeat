@@ -330,3 +330,208 @@ def test_ligacoes_sem_switch_gerenciavel_e_nao_muta():
     antes = copy.deepcopy((sws, aps))
     ligacoes(sws, aps)
     assert (sws, aps) == antes
+
+
+# --- árvore com switches gerenciáveis aninhados ---
+
+DICA = "gerenciável detectado: ative o SNMP nele"
+
+
+def _swdoc(ip, portas=(), erro=None, lido_em="2026-11-23T10:00:00", gerenciavel=True, up=True):
+    return {"ip": ip, "gerenciavel": gerenciavel, "portas": {n: {"up": up} for n in portas},
+            "fdb": {}, "erro": erro, "lido_em": lido_em}
+
+
+def _liga(ap, sw, porta):
+    return {**ap, "switch_ip": sw, "switch_porta": porta}
+
+
+S1, S2 = "10.0.0.2", "10.0.0.3"
+
+
+def _cenario():
+    """MK ether2 -> S1 -> 0/3 (facial), 0/7 (camera)."""
+    aps = [_ap(S1, "ether2", "2"), _liga(_ap("10.0.0.10", "ether2", "3"), S1, "0/3"),
+           _liga(_ap("10.0.0.11", "ether2", "4"), S1, "0/7")]
+    return aps, [_swdoc(S1, ["0/3", "0/7"])]
+
+
+def _aparelho(portas, ip):
+    for p in portas:
+        for a in p["aparelhos"]:
+            if a["ip"] == ip:
+                return a
+            if (r := _aparelho(a.get("portas", []), ip)) is not None:
+                return r
+    return None
+
+
+def test_arvore_switch_aninha_aparelhos_nas_portas():
+    aps, sws = _cenario()
+    arv = _arv(aps, switches=sws)
+    assert [p["nome"] for p in arv] == ["ether2"]
+    s1 = arv[0]["aparelhos"]
+    assert [a["ip"] for a in s1] == [S1]
+    s1 = s1[0]
+    assert s1["gerenciavel"] is True and s1["snmp_erro"] is False and s1["switch_lido_em"] == "2026-11-23T10:00:00"
+    assert "dica" not in s1
+    assert [(p["nome"], [a["ip"] for a in p["aparelhos"]]) for p in s1["portas"]] == [
+        ("0/3", ["10.0.0.10"]), ("0/7", ["10.0.0.11"])]
+    p = s1["portas"][0]
+    assert set(p) == {"nome", "rotulo", "link", "vigiados", "no_ar", "problema", "causa", "aparelhos"}
+    assert p["rotulo"] == "" and p["link"] == "up"
+
+
+def test_arvore_switch_em_cascata():
+    aps = [_ap(S1, "ether2", "2"), _liga(_ap(S2, "ether2", "3"), S1, "0/48"),
+           _liga(_ap("10.0.0.20", "ether2", "4"), S2, "0/5")]
+    arv = _arv(aps, switches=[_swdoc(S1, ["0/48"]), _swdoc(S2, ["0/5"])])
+    s1 = arv[0]["aparelhos"][0]
+    s2 = s1["portas"][0]["aparelhos"][0]
+    assert s1["ip"] == S1 and s2["ip"] == S2 and s2["gerenciavel"] is True
+    assert s2["portas"][0]["nome"] == "0/5" and s2["portas"][0]["aparelhos"][0]["ip"] == "10.0.0.20"
+
+
+def test_arvore_ligacao_invalida_fica_na_porta_da_mk():
+    aps = [_ap(S1, "ether2", "2"), _ap(S2, "ether2", "3"),
+           _liga(_ap("10.0.0.10", "ether4", "4"), S1, "0/3"),            # S1 não gerenciável
+           _liga(_ap("10.0.0.11", "ether4", "5"), S2, "0/3"),            # S2 sem doc
+           _liga(_ap("10.0.0.12", "ether4", "6"), "10.0.0.99", "0/3"),   # switch fora da lista
+           _liga(_ap("10.0.0.13", "ether4", "7"), S1, None)]             # sem porta
+    sws = [_swdoc(S1, ["0/3"], gerenciavel=False), _swdoc("10.0.0.99", ["0/3"])]
+    arv = _arv(aps, switches=sws)
+    assert sorted(a["ip"] for a in _porta(arv, "ether4")["aparelhos"]) == [
+        "10.0.0.10", "10.0.0.11", "10.0.0.12", "10.0.0.13"]
+    assert all("portas" not in a for a in _porta(arv, "ether2")["aparelhos"])
+
+
+def test_arvore_ciclo_corta_o_maior_ip():
+    aps = [_liga(_ap(S1, "ether2", "2"), S2, "0/1"), _liga(_ap(S2, "ether3", "3"), S1, "0/2")]
+    arv = _arv(aps, switches=[_swdoc(S1, ["0/2"]), _swdoc(S2, ["0/1"])])
+    # S2 (maior IP) perde a ligação: fica em ether3 e S1 vai para baixo dele
+    assert [p["nome"] for p in arv] == ["ether3"]
+    s2 = arv[0]["aparelhos"][0]
+    assert s2["ip"] == S2 and s2["portas"][0]["nome"] == "0/1" and s2["portas"][0]["aparelhos"][0]["ip"] == S1
+    # ligação a si mesmo
+    arv = _arv([_liga(_ap(S1, "ether2", "2"), S1, "0/1")], switches=[_swdoc(S1, ["0/1"])])
+    assert arv[0]["nome"] == "ether2" and arv[0]["aparelhos"][0]["portas"] == []
+
+
+def test_arvore_switch_offline_filhos_desconhecidos_sem_causa():
+    aps = [_ap(S1, "ether2", "2"), _liga(_ap(S2, "ether2", "3"), S1, "0/1"),
+           _liga(_ap("10.0.0.20", "ether2", "4"), S2, "0/5"),
+           _liga(_ap("10.0.0.21", "ether2", "5"), S2, "0/5"),
+           _liga({"ip": "10.0.0.22", "mac": "00:00:5E:00:00:09", "fabricante": "Outro", "porta": "ether2"},
+                 S1, "0/2")]
+    off = _on(False, 2)
+    est = {S1: off, S2: _on(), "10.0.0.20": off, "10.0.0.21": off}
+    sws = [_swdoc(S1, ["0/1", "0/2"], up=False), _swdoc(S2, ["0/5"], up=False)]
+    arv = _arv(aps, est, switches=sws)
+    p = arv[0]
+    assert p["problema"] is True and p["causa"] is None
+    assert p["vigiados"] == 1 and p["no_ar"] == 0
+    s1 = p["aparelhos"][0]
+    assert s1["estado"] == "offline"
+    for ip in (S2, "10.0.0.20", "10.0.0.21"):
+        assert _aparelho(arv, ip)["estado"] == "desconhecido"
+    assert _aparelho(arv, "10.0.0.22")["estado"] == "nao_vigiado"
+    s2 = _aparelho(arv, S2)
+    for q in s1["portas"] + s2["portas"]:
+        assert q["causa"] is None and q["problema"] is False
+
+
+def test_arvore_porta_do_switch_caida():
+    aps, sws = _cenario()
+    sws[0]["portas"]["0/7"]["up"] = False
+    arv = _arv(aps, {"10.0.0.11": _on()}, switches=sws)
+    q = _porta(arv[0]["aparelhos"][0]["portas"], "0/7")
+    assert q["causa"] == "link caído" and q["link"] == "down" and q["problema"] is True
+    assert arv[0]["problema"] is True and arv[0]["causa"] is None
+    # porta com problema vem primeiro
+    assert [x["nome"] for x in arv[0]["aparelhos"][0]["portas"]] == ["0/7", "0/3"]
+    # porta desconhecida pelo switch
+    sws[0]["portas"] = {}
+    q = _porta(_arv(aps, switches=sws)[0]["aparelhos"][0]["portas"], "0/7")
+    assert q["link"] == "desconhecido" and q["causa"] is None
+
+
+def test_arvore_sem_switches_igual_ao_anterior():
+    aps = [_ap("10.0.0.1"), _ap("10.0.0.2"), _ap("10.0.0.3", "ether3"), _ap("10.0.0.4", "ether3"),
+           _ap("10.0.0.9", e_switch=True), _liga(_ap("10.0.0.5", "ether4"), "10.0.0.9", "0/1")]
+    off = _on(False, 2)
+    est = {"10.0.0.1": _on(), "10.0.0.2": off, "10.0.0.3": off, "10.0.0.4": off}
+    for kw in ({}, {"so_problema": True}, {"busca": "10.0.0.4"}):
+        base = _arv(aps, est, **kw)
+        assert _arv(aps, est, switches=None, **kw) == base
+        assert _arv(aps, est, switches=[], **kw) == base
+    assert "dica" not in _aparelho(_arv(aps, est), "10.0.0.9")
+
+
+def test_arvore_switch_candidato_sem_snmp_tem_dica():
+    aps, sws = _cenario()
+    aps += [_ap("10.0.0.30", "ether5", "8", e_switch=True), _ap("10.0.0.31", "ether5", "9", e_switch_manual=True)]
+    arv = _arv(aps, switches=sws)
+    for ip in ("10.0.0.30", "10.0.0.31"):
+        a = _aparelho(arv, ip)
+        assert a["gerenciavel"] is False and a["dica"] == DICA and "portas" not in a
+    a = _aparelho(arv, "10.0.0.10")
+    assert "dica" not in a and "gerenciavel" not in a
+
+
+def test_arvore_busca_e_so_problema_no_aninhado():
+    aps, sws = _cenario()
+    aps.append(_ap("10.0.0.40", "ether5", "8"))
+    arv = _arv(aps, switches=sws, busca="10.0.0.11")
+    assert [p["nome"] for p in arv] == ["ether2"]
+    s1 = arv[0]["aparelhos"]
+    assert [a["ip"] for a in s1] == [S1]
+    assert [(p["nome"], [a["ip"] for a in p["aparelhos"]]) for p in s1[0]["portas"]] == [("0/7", ["10.0.0.11"])]
+    est = {S1: _on(), "10.0.0.10": _on(), "10.0.0.11": _on(False, 2), "10.0.0.40": _on()}
+    arv = _arv(aps, est, switches=sws, so_problema=True)
+    assert [p["nome"] for p in arv] == ["ether2"]
+    s1 = arv[0]["aparelhos"]
+    assert [a["ip"] for a in s1] == [S1]
+    assert [(p["nome"], [a["ip"] for a in p["aparelhos"]]) for p in s1[0]["portas"]] == [("0/7", ["10.0.0.11"])]
+
+
+def test_arvore_switch_lista_so_portas_com_aparelhos():
+    aps, _ = _cenario()
+    arv = _arv(aps, switches=[_swdoc(S1, [f"0/{i}" for i in range(1, 49)], erro="timeout", lido_em=None)])
+    s1 = arv[0]["aparelhos"][0]
+    assert [p["nome"] for p in s1["portas"]] == ["0/3", "0/7"]
+    assert s1["snmp_erro"] is True and s1["switch_lido_em"] is None
+
+
+def test_arvore_aparelho_offline_fica_na_ligacao_gravada():
+    aps, sws = _cenario()
+    sws[0]["fdb"] = {}  # nenhum MAC aprendido agora: vale a ligação gravada
+    est = {S1: _on(), "10.0.0.10": _on(False, 2)}
+    arv = _arv(aps, est, switches=sws)
+    portas_s1 = arv[0]["aparelhos"][0]["portas"]
+    assert _aparelho(portas_s1, "10.0.0.10")["estado"] == "offline"
+    assert _porta(portas_s1, "0/3")["problema"] is True
+
+
+def test_arvore_contadores_da_subarvore_e_todos_sem_resposta():
+    aps, sws = _cenario()
+    off = _on(False, 2)
+    est = {S1: _on(), "10.0.0.10": off, "10.0.0.11": _on()}
+    p = _arv(aps, est, switches=sws)[0]
+    assert p["vigiados"] == 3 and p["no_ar"] == 2 and p["problema"] is True and p["causa"] is None
+    q = _porta(p["aparelhos"][0]["portas"], "0/3")
+    assert q["vigiados"] == 1 and q["no_ar"] == 0 and q["causa"] is None
+    # S1 no ar e um offline dentro dele: não são "todos" -> sem causa
+    aps2 = [aps[0], aps[1]]
+    p = _arv(aps2, {S1: _on(), "10.0.0.10": off}, switches=sws)[0]
+    assert p["causa"] is None
+    # S1 offline deixa os filhos desconhecidos; com outro offline direto na porta -> 2 vigiados offline
+    p = _arv([aps[0], _ap("10.0.0.50", "ether2", "9")], {S1: off, "10.0.0.50": off}, switches=sws)[0]
+    assert p["causa"] == "todos sem resposta"
+
+
+def test_arvore_switches_nao_muta_entradas():
+    aps, sws = _cenario()
+    est = {S1: _on(False, 2), "10.0.0.10": _on()}
+    antes = copy.deepcopy((aps, sws, est))
+    _arv(aps, est, switches=sws, so_problema=True, busca="10")
+    assert (aps, sws, est) == antes

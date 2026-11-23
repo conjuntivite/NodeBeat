@@ -178,7 +178,7 @@ def _nome_porta(ap: dict) -> str:
 
 
 def _causa(nome: str, aps: list[dict], link: dict[str, bool], mk_no_ar: bool) -> str | None:
-    # MK fora do ar: dados de link/ping são velhos, então não há causa.
+    # MK (ou switch acima) fora do ar: dados de link/ping são velhos, então não há causa.
     if not mk_no_ar:
         return None
     if link.get(nome) is False:
@@ -193,42 +193,143 @@ def _casa(a: dict, busca: str) -> bool:
     return any(busca in str(a[c] or "").lower() for c in ("ip", "mac", "nome", "fabricante"))
 
 
+def _todos(aps: list[dict]):
+    """Os aparelhos e tudo o que está abaixo dos switches gerenciáveis entre eles."""
+    for a in aps:
+        yield a
+        for p in a.get("portas", []):
+            yield from _todos(p["aparelhos"])
+
+
 def _porta_saida(nome: str, aps: list[dict], *, link, rotulos, mk_no_ar) -> dict:
-    causa = _causa(nome, aps, link, mk_no_ar)
-    aps = sorted(aps, key=lambda a: (not a["e_switch"], ip_address(a["ip"])))
+    todos = list(_todos(aps))
+    causa = _causa(nome, todos, link, mk_no_ar)
+    aps = sorted(aps, key=lambda a: (not (a["e_switch"] or a.get("gerenciavel")), ip_address(a["ip"])))
     return {
         "nome": nome,
         "rotulo": rotulos.get(nome, "") if not all(a["porta_desconhecida"] for a in aps) else "",
         "link": "desconhecido" if nome not in link else ("up" if link[nome] else "down"),
-        "vigiados": sum(a["estado"] in ("no_ar", "offline") for a in aps),
-        "no_ar": sum(a["estado"] == "no_ar" for a in aps),
-        "problema": causa is not None or any(a["estado"] == "offline" for a in aps),
+        "vigiados": sum(a["estado"] in ("no_ar", "offline") for a in todos),
+        "no_ar": sum(a["estado"] == "no_ar" for a in todos),
+        "problema": causa is not None or any(a["estado"] == "offline" for a in aps)
+        or any(p["problema"] for a in aps for p in a.get("portas", [])),
         "causa": causa, "aparelhos": aps}
+
+
+def _ordenar(portas: list[dict]) -> list[dict]:
+    return sorted(portas, key=lambda p: (not p["problema"], p["nome"].lower()))
+
+
+def _podar(portas: list[dict], fica, causa_mantem: bool = False) -> list[dict]:
+    """Mantém o aparelho que `fica` e o switch com algo mantido abaixo; porta vazia sai.
+    `causa_mantem`: porta com causa fica com todos os aparelhos."""
+    for p in portas:
+        if causa_mantem and p["causa"]:
+            continue
+        aps = []
+        for a in p["aparelhos"]:
+            if "portas" in a:
+                a["portas"] = _podar(a["portas"], fica, causa_mantem)
+            if fica(a) or a.get("portas"):
+                aps.append(a)
+        p["aparelhos"] = aps
+    return [p for p in portas if p["aparelhos"]]
+
+
+def _cortar_ciclos(pai: dict[str, str]) -> set[str]:
+    """IPs que perdem a ligação para não haver ciclo: o de maior IP (texto) de cada ciclo."""
+    pai, cortados = dict(pai), set()
+    for inicio in sorted(pai):  # cada nó tem um pai só: andar para cima acha os ciclos
+        caminho, n = [], inicio
+        while n in pai and n not in caminho:
+            caminho.append(n)
+            n = pai[n]
+        if n in caminho:
+            c = max(caminho[caminho.index(n):])
+            del pai[c]
+            cortados.add(c)
+    return cortados
+
+
+DICA_SNMP = "gerenciável detectado: ative o SNMP nele"
+
+
+def _arvore_switches(saidas: list[tuple[dict, dict]], switches: list[dict], mk_no_ar: bool):
+    """Encaixa cada aparelho no switch gerenciável gravado nele (switch_ip/switch_porta) e monta as
+    portas dos switches; devolve os (aparelho, saída) que ficam direto nas portas da MK.
+
+    Ligação só vale para switch gerenciável que também é aparelho da lista; ciclo perde a ligação
+    do switch de maior IP. Abaixo de switch offline tudo fica desconhecido e sem causa."""
+    ger = {s["ip"]: s for s in switches if s.get("gerenciavel")}
+    ips = {ap["ip"] for ap, _ in saidas}
+    pai = {ap["ip"]: (ap["switch_ip"], str(ap["switch_porta"])) for ap, _ in saidas
+           if ap.get("switch_ip") in ger and ap["switch_ip"] in ips and ap.get("switch_porta") not in (None, "")}
+    for ip in _cortar_ciclos({k: v[0] for k, v in pai.items()}):
+        del pai[ip]
+    offline = {ap["ip"] for ap, a in saidas if a["estado"] == "offline"}
+
+    def mudo(ip):  # algum switch acima está offline
+        while ip in pai:
+            ip = pai[ip][0]
+            if ip in offline:
+                return True
+        return False
+
+    filhos: dict[str, dict[str, list[dict]]] = {}
+    sw_saida, raiz = {}, []
+    for ap, a in saidas:
+        if a["estado"] in ("no_ar", "offline") and mudo(ap["ip"]):
+            a["estado"] = "desconhecido"
+        if ap["ip"] in ger:
+            s = ger[ap["ip"]]
+            a.update(gerenciavel=True, snmp_erro=bool(s.get("erro")), switch_lido_em=s.get("lido_em"))
+            sw_saida[ap["ip"]] = a
+        elif a["e_switch"]:
+            a.update(gerenciavel=False, dica=DICA_SNMP)
+        if ap["ip"] in pai:
+            sw, porta = pai[ap["ip"]]
+            filhos.setdefault(sw, {}).setdefault(porta, []).append(a)
+        else:
+            raiz.append((ap, a))
+
+    def preencher(ip):  # das folhas para cima: contadores da porta precisam das portas dos filhos
+        link = {n: v["up"] for n, v in (ger[ip].get("portas") or {}).items() if isinstance(v.get("up"), bool)}
+        ativo = mk_no_ar and ip not in offline and not mudo(ip)
+        portas = []
+        for nome, aps in filhos.get(ip, {}).items():
+            for a in aps:
+                if a["ip"] in sw_saida:
+                    preencher(a["ip"])
+            portas.append(_porta_saida(nome, aps, link=link, rotulos={}, mk_no_ar=ativo))
+        sw_saida[ip]["portas"] = _ordenar(portas)
+
+    for ip in sw_saida:
+        if ip not in pai:
+            preencher(ip)
+    return raiz
 
 
 def montar_arvore(aparelhos: list[dict], *, link: dict[str, bool], rotulos: dict[str, str],
                   estados: dict[str, dict], mk_no_ar: bool, redes_tunel: list[str],
                   busca: str | None = None, so_problema: bool = False,
-                  agora: datetime | None = None) -> list[dict]:
-    """Árvore porta -> aparelhos de uma MK. Contadores e causa valem para a porta inteira;
-    `busca` e `so_problema` só filtram o que é listado."""
+                  agora: datetime | None = None, switches: list[dict] | None = None) -> list[dict]:
+    """Árvore porta -> aparelhos de uma MK; com `switches`, porta -> switch -> porta -> aparelhos.
+    Contadores e causa valem para a sub-árvore inteira da porta; `busca` e `so_problema` só
+    filtram o que é listado (mantendo o caminho até o que fica)."""
+    saidas = [(ap, _aparelho_saida(ap, estados, mk_no_ar, redes_tunel, agora)) for ap in aparelhos]
+    if switches:
+        saidas = _arvore_switches(saidas, switches, mk_no_ar)
     grupos: dict[str, list[dict]] = {}
-    for ap in aparelhos:
-        grupos.setdefault(_nome_porta(ap), []).append(
-            _aparelho_saida(ap, estados, mk_no_ar, redes_tunel, agora))
+    for ap, a in saidas:
+        grupos.setdefault(_nome_porta(ap), []).append(a)
     portas = [_porta_saida(n, aps, link=link, rotulos=rotulos, mk_no_ar=mk_no_ar)
               for n, aps in grupos.items()]
     if so_problema:
-        portas = [p for p in portas if p["problema"]]
-        for p in portas:
-            if not p["causa"]:
-                p["aparelhos"] = [a for a in p["aparelhos"] if a["estado"] == "offline"]
+        portas = _podar(portas, lambda a: a["estado"] == "offline", causa_mantem=True)
     if busca:
         b = busca.strip().lower()
-        for p in portas:
-            p["aparelhos"] = [a for a in p["aparelhos"] if _casa(a, b)]
-        portas = [p for p in portas if p["aparelhos"]]
-    return sorted(portas, key=lambda p: (not p["problema"], p["nome"].lower()))
+        portas = _podar(portas, lambda a: _casa(a, b))
+    return _ordenar(portas)
 
 
 def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
@@ -256,11 +357,6 @@ def ligacoes(switches: list[dict], aparelhos: list[dict]) -> dict[str, dict]:
         if cands:
             _, sw, porta = min(cands)
             out[ap["ip"]] = {"switch_ip": sw, "porta": porta}
-    for inicio in sorted(out):  # cada nó tem um pai só: andar para cima acha os ciclos
-        caminho, n = [], inicio
-        while n in out and n not in caminho:
-            caminho.append(n)
-            n = out[n]["switch_ip"]
-        if n in caminho:
-            del out[max(caminho[caminho.index(n):])]
+    for ip in _cortar_ciclos({k: v["switch_ip"] for k, v in out.items()}):
+        del out[ip]
     return out

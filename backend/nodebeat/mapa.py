@@ -106,11 +106,12 @@ def fatos_por_ip(raw: dict, ips: list[dict]) -> dict[str, dict]:
         if p.get("bridge"):
             bridges.add(p["bridge"])
     iface = {a.get("address"): a.get("interface") for a in raw.get("arp") or []}
-    viz = {norm_mac(_txt(n.get("mac-address"))): n for n in raw.get("neighbor") or []}
+    viz = {m: n for n in raw.get("neighbor") or [] if (m := norm_mac(_txt(n.get("mac-address"))))}
     out = {}
     for i in ips:
         porta, bridge = porta_do_aparelho(i.get("mac"), iface.get(i["ip"]), host, bridges)
-        n = viz.get(norm_mac(i.get("mac"))) or {}
+        m = norm_mac(i.get("mac"))
+        n = (viz.get(m) if m else None) or {}
         out[i["ip"]] = {
             "porta": porta, "bridge": bridge, "fabricante": fabricante(i.get("mac")),
             "identidade": _txt(n.get("identity")), "plataforma": _txt(n.get("platform")),

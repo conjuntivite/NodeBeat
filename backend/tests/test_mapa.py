@@ -74,3 +74,17 @@ def test_fatos_por_ip_sem_vizinho():
     raw["neighbor"] = [{"mac-address": "44:19:B6:00:00:01"}]
     f = fatos_por_ip(raw, IPS)["10.0.0.5"]
     assert f["identidade"] is None and f["e_switch"] is False
+
+
+def test_fatos_por_ip_sem_mac_nao_pega_vizinho_sem_mac():
+    from nodebeat.mapa import fatos_por_ip
+    raw = _raw()
+    raw["neighbor"] = [{"identity": "X", "platform": "p", "system-caps": "bridge"}]
+    f = fatos_por_ip(raw, [{"ip": "10.0.0.9", "mac": None}])["10.0.0.9"]
+    assert f["identidade"] is None and f["e_switch"] is False
+
+
+def test_fatos_por_ip_raw_sem_chaves_novas():
+    from nodebeat.mapa import fatos_por_ip
+    f = fatos_por_ip({"arp": []}, IPS)["10.0.0.5"]
+    assert f["porta"] is None and f["identidade"] is None

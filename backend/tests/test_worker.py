@@ -331,3 +331,19 @@ async def test_atualizar_mk_grava_porta(db):
     assert await atualizar_mk(db, SET, mk, T0, fetch=lambda *a, **k: raw) is None
     (ip,) = await store.listar_ips(db, mk["id"])
     assert ip["porta"] == "ether3" and ip["bridge"] == "bridge1"
+
+
+async def test_atualizar_mk_fatos_malformados_nao_quebram_inventario(db):
+    mk = await mk_com_id(db)
+    raw = raw_com(["192.0.2.5"])
+    raw["neighbor"] = ["lixo"]
+    assert await atualizar_mk(db, SET, mk, T0, fetch=lambda *a, **k: raw) is None
+    assert (await store.get_inventario(db, mk["id"]))["erro"] is None
+    (ip,) = await store.listar_ips(db, mk["id"])
+    assert ip["ip"] == "192.0.2.5" and "porta" not in ip and "fabricante" not in ip
+
+
+async def test_registrar_ips_sem_fatos(db):
+    await store.registrar_ips(db, "m1", [{"ip": "10.0.0.1", "fixo": False}], T0)
+    (d,) = await store.listar_ips(db, "m1")
+    assert "porta" not in d

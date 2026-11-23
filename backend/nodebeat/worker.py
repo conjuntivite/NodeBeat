@@ -118,7 +118,11 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
             doc = inventario.montar(raw)
             vistos = inventario.ips_vistos(
                 raw.get("lease", []), raw.get("arp", []), [r["rede"] for r in doc["redes"]])
-            fatos = mapa.fatos_por_ip(raw, vistos)
+            try:
+                fatos = mapa.fatos_por_ip(raw, vistos)
+            except Exception as e:  # o mapa não pode impedir o inventário
+                log.warning("mk %s: fatos do mapa falharam: %s", mk["id"], type(e).__name__)
+                fatos = {}
         except routeros.RouterOsError as e:
             erro = e.detalhe
         except Exception as e:

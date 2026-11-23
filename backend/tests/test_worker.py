@@ -294,3 +294,20 @@ async def test_reinicio_solicitado_nao_alerta_e_expira(db, r):
     await r.delete(f"reinicio:{id}")  # janela expirou e não voltou: alerta normal
     await ciclos(db, r, eng, range(270, 391, 30), fetch=fetch_fail)
     assert [json.loads(x)["tipo"] for x in await r.lrange(QUEUE, 0, -1)] == ["offline"]
+
+
+def test_load_engine_usa_janela_de_retorno_atual():
+    from nodebeat.worker import RECOVER_S
+    assert load_engine(None).recover_s == RECOVER_S
+    assert load_engine(json.dumps(AlertEngine().dump())).recover_s == RECOVER_S  # estado antigo (60 s)
+
+
+def test_oscilacao_dentro_da_janela_gera_uma_queda_so():
+    from nodebeat.rules import MkRef, MkState, Observation
+    from nodebeat.worker import RECOVER_S
+    e, m = AlertEngine(recover_s=RECOVER_S), MkRef("1", "Alfa")
+    off, ok = Observation(MkState.OFFLINE, "x"), Observation(MkState.NO_AR)
+    # cai 3 min, volta 2 min, cai 3 min, volta 2 min, cai de novo... (flapping)
+    seq = [off] * 7 + [ok] * 4 + [off] * 6 + [ok] * 4 + [off] * 6
+    evs = [ev for i, o in enumerate(seq) for ev in e.observe_mk(m, o, T0 + timedelta(seconds=30 * i))]
+    assert [ev.evento for ev in evs] == ["queda"]

@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 PEDIDO_INVENTARIO = "inventario:pedido"
 REINICIO = "reinicio:"  # + id da MK; TTL = janela sem alerta após reinício pelo painel
 JANELA_REINICIO = 300
+RECOVER_S = 600  # MK oscilando (cai/volta) dentro dessa janela é UM incidente = um ticket só
 # pool próprio: o inventário (até 10 s por MK offline) não pode ocupar as threads do ciclo de 30 s
 _POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="inventario")
 
@@ -158,12 +159,14 @@ def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido
 
 
 def load_engine(saved: str | None) -> AlertEngine:
+    engine = AlertEngine(recover_s=RECOVER_S)
     if saved:
         try:
-            return AlertEngine.load(json.loads(saved))
+            engine = AlertEngine.load(json.loads(saved))
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             log.warning("estado do motor ilegível, começando vazio: %s", type(e).__name__)
-    return AlertEngine()
+    engine.recover_s = RECOVER_S  # o estado salvo no Redis não pode manter o valor antigo
+    return engine
 
 
 async def main() -> None:

@@ -1,0 +1,127 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:nodebeat/api/client.dart';
+import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/widgets/mapa.dart';
+
+http.Response _json(Object o, [int code = 200]) =>
+    http.Response(jsonEncode(o), code, headers: {'content-type': 'application/json; charset=utf-8'});
+
+Map<String, dynamic> _ap(String ip, String estado, {String? nome, String? apelido, String? desde}) => {
+      'ip': ip, 'mac': 'AA:BB:CC:00:00:01', 'fabricante': 'Intelbras', 'nome': nome, 'apelido': apelido,
+      'vigiado': true, 'e_switch': false, 'estado': estado, 'desde': desde, 'ultimo_visto': null,
+      'porta_desconhecida': false,
+    };
+
+final _mapa = {
+  'lido_em': '2026-01-01T10:00:00+00:00', 'desatualizado': false, 'mk_no_ar': true,
+  'portas': [
+    {
+      'nome': 'ether3', 'rotulo': 'Bloco A', 'link': 'down', 'vigiados': 2, 'no_ar': 0, 'problema': true,
+      'causa': 'ether3 · link caído',
+      'aparelhos': [
+        _ap('10.0.0.5', 'offline', nome: 'camera1', desde: '2026-01-01T00:00:00+00:00'),
+        _ap('10.0.0.6', 'desconhecido', apelido: 'DVR'),
+      ],
+    },
+    {
+      'nome': 'ether4', 'rotulo': null, 'link': 'up', 'vigiados': 1, 'no_ar': 1, 'problema': false, 'causa': null,
+      'aparelhos': [_ap('10.0.0.9', 'no_ar', nome: 'saudavel9')],
+    },
+  ],
+};
+
+Future<List<http.Request>> _show(WidgetTester t,
+    {Brightness b = Brightness.light, Map<String, dynamic>? mapa, double largura = 400}) async {
+  t.view.physicalSize = Size(largura, 1400);
+  t.view.devicePixelRatio = 1;
+  addTearDown(t.view.reset);
+  final reqs = <http.Request>[];
+  final api = ApiClient(
+    client: MockClient((req) async {
+      reqs.add(req);
+      if (req.method == 'PUT') return http.Response('', 204);
+      return req.url.path == '/api/mks/x/mapa' ? _json(mapa ?? _mapa) : http.Response('', 404);
+    }),
+  );
+  await t.pumpWidget(MaterialApp(theme: tradeTheme(b), home: Scaffold(body: SingleChildScrollView(child: MapaRedeCard(api: api, id: 'x')))));
+  await t.pump();
+  await t.pump();
+  return reqs;
+}
+
+void main() {
+  for (final b in [Brightness.light, Brightness.dark]) {
+    testWidgets('porta com problema aberta, estados e sadia recolhida ($b)', (t) async {
+      await _show(t, b: b);
+      expect(find.textContaining('link caído'), findsWidgets);
+      expect(find.text('ether3 · link caído'), findsOneWidget);
+      expect(find.text('OFFLINE'), findsOneWidget);
+      expect(find.text('Sem informação'), findsOneWidget);
+      expect(find.textContaining('visto no ar há'), findsOneWidget);
+      expect(find.text('10.0.0.9'), findsNothing); // ether4 sadia: recolhida
+      expect(find.text('1/1 no ar'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.tap(find.text('ether4'));
+      await t.pump();
+      expect(find.text('10.0.0.9'), findsOneWidget);
+      expect(find.text('No ar'), findsOneWidget);
+    });
+  }
+
+  testWidgets('busca chama o endpoint com q=', (t) async {
+    final reqs = await _show(t);
+    await t.enterText(find.byType(TextField), 'cam');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump();
+    expect(reqs.last.url.query, 'q=cam');
+  });
+
+  testWidgets('só com problema manda so_problema=true', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.byType(Switch));
+    await t.pump();
+    expect(reqs.last.url.query, 'so_problema=true');
+  });
+
+  testWidgets('editar apelido envia PUT com o corpo certo', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.text('10.0.0.5'));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField).last, 'Câmera pátio');
+    await t.tap(find.text('Salvar'));
+    await t.pumpAndSettle();
+    final put = reqs.firstWhere((r) => r.method == 'PUT');
+    expect(put.url.path, '/api/mks/x/mapa/aparelhos/10.0.0.5');
+    expect(jsonDecode(put.body), {'apelido': 'Câmera pátio', 'vigiar': true});
+  });
+
+  testWidgets('rótulo da porta envia PUT', (t) async {
+    final reqs = await _show(t);
+    await t.tap(find.text('Bloco A'));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField).last, 'Bloco B');
+    await t.tap(find.text('Salvar'));
+    await t.pumpAndSettle();
+    final put = reqs.firstWhere((r) => r.method == 'PUT');
+    expect(put.url.path, '/api/mks/x/mapa/rotulo-porta');
+    expect(jsonDecode(put.body), {'porta': 'ether3', 'rotulo': 'Bloco B'});
+  });
+
+  testWidgets('avisos de MK fora do ar e desatualizado', (t) async {
+    await _show(t, mapa: {'lido_em': null, 'desatualizado': true, 'mk_no_ar': false, 'portas': []});
+    expect(find.text('MK fora do ar: estado dos aparelhos desconhecido'), findsOneWidget);
+    expect(find.text('leitura desatualizada'), findsOneWidget);
+    expect(find.text('Nenhum aparelho mapeado.'), findsOneWidget);
+  });
+
+  testWidgets('JSON vazio não quebra', (t) async {
+    await _show(t, mapa: {});
+    expect(t.takeException(), isNull);
+    expect(find.text('Nenhum aparelho mapeado.'), findsOneWidget);
+  });
+}

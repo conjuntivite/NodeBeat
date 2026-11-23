@@ -22,7 +22,7 @@ Future<void> _show(WidgetTester t,
     String ipPublico = '203.0.113.9',
     int statusCode = 200,
     List<Map<String, dynamic>> hist = const []}) async {
-  t.view.physicalSize = const Size(1000, 1400);
+  t.view.physicalSize = const Size(1000, 2000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final mock = MockClient((req) async {

@@ -10,6 +10,7 @@ import '../widgets/common.dart';
 import '../widgets/heartbeat.dart';
 import '../widgets/eventos.dart';
 import '../widgets/inventario.dart';
+import '../widgets/mapa.dart';
 
 class MkDetailScreen extends StatefulWidget {
   const MkDetailScreen({super.key, required this.api, required this.id, this.chooseInterfaces = false});
@@ -217,6 +218,8 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               _header(context, t, mk),
               SizedBox(height: t.space4),
               _interfaces(context, t, mk),
+              SizedBox(height: t.space4),
+              MapaRedeCard(key: ValueKey('m$_inv'), api: widget.api, id: widget.id),
               SizedBox(height: t.space4),
               PortasCard(key: ValueKey('p$_inv'), api: widget.api, id: widget.id),
               SizedBox(height: t.space4),

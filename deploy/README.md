@@ -78,6 +78,22 @@ docker compose logs syslog
 docker compose exec mongo mongosh ... db.eventos.countDocuments()
 ```
 
+## Mapa de rede
+
+No detalhe da MK, a tela mostra a árvore MK → porta → aparelhos, com online/offline por aparelho. Variável: `NODEBEAT_MAPA_S` (padrão 60) = intervalo, em segundos, do ping dos aparelhos (já presente em `deploy/compose.yml` e `deploy/.env.example`).
+
+- Offline só depois de 2 ciclos sem resposta (~2 min).
+- Só são pingados os aparelhos "vigiados": fabricante de equipamento (Hikvision, Dahua, Intelbras, Control iD, Haiz) ou lease fixa. Um clique por aparelho inverte a marcação.
+- Só são pingadas as redes que vão pelo túnel IPsec.
+- Se a MK está fora do ar, os aparelhos ficam "sem informação" (cinza), nunca offline. Aparelho offline continua sob a última porta onde foi visto.
+- Rótulo de porta e apelido do aparelho são opcionais.
+
+Limites:
+
+- Switch burro (não gerenciável) não aparece; seus aparelhos ficam agrupados na porta da MK.
+- A tabela de fabricantes (OUI) é parcial. A Haiz ainda não tem OUI e aparece como "Outro" até ser adicionada; aparelhos Haiz só são vigiados com lease fixa ou marcados à mão.
+- Sem alerta, ticket ou webhook por aparelho: só tela.
+
 ## 4. Checklist de verificação (manual)
 
 - [ ] `docker compose ... ps`: os 5 serviços `running`.

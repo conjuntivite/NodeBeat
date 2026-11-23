@@ -311,3 +311,23 @@ def test_oscilacao_dentro_da_janela_gera_uma_queda_so():
     seq = [off] * 7 + [ok] * 4 + [off] * 6 + [ok] * 4 + [off] * 6
     evs = [ev for i, o in enumerate(seq) for ev in e.observe_mk(m, o, T0 + timedelta(seconds=30 * i))]
     assert [ev.evento for ev in evs] == ["queda"]
+
+
+async def test_registrar_ips_nao_apaga_porta(db):
+    ip = {"ip": "10.0.0.5", "mac": None, "host_name": None, "fixo": False}
+    fato = {"porta": "ether2", "bridge": "bridge1", "fabricante": "Outro", "identidade": None,
+            "plataforma": None, "e_switch": False}
+    await store.registrar_ips(db, "m1", [ip], T0, {"10.0.0.5": fato})
+    await store.registrar_ips(db, "m1", [ip], T0 + timedelta(hours=1), {"10.0.0.5": {**fato, "porta": None}})
+    (d,) = await store.listar_ips(db, "m1")
+    assert d["porta"] == "ether2" and d["ultimo_visto"] == T0 + timedelta(hours=1)
+
+
+async def test_atualizar_mk_grava_porta(db):
+    mk = await mk_com_id(db)
+    raw = raw_com(["192.0.2.5"])
+    raw["bridge_host"] = [{"mac-address": "AA:BB:CC:00:00:01", "on-interface": "ether3", "bridge": "bridge1"}]
+    raw["arp"][0]["interface"] = "bridge1"
+    assert await atualizar_mk(db, SET, mk, T0, fetch=lambda *a, **k: raw) is None
+    (ip,) = await store.listar_ips(db, mk["id"])
+    assert ip["porta"] == "ether3" and ip["bridge"] == "bridge1"

@@ -11,7 +11,7 @@ import httpx
 import redis.asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from . import crypto, history, inventario, probes, routeros, store, webhook
+from . import crypto, history, inventario, mapa, probes, routeros, store, webhook
 from .classify import classify
 from .config import Settings, load_settings
 from .rules import AlertEngine, MkRef, MkState
@@ -118,6 +118,7 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
             doc = inventario.montar(raw)
             vistos = inventario.ips_vistos(
                 raw.get("lease", []), raw.get("arp", []), [r["rede"] for r in doc["redes"]])
+            fatos = mapa.fatos_por_ip(raw, vistos)
         except routeros.RouterOsError as e:
             erro = e.detalhe
         except Exception as e:
@@ -125,7 +126,7 @@ async def atualizar_mk(db, settings, mk: dict, now: datetime, fetch=routeros.fet
             erro = "Resposta inesperada da API"
         else:
             await store.salvar_inventario(db, mk["id"], doc, now)
-            await store.registrar_ips(db, mk["id"], vistos, now)
+            await store.registrar_ips(db, mk["id"], vistos, now, fatos)
             return None
     await store.inventario_erro(db, mk["id"], erro)
     return erro

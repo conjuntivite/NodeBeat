@@ -87,13 +87,17 @@ async def listar_inventarios(db) -> list[dict]:
     return [_utc(d) async for d in db.inventario.find()]
 
 
-async def registrar_ips(db, mk_id: str, ips: list[dict], quando: datetime) -> None:
+async def registrar_ips(db, mk_id: str, ips: list[dict], quando: datetime,
+                        fatos: dict[str, dict] | None = None) -> None:
     await db.inventario_ips.create_index([("mk_id", 1), ("ip", 1)], unique=True)
     for i in ips:
+        f = dict((fatos or {}).get(i["ip"], {}))
+        if f.get("porta") is None:
+            f.pop("porta", None)  # leitura sem porta não apaga a última conhecida
         await db.inventario_ips.update_one(
             {"mk_id": mk_id, "ip": i["ip"]},
             {"$set": {"mac": i.get("mac"), "host_name": i.get("host_name"),
-                      "fixo": i.get("fixo", False), "ultimo_visto": quando},
+                      "fixo": i.get("fixo", False), "ultimo_visto": quando, **f},
              "$setOnInsert": {"primeiro_visto": quando}}, upsert=True)
 
 

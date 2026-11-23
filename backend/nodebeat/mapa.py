@@ -81,3 +81,38 @@ def porta_do_aparelho(mac, arp_iface, host: dict[str, str], bridges: set[str]):
     if arp_iface in bridges:
         return (host.get(m) if m else None), arp_iface
     return arp_iface, None
+
+
+def _txt(v):
+    """librouteros converte "yes"/"true" em bool e números em int; volta para texto."""
+    return None if v is None or v is False else str(v)
+
+
+def _verdadeiro(v) -> bool:
+    return v is True or str(v).lower() in ("true", "yes")
+
+
+def fatos_por_ip(raw: dict, ips: list[dict]) -> dict[str, dict]:
+    """Fatos de cada IP visto: porta, bridge, fabricante e dados do vizinho (LLDP/MNDP)."""
+    host: dict[str, str] = {}
+    bridges: set[str] = set()
+    for h in raw.get("bridge_host") or []:
+        if h.get("bridge"):
+            bridges.add(h["bridge"])
+        m = norm_mac(_txt(h.get("mac-address")))
+        if m and not _verdadeiro(h.get("local")) and h.get("on-interface"):
+            host[m] = h["on-interface"]
+    for p in raw.get("bridge_port") or []:
+        if p.get("bridge"):
+            bridges.add(p["bridge"])
+    iface = {a.get("address"): a.get("interface") for a in raw.get("arp") or []}
+    viz = {norm_mac(_txt(n.get("mac-address"))): n for n in raw.get("neighbor") or []}
+    out = {}
+    for i in ips:
+        porta, bridge = porta_do_aparelho(i.get("mac"), iface.get(i["ip"]), host, bridges)
+        n = viz.get(norm_mac(i.get("mac"))) or {}
+        out[i["ip"]] = {
+            "porta": porta, "bridge": bridge, "fabricante": fabricante(i.get("mac")),
+            "identidade": _txt(n.get("identity")), "plataforma": _txt(n.get("platform")),
+            "e_switch": "bridge" in str(n.get("system-caps") or "").lower()}
+    return out

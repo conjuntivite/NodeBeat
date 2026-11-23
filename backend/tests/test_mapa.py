@@ -37,3 +37,40 @@ def test_porta_do_aparelho():
     assert porta_do_aparelho("AA:BB:CC:00:00:02", "ether5", host, br) == ("ether5", None)
     assert porta_do_aparelho("AA:BB:CC:00:00:02", "bridge1", host, br) == (None, "bridge1")
     assert porta_do_aparelho(None, None, host, br) == (None, None)
+
+
+def _raw(host=None):
+    return {
+        "arp": [{"address": "10.0.0.5", "mac-address": "44:19:b6:00:00:01", "interface": "bridge1"}],
+        "bridge_host": host or [],
+        "bridge_port": [{"bridge": "bridge1", "interface": "ether2"}],
+        "neighbor": [{"mac-address": "44:19:B6:00:00:01", "identity": "DS-K1T", "platform": "x",
+                      "system-caps": "bridge"}],
+    }
+
+
+IPS = [{"ip": "10.0.0.5", "mac": "44:19:B6:00:00:01", "host_name": None, "fixo": False}]
+
+
+def test_fatos_por_ip():
+    from nodebeat.mapa import fatos_por_ip
+    host = [{"mac-address": "44:19:B6:00:00:01", "on-interface": "ether2", "bridge": "bridge1", "local": False}]
+    assert fatos_por_ip(_raw(host), IPS) == {"10.0.0.5": {
+        "porta": "ether2", "bridge": "bridge1", "fabricante": "Hikvision",
+        "identidade": "DS-K1T", "plataforma": "x", "e_switch": True}}
+
+
+def test_fatos_por_ip_sem_host_e_local_ignorado():
+    from nodebeat.mapa import fatos_por_ip
+    f = fatos_por_ip(_raw(), IPS)["10.0.0.5"]
+    assert f["porta"] is None and f["bridge"] == "bridge1"
+    local = [{"mac-address": "44:19:B6:00:00:01", "on-interface": "ether9", "bridge": "bridge1", "local": "true"}]
+    assert fatos_por_ip(_raw(local), IPS)["10.0.0.5"]["porta"] is None
+
+
+def test_fatos_por_ip_sem_vizinho():
+    from nodebeat.mapa import fatos_por_ip
+    raw = _raw()
+    raw["neighbor"] = [{"mac-address": "44:19:B6:00:00:01"}]
+    f = fatos_por_ip(raw, IPS)["10.0.0.5"]
+    assert f["identidade"] is None and f["e_switch"] is False

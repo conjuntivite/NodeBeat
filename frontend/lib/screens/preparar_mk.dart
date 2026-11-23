@@ -27,7 +27,6 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
   PrepararMkInfo? _info;
   String? _error;
   String _senha = gerarSenha();
-  final _wan = TextEditingController();
 
   @override
   void initState() {
@@ -47,12 +46,6 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
   Future<void> _copiar(String texto, String aviso) async {
     await Clipboard.setData(ClipboardData(text: texto));
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(aviso)));
-  }
-
-  @override
-  void dispose() {
-    _wan.dispose();
-    super.dispose();
   }
 
   @override
@@ -98,7 +91,7 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
         ]),
       );
     }
-    final script = scriptPreparar(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede, senha: _senha, wan: _wan.text.trim());
+    final script = scriptPreparar(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede, senha: _senha);
     Widget passo(String n, String s) => Padding(
           padding: EdgeInsets.only(bottom: t.space2),
           child: Text('$n. $s', style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
@@ -117,17 +110,6 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
           SelectableText(_senha, key: const Key('senha'), style: dataStyle(context, TradeType.dataSm)),
           TextButton(onPressed: () => setState(() => _senha = gerarSenha()), child: const Text('Gerar outra senha')),
         ]),
-        SizedBox(height: t.space3),
-        SizedBox(
-          width: 320,
-          child: TextField(
-            key: const Key('wan'),
-            controller: _wan,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-                labelText: 'WAN (só se a MK tiver duas WANs)', hintText: 'ex.: ether1 ou pppoe-out1'),
-          ),
-        ),
         SizedBox(height: t.space3),
         _codigo(t, script, const Key('script-preparar')),
         SizedBox(height: t.space3),

@@ -11,10 +11,8 @@ String gerarSenha([Random? rng]) {
 
 /// Cole inteiro no terminal da MK (Winbox → New Terminal). Um bloco `{}` só: sem ele as `:local` somem a cada linha.
 /// Só ASCII. Tudo que pode falhar é checado antes da primeira alteração (`:error` aborta o bloco).
-/// [wan]: interface da WAN, só para MK com duas WANs (a descoberta automática para nesse caso).
 /// [ipsSede]: todas as saídas públicas da sede (load balance), liberadas para ping numa address-list.
-String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha, String wan = ''}) => _modelo
-    .replaceAll('@WAN@', wan.replaceAll(RegExp(r'[^A-Za-z0-9 ._\-]'), '')) // nome de interface: nada que quebre a string
+String scriptPreparar({required String ipOrigem, required List<String> ipsSede, required String senha}) => _modelo
     .replaceAll('@EVENTOS@', _eventos.replaceAll('@DST@', _dstPreparar))
     .replaceAll('@TRAVA_WAN@', _travaWan)
     .replaceAll('@NAT_MOVE@', _natMove)
@@ -95,8 +93,10 @@ const _natMove = r''':if ([:len $d] > 0) do={
 /// IP, por decisão do usuário até a etapa de segurança. As duas regras vão para o topo (MK que descarta tudo na entrada).
 const _winboxAlt = r'''/ip firewall nat remove [find where comment="winbox-alt"]
 :local wnd [/ip firewall nat find where chain=dstnat && !dynamic]
-:local wn [/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18291 dst-address-type=local action=redirect to-ports=8291 comment="winbox-alt"]
-:if ([:len $wnd] > 0) do={/ip firewall nat move $wn destination=[:pick $wnd 0]}
+:foreach w in=$wans do={
+  :local wn [/ip firewall nat add chain=dstnat in-interface=$w protocol=tcp dst-port=18291 dst-address-type=local action=redirect to-ports=8291 comment="winbox-alt"]
+  :if ([:len $wnd] > 0) do={/ip firewall nat move $wn destination=[:pick $wnd 0]}
+}
 /ip firewall filter remove [find where comment="winbox-alt"]
 :local wd [/ip firewall filter find where chain=input && !dynamic]
 :local w [/ip firewall filter add chain=input disabled=yes comment=winbox-alt]
@@ -163,53 +163,61 @@ const _modelo = r'''{
 }
 :local novo (($maior > 7) || ($maior = 7 && $menor >= 24))
 
-:local wan "@WAN@"
-:if ([:len $wan] = 0) do={
 :local rotas [/ip route find where dst-address=0.0.0.0/0 && active]
 :if ([:len $rotas] = 0) do={:error "Sem rota padrao ativa: nao deu para descobrir a WAN. Nada foi alterado."}
-:if ([:len $rotas] > 1) do={
-  :foreach x in=$rotas do={:put ("Rota padrao ativa, gateway: " . [/ip route get $x gateway])}
-  :error "Duas WANs: informe a interface da WAN na pagina Preparar MK. Nada foi alterado."
-}
-:local rota [:pick $rotas 0]
-# gateway que ja e uma interface (PPPoE, inclusive com espaco no nome) vale inteiro;
-# a rota pode ter varios gateways (ex.: pppoe-out1,*7): vale o primeiro que for interface existente
-:foreach g in=[/ip route get $rota gateway] do={
-  :local gw [:tostr $g]
-  :local pg [:find $gw "%"]
-  :if ([:typeof $pg] = "num") do={:set gw [:pick $gw ($pg + 1) [:len $gw]]}
-  :if ([:len $wan] = 0 && [:len [/interface find where name=$gw]] > 0) do={:set wan $gw}
-}
-# gateway por IP: a interface vem de immediate-gw (v7) ou gateway-status (v6)
-:if ([:len $wan] = 0) do={
-  :if ($maior >= 7) do={
-    :local ig [:tostr [/ip route get $rota immediate-gw]]
-    :local p [:find $ig "%"]
-    :if ([:typeof $p] = "num") do={:set wan [:pick $ig ($p + 1) [:len $ig]]} else={:set wan $ig}
-  } else={
-    :local gs [:tostr [/ip route get $rota gateway-status]]
-    :local p [:find $gs "via "]
-    :if ([:typeof $p] = "num") do={:set wan [:pick $gs ($p + 4) [:len $gs]]}
+# duas WANs (ou balanceamento): cada rota padrao ativa traz uma interface e as regras de WAN valem para todas
+:local wans [:toarray ""]
+:foreach rota in=$rotas do={
+  :local wan ""
+  # gateway que ja e uma interface (PPPoE, inclusive com espaco no nome) vale inteiro;
+  # a rota pode ter varios gateways (ex.: pppoe-out1,*7): vale o primeiro que for interface existente
+  :foreach g in=[/ip route get $rota gateway] do={
+    :local gw [:tostr $g]
+    :local pg [:find $gw "%"]
+    :if ([:typeof $pg] = "num") do={:set gw [:pick $gw ($pg + 1) [:len $gw]]}
+    :if ([:len $wan] = 0 && [:len [/interface find where name=$gw]] > 0) do={:set wan $gw}
+  }
+  # gateway por IP: a interface vem de immediate-gw (v7) ou gateway-status (v6)
+  :if ([:len $wan] = 0) do={
+    :if ($maior >= 7) do={
+      :local ig [:tostr [/ip route get $rota immediate-gw]]
+      :local p [:find $ig "%"]
+      :if ([:typeof $p] = "num") do={:set wan [:pick $ig ($p + 1) [:len $ig]]} else={:set wan $ig}
+    } else={
+      :local gs [:tostr [/ip route get $rota gateway-status]]
+      :local p [:find $gs "via "]
+      :if ([:typeof $p] = "num") do={:set wan [:pick $gs ($p + 4) [:len $gs]]}
+    }
+  }
+  :while ([:pick $wan 0 1] = " ") do={:set wan [:pick $wan 1 [:len $wan]]}
+  :if ([:len $wan] > 0 && [:len [/interface find where name=$wan]] > 0 && [:typeof [:find $wans $wan]] != "num") do={
+    :set wans ($wans, $wan)
   }
 }
-:while ([:pick $wan 0 1] = " ") do={:set wan [:pick $wan 1 [:len $wan]]}
-}
-:if ([:len [/interface find where name=$wan]] = 0) do={:error ("WAN nao reconhecida (\"" . $wan . "\"). Nada foi alterado.")}
+:if ([:len $wans] = 0) do={:error "WAN nao reconhecida. Nada foi alterado."}
 
-:local ipPub "nao encontrado"
-:foreach a in=[/ip address find where interface=$wan] do={
-  :local s [/ip address get $a address]
-  :set ipPub [:pick $s 0 [:find $s "/"]]
+:local ipPub ""
+:local wanTxt ""
+:foreach w in=$wans do={
+  :if ([:len $wanTxt] > 0) do={:set wanTxt ($wanTxt . ", ")}
+  :set wanTxt ($wanTxt . $w)
+  :foreach a in=[/ip address find where interface=$w] do={
+    :local s [/ip address get $a address]
+    :if ([:len $ipPub] > 0) do={:set ipPub ($ipPub . ", ")}
+    :set ipPub ($ipPub . [:pick $s 0 [:find $s "/"]])
+    :if ([:len $wans] > 1) do={:set ipPub ($ipPub . " (" . $w . ")")}
+  }
 }
+:if ([:len $ipPub] = 0) do={:set ipPub "nao encontrado"}
 :local ipTunel ""
 :foreach pol in=[/ip ipsec policy find where !template] do={
   :do {
     :local src [/ip ipsec policy get $pol src-address]
     :if ([:tostr $src] != "0.0.0.0/0") do={
-      :foreach a in=[/ip address find where interface!=$wan] do={
+      :foreach a in=[/ip address find] do={
         :local s [/ip address get $a address]
         :local ip [:toip [:pick $s 0 [:find $s "/"]]]
-        :if (($ip in $src) && [:typeof [:find $ipTunel [:tostr $ip]]] != "num") do={
+        :if (($ip in $src) && [:typeof [:find $wans [/ip address get $a interface]]] != "num" && [:typeof [:find $ipTunel [:tostr $ip]]] != "num") do={
           :if ([:len $ipTunel] > 0) do={:set ipTunel ($ipTunel . ", ")}
           :set ipTunel ($ipTunel . [:tostr $ip])
         }
@@ -231,7 +239,7 @@ const _modelo = r'''{
 }
 
 :put ""
-:put ("RouterOS " . $ver . " | WAN " . $wan)
+:put ("RouterOS " . $ver . " | WAN " . $wanTxt)
 :put "Cadastro no NodeBeat:"
 :if ($semIpsec) do={
   :put "  MK SEM IPSEC (sem VPN): marque 'Sem IPsec' no cadastro"
@@ -240,6 +248,7 @@ const _modelo = r'''{
   :put ("  IP do tunel:  " . $ipTunel)
 }
 :put ("  IP publico:   " . $ipPub)
+:if ([:len $wans] > 1) do={:put "  (duas WANs: cadastre o IP publico pelo qual voce acessa a MK)"}
 :put "  Usuario:      monitor"
 :put ("  Senha:        " . $senha)
 
@@ -290,23 +299,27 @@ const _modelo = r'''{
 @SEDE_LISTA@
 /ip firewall filter remove [find where comment="monitor-icmp"]
 :local alvo [/ip firewall filter find where chain=input && !dynamic]
-:if ([:len $alvo] > 0) do={
-  /ip firewall filter add chain=input protocol=icmp in-interface=$wan src-address-list=nodebeat-sede action=accept place-before=[:pick $alvo 0] comment="monitor-icmp"
-} else={
-  /ip firewall filter add chain=input protocol=icmp in-interface=$wan src-address-list=nodebeat-sede action=accept comment="monitor-icmp"
+:foreach w in=$wans do={
+  :if ([:len $alvo] > 0) do={
+    /ip firewall filter add chain=input protocol=icmp in-interface=$w src-address-list=nodebeat-sede action=accept place-before=[:pick $alvo 0] comment="monitor-icmp"
+  } else={
+    /ip firewall filter add chain=input protocol=icmp in-interface=$w src-address-list=nodebeat-sede action=accept comment="monitor-icmp"
+  }
 }
 # firewall que bloqueia a WAN derruba a api-ssl que chega pelo tunel: libera so o NodeBeat, so via IPsec
 /ip firewall filter remove [find where comment="monitor-api"]
 :if (!$semIpsec) do={
-  /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
+  /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[:pick [find where comment="monitor-icmp"] 0] comment="monitor-api"
 }
 # a sede tambem chega na api-ssl pela WAN (botao Reiniciar com o tunel caido)
 @TRAVA_WAN@
 # operadora que bloqueia a 8729: o NodeBeat tenta a 18729 pelo IP publico e esta regra leva a 8729
 /ip firewall nat remove [find where comment="monitor-api-alt"]
 :local d [/ip firewall nat find where chain=dstnat && !dynamic]
-:local alt [/ip firewall nat add chain=dstnat in-interface=$wan protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"]
-@NAT_MOVE@
+:foreach w in=$wans do={
+  :local alt [/ip firewall nat add chain=dstnat in-interface=$w protocol=tcp dst-port=18729 dst-address-type=local action=redirect to-ports=8729 comment="monitor-api-alt"]
+  @NAT_MOVE@
+}
 @WINBOX_ALT@
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"

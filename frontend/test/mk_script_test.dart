@@ -24,12 +24,13 @@ void main() {
     expect(s, contains(r':if (!$semIpsec) do={')); // a regra monitor-api (so via IPsec) nao entra
   });
 
-  test('WAN informada entra higienizada; vazia mantém a descoberta automática', () {
-    expect(s, contains(':local wan ""'));
-    final com = scriptPreparar(ipOrigem: '10.9.9.9', ipsSede: ['203.0.113.5'], senha: 'x', wan: r'pppoe-out1"; /x $');
-    expect(com, contains(':local wan "pppoe-out1 x "'));
-    expect(com, isNot(contains('"; /x')));
-    expect(com, isNot(contains('@')));
+  test('descobre todas as WANs (duas rotas padrão ativas) e aplica as regras em cada uma', () {
+    expect(s, contains(':local wans [:toarray ""]'));
+    expect(s, contains(r':foreach rota in=$rotas do={'));
+    expect(s, isNot(contains('Mais de uma rota padrao')));
+    expect(s, isNot(contains(r'in-interface=$wan ')));
+    expect(s, contains(r'protocol=icmp in-interface=$w '));
+    expect(s, contains('duas WANs: cadastre o IP publico'));
   });
 
   test('só ASCII (terminal da MK)', () {
@@ -52,8 +53,8 @@ void main() {
   test('todas as checagens vêm antes da primeira alteração', () {
     final primeira = s.indexOf('/certificate add');
     expect(s.lastIndexOf('Nada foi alterado'), lessThan(primeira));
-    // sem rota, duas rotas, WAN desconhecida, usuario monitor de outro grupo, grupo monitor com outro usuario
-    expect(RegExp(':error').allMatches(s.substring(0, primeira)).length, 5);
+    // sem rota, WAN desconhecida, usuario monitor de outro grupo, grupo monitor com outro usuario (duas WANs não é erro)
+    expect(RegExp(':error').allMatches(s.substring(0, primeira)).length, 4);
   });
 
   test('available-from só dentro de :parse (a v6 rejeita ao ler o script)', () {
@@ -113,7 +114,7 @@ void main() {
     expect(
         s,
         contains(r'/ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem '
-            r'ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"'));
+            r'ipsec-policy=in,ipsec action=accept place-before=[:pick [find where comment="monitor-icmp"] 0] comment="monitor-api"'));
     expect(s.indexOf('comment="monitor-api"'), greaterThan(s.indexOf('comment="monitor-icmp"\n')));
     expect(scriptDesfazer, contains('[find where comment="monitor-api"]'));
   });
@@ -302,7 +303,7 @@ void main() {
 
     test('Preparar cria o NAT 18729 -> 8729 na WAN, removendo o antigo antes', () {
       final rm = completo.indexOf('/ip firewall nat remove [find where comment="monitor-api-alt"]');
-      final add = completo.indexOf('in-interface=\$wan protocol=tcp dst-port=18729');
+      final add = completo.indexOf('in-interface=\$w protocol=tcp dst-port=18729');
       expect(rm, greaterThan(0));
       expect(add, greaterThan(rm));
       expect(completo, contains('dst-port=18729 dst-address-type=local action=redirect'));
@@ -334,7 +335,7 @@ void main() {
       final rm = completo.indexOf('/ip firewall nat remove [find where comment="winbox-alt"]');
       expect(rm, greaterThan(0));
       expect(completo.indexOf(
-          r'in-interface=$wan protocol=tcp dst-port=18291 dst-address-type=local action=redirect to-ports=8291'), greaterThan(rm));
+          r'in-interface=$w protocol=tcp dst-port=18291 dst-address-type=local action=redirect to-ports=8291'), greaterThan(rm));
       expect(completo, contains(r'/ip firewall nat move $wn destination=[:pick $wnd 0]'));
       expect(completo, isNot(contains('winbox port=')));
     });

@@ -106,19 +106,21 @@ Para o switch aparecer, faça uma vez no próprio switch: ative o SNMP v2c somen
 Como funciona:
 
 - Candidatos a switch: aparelhos de fabricantes de rede (Intelbras, Haiz, Hikvision, TP-Link, MikroTik, Ubiquiti, Dahua) ou marcados "É um switch" no diálogo do aparelho. O NodeBeat tenta SNMP neles.
-- Quem responde ganha o selo "Gerenciável", passa a ser vigiado (ping) e mostra as portas com os aparelhos atrás.
+- Quem responde com a tabela de bridge (BRIDGE-MIB) ganha o selo "Gerenciável", passa a ser vigiado (ping) e mostra as portas com os aparelhos atrás. Quem responde SNMP sem tabela de bridge (ex.: câmera com `public` ligado) não vira "Gerenciável".
+- Desmarcar "É um switch" no diálogo do aparelho desfaz o "Gerenciável" na leitura seguinte.
 - A ligação (switch, porta) de cada aparelho fica guardada: o aparelho offline continua sob a última porta onde foi visto.
 - Switch fora do ar: os aparelhos atrás dele ficam cinza ("sem informação"), nunca vermelhos.
-- Candidato que não responde mostra a dica "gerenciável detectado: ative o SNMP nele".
+- Aparelho que se anuncia como switch no LLDP (ou marcado "É um switch") e não responde SNMP mostra a dica "gerenciável detectado: ative o SNMP nele". Candidato só pelo fabricante não mostra a dica.
 
 Limites e cuidados:
 
 - Switch não gerenciável continua invisível; seus aparelhos ficam agrupados na porta da MK acima.
 - Só leitura (GET/GETBULK); o NodeBeat nunca escreve no switch.
-- Se a community do switch for trocada para uma fora da lista, ele continua "Gerenciável" mostrando "Sem resposta SNMP" até a nova community entrar na lista (ou até desmarcar a vigilância no diálogo do aparelho).
+- Se a community do switch for trocada para uma fora da lista, ele continua "Gerenciável" mostrando "Sem resposta SNMP" até a nova community entrar na lista (ou até desmarcar "É um switch" no diálogo do aparelho).
 - Aparelho que muda de switch para uma porta direta da MK mantém a ligação antiga guardada até algum switch gerenciável voltar a enxergá-lo.
 - A tabela de MAC só aprende aparelhos que transmitiram recentemente (por isso a ligação é guardada).
-- A tela considera "leitura do switch antiga" após 30 min (3 × o padrão de 600 s).
+- A tela considera "leitura do switch antiga" após 30 min (limite fixo na tela, não acompanha `NODEBEAT_SWITCH_S`). Em "Sem resposta SNMP", a hora mostrada é a da última leitura boa.
+- O mapa se atualiza sozinho a cada 30 s.
 
 ## 4. Checklist de verificação (manual)
 

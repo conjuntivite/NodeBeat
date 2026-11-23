@@ -77,24 +77,27 @@ class MkDetail {
         nome = j['nome'],
         ipTunel = j['ip_tunel'],
         ipPublico = j['ip_publico'],
+        semIpsec = j['sem_ipsec'] == true,
         usuario = j['usuario'],
         interfacesVigiadas = List<String>.from(j['interfaces_vigiadas'] ?? []),
         certSha256 = j['cert_sha256'],
         estado = j['estado'] == null ? null : MkEstado.fromJson(j['estado']);
   final String id, nome, ipTunel, ipPublico, usuario;
+  final bool semIpsec;
   final List<String> interfacesVigiadas;
   final String? certSha256;
   final MkEstado? estado;
 }
 
 class MkInput {
-  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.senha});
+  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.semIpsec = false, this.senha});
   final String nome, ipTunel, ipPublico, usuario;
+  final bool semIpsec;
 
   /// null na edição = manter a senha atual (o campo não é enviado).
   final String? senha;
   Map<String, dynamic> toJson() => {
-        'nome': nome, 'ip_tunel': ipTunel, 'ip_publico': ipPublico, 'usuario': usuario,
+        'nome': nome, 'ip_tunel': ipTunel, 'ip_publico': ipPublico, 'usuario': usuario, 'sem_ipsec': semIpsec,
         if (senha != null) 'senha': senha,
       };
 }

@@ -18,6 +18,12 @@ void main() {
     expect(s, isNot(contains('@')));
   });
 
+  test('detecta MK sem IPsec e orienta o cadastro sem VPN', () {
+    expect(s, contains(r':local semIpsec ([:len [/ip ipsec policy find where !template]] = 0)'));
+    expect(s, contains("marque 'Sem IPsec' no cadastro"));
+    expect(s, contains(r':if (!$semIpsec) do={')); // a regra monitor-api (so via IPsec) nao entra
+  });
+
   test('só ASCII (terminal da MK)', () {
     expect(s.codeUnits.every((c) => c <= 0x7f), isTrue);
     expect(scriptDesfazer.codeUnits.every((c) => c <= 0x7f), isTrue);
@@ -179,7 +185,7 @@ void main() {
     });
 
     test('preparar: passo de eventos dentro de :do com on-error (falha não aborta o script)', () {
-      final i = s.indexOf(':do {\n:if ([:typeof [:toip \$ipTunel]]');
+      final i = s.indexOf(':do {\n:if (\$semIpsec)');
       final f = s.indexOf('} on-error={:put "Eventos nao ligados', i);
       expect(i, greaterThan(-1));
       expect(f, greaterThan(i));

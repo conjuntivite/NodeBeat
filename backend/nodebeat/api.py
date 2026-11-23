@@ -26,8 +26,9 @@ class LoginIn(BaseModel):
 
 class MkIn(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
-    ip_tunel: str
+    ip_tunel: str = ""  # vazio quando sem_ipsec
     ip_publico: str
+    sem_ipsec: bool = False  # MK sem VPN: o NodeBeat acessa pelo IP público (guardado também como ip_tunel)
     usuario: str = Field(min_length=1)
     senha: str = ""
 
@@ -42,6 +43,8 @@ class MkIn(BaseModel):
     @field_validator("ip_tunel", "ip_publico")
     @classmethod
     def _ip(cls, v: str, info) -> str:
+        if not v and info.field_name == "ip_tunel":
+            return v  # o handler exige quando não é sem_ipsec
         ip = ipaddress.IPv4Address(v)  # ValueError -> 422
         if info.field_name == "ip_tunel":  # faixa privada (ou redes extra) é checada no handler, que tem o settings
             ok = not (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast)
@@ -171,19 +174,26 @@ def create_app(db, r, settings) -> FastAPI:
 
     extras = [ipaddress.ip_network(n) for n in settings.redes_tunel_extra]
 
-    def _tunel_ok(ip_tunel: str) -> None:
-        ip = ipaddress.IPv4Address(ip_tunel)
+    def _tunel_ok(body: MkIn) -> dict:
+        """Campos a gravar; sem IPsec o IP de acesso (ip_tunel) é o público."""
+        campos = body.model_dump(exclude={"senha"})
+        if body.sem_ipsec:
+            return campos | {"ip_tunel": body.ip_publico}
+        if not body.ip_tunel:
+            raise HTTPException(422, [{"loc": ["body", "ip_tunel"], "msg": "Campo obrigatório"}])
+        ip = ipaddress.IPv4Address(body.ip_tunel)
         if not (ip.is_private or any(ip in n for n in extras)):
             raise HTTPException(422, [{"loc": ["body", "ip_tunel"], "msg": _MSG_422["ip_tunel"]}])
+        return campos
 
     @mks.post("/mks", status_code=201)
     async def criar(body: MkIn) -> dict:
-        _tunel_ok(body.ip_tunel)
+        campos = _tunel_ok(body)
         if not body.senha:
             raise HTTPException(422, [{"loc": ["body", "senha"], "msg": "Campo obrigatório"}])
         await _nome_livre(body.nome)
-        await _tunel_livre(body.ip_tunel)
-        doc = body.model_dump(exclude={"senha"}) | {
+        await _tunel_livre(campos["ip_tunel"])
+        doc = campos | {
             "senha_cifrada": crypto.encrypt(body.senha, settings.secret_key),
             "cert_sha256": None, "interfaces_vigiadas": []}
         return {"id": await store.insert_mk(db, doc)}
@@ -191,21 +201,20 @@ def create_app(db, r, settings) -> FastAPI:
     @mks.get("/mks/{id}")
     async def obter(id: str) -> dict:
         mk = await _achar(id)
-        mk = {k: v for k, v in mk.items() if k in ("id", "nome", "ip_tunel", "ip_publico", "usuario",
+        mk = {k: v for k, v in mk.items() if k in ("id", "nome", "ip_tunel", "ip_publico", "usuario", "sem_ipsec",
                                                    "interfaces_vigiadas", "cert_sha256")}
         mk["estado"] = (await history.load_states(r)).get(id)
         return mk
 
     @mks.put("/mks/{id}", status_code=204)
     async def alterar(id: str, body: MkIn) -> Response:
-        _tunel_ok(body.ip_tunel)
+        campos = _tunel_ok(body)
         antigo = await _achar(id)
         await _nome_livre(body.nome, id)
-        await _tunel_livre(body.ip_tunel, id)
-        campos = body.model_dump(exclude={"senha"})
+        await _tunel_livre(campos["ip_tunel"], id)
         if body.senha:
             campos["senha_cifrada"] = crypto.encrypt(body.senha, settings.secret_key)
-        if body.ip_tunel != antigo["ip_tunel"]:
+        if campos["ip_tunel"] != antigo["ip_tunel"]:
             campos["cert_sha256"] = None  # outro aparelho: o pin antigo não vale
         await store.update_mk(db, id, campos)
         return Response(status_code=204)

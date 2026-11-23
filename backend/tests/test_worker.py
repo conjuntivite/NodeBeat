@@ -815,3 +815,16 @@ async def test_ligacoes_falha_numa_mk_nao_impede_outra(db, r, monkeypatch, caplo
     assert aps["192.0.2.20"]["switch_ip"] == "192.0.2.10"
     assert "switch_ip" not in {a["ip"]: a for a in await store.listar_ips(db, mk1)}["192.0.2.20"]
     assert SEGREDO not in caplog.text
+
+
+async def test_sem_ipsec_pinga_so_um_ip_e_nunca_vpn_caiu(db, r):
+    id = await store.insert_mk(db, doc(ip="8.8.4.4", ip_publico="8.8.4.4", sem_ipsec=True))
+    vistos = []
+
+    async def ping(ip):
+        vistos.append(ip)
+        return ip == "8.8.4.4"
+
+    await run_cycle(db, r, AlertEngine(), SET, T0, fetch=fetch_fail, ping=ping, reference_ok=sim_ok)
+    assert vistos == ["8.8.4.4"]  # com IPsec seriam dois pings (túnel e público)
+    assert (await history.load_states(r))[id]["status"] == "erro_acesso"

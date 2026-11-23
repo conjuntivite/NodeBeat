@@ -53,10 +53,11 @@ Color _corSelo(TradeTokens t, String tipo) => switch (tipo) {
     };
 
 class EventosCard extends StatefulWidget {
-  const EventosCard({super.key, required this.api, required this.id, required this.ipTunel});
+  const EventosCard({super.key, required this.api, required this.id, required this.ipTunel, this.semIpsec = false});
   final ApiClient api;
   final String id;
   final String ipTunel;
+  final bool semIpsec; // o syslog das MKs chega pelo túnel
 
   @override
   State<EventosCard> createState() => _EventosCardState();
@@ -165,7 +166,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Text('Eventos', style: TradeType.heading4.copyWith(color: t.fgPrimary))),
-          IconButton(icon: const Icon(Icons.terminal), tooltip: 'Ligar eventos', onPressed: _ligar),
+          if (!widget.semIpsec) IconButton(icon: const Icon(Icons.terminal), tooltip: 'Ligar eventos', onPressed: _ligar),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Atualizar', onPressed: carregar),
         ]),
         SizedBox(height: t.space3),

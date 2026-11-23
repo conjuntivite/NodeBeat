@@ -23,6 +23,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
   final _senha = TextEditingController();
   Map<String, String> _errors = {};
   String? _general;
+  bool _semIpsec = false;
   bool _busy = false;
   bool _loaded = false;
 
@@ -38,6 +39,8 @@ class _MkFormScreenState extends State<MkFormScreen> {
           _nome.text = m.nome;
           _ipTunel.text = m.ipTunel;
           _ipPublico.text = m.ipPublico;
+          _semIpsec = m.semIpsec;
+          if (m.semIpsec) _ipTunel.clear();
           _usuario.text = m.usuario;
           _loaded = true;
         });
@@ -60,7 +63,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
   Future<void> _save() async {
     if (_busy) return;
     final errors = <String, String>{
-      for (final (k, c) in [('nome', _nome), ('ip_tunel', _ipTunel), ('ip_publico', _ipPublico), ('usuario', _usuario)])
+      for (final (k, c) in [('nome', _nome), if (!_semIpsec) ('ip_tunel', _ipTunel), ('ip_publico', _ipPublico), ('usuario', _usuario)])
         if (c.text.trim().isEmpty) k: 'Obrigatório',
       if (!_edit && _senha.text.isEmpty) 'senha': 'Obrigatório',
     };
@@ -78,7 +81,8 @@ class _MkFormScreenState extends State<MkFormScreen> {
     });
     final input = MkInput(
       nome: _nome.text.trim(),
-      ipTunel: _ipTunel.text.trim(),
+      ipTunel: _semIpsec ? '' : _ipTunel.text.trim(),
+      semIpsec: _semIpsec,
       ipPublico: _ipPublico.text.trim(),
       usuario: _usuario.text.trim(),
       senha: _senha.text.isEmpty ? null : _senha.text,
@@ -140,7 +144,11 @@ class _MkFormScreenState extends State<MkFormScreen> {
                   child: TradeCard(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                       _field('nome', 'Condomínio', _nome),
-                      _field('ip_tunel', 'IP no túnel', _ipTunel),
+                      Row(children: [
+                        Checkbox(value: _semIpsec, onChanged: (v) => setState(() => _semIpsec = v ?? false)),
+                        const Expanded(child: Text('Sem IPsec (acesso pelo IP público)')),
+                      ]),
+                      if (!_semIpsec) _field('ip_tunel', 'IP no túnel', _ipTunel),
                       _field('ip_publico', 'IP público', _ipPublico),
                       _field('usuario', 'Usuário da API', _usuario),
                       _field('senha', 'Senha da API', _senha, secret: true, hint: _edit ? 'deixe vazio para manter' : null),

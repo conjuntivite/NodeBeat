@@ -211,6 +211,8 @@ const _modelo = r'''{
   } on-error={}
 }
 :if ([:len $ipTunel] = 0) do={:set ipTunel "nao encontrado (veja /ip ipsec policy e /ip address)"}
+# sem nenhuma politica IPsec: MK sem VPN, o NodeBeat acessa pelo IP publico
+:local semIpsec ([:len [/ip ipsec policy find where !template]] = 0)
 
 # monitor de outra ferramenta (Dude, Zabbix...): nao tomar posse.
 :local u [/user find where name="monitor"]
@@ -224,7 +226,12 @@ const _modelo = r'''{
 :put ""
 :put ("RouterOS " . $ver . " | WAN " . $wan)
 :put "Cadastro no NodeBeat:"
-:put ("  IP do tunel:  " . $ipTunel)
+:if ($semIpsec) do={
+  :put "  MK SEM IPSEC (sem VPN): marque 'Sem IPsec' no cadastro"
+  :put "  IP do tunel:  (nao se aplica)"
+} else={
+  :put ("  IP do tunel:  " . $ipTunel)
+}
 :put ("  IP publico:   " . $ipPub)
 :put "  Usuario:      monitor"
 :put ("  Senha:        " . $senha)
@@ -283,7 +290,9 @@ const _modelo = r'''{
 }
 # firewall que bloqueia a WAN derruba a api-ssl que chega pelo tunel: libera so o NodeBeat, so via IPsec
 /ip firewall filter remove [find where comment="monitor-api"]
-/ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
+:if (!$semIpsec) do={
+  /ip firewall filter add chain=input protocol=tcp dst-port=8729 src-address=$ipOrigem ipsec-policy=in,ipsec action=accept place-before=[find where comment="monitor-icmp"] comment="monitor-api"
+}
 # a sede tambem chega na api-ssl pela WAN (botao Reiniciar com o tunel caido)
 @TRAVA_WAN@
 # operadora que bloqueia a 8729: o NodeBeat tenta a 18729 pelo IP publico e esta regra leva a 8729
@@ -295,9 +304,13 @@ const _modelo = r'''{
 
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {
+:if ($semIpsec) do={
+  :put "Eventos nao ligados: MK sem IPsec (o syslog so vai pelo tunel)"
+} else={
 :if ([:typeof [:toip $ipTunel]] = "ip") do={
 @EVENTOS@} else={
   :put "Eventos nao ligados: use Ligar eventos no detalhe da MK depois do cadastro"
+}
 }
 } on-error={:put "Eventos nao ligados: use Ligar eventos no detalhe da MK depois do cadastro"}
 

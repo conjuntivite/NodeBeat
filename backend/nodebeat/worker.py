@@ -53,7 +53,7 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
     tunel = publico = None
     if snap is None:
         tunel = await ping(mk["ip_tunel"])
-        if not tunel and mk.get("ip_publico"):
+        if not tunel and mk.get("ip_publico") and not mk.get("sem_ipsec"):  # sem IPsec o "túnel" já é o público
             publico = await ping(mk["ip_publico"])
     elif sha and not mk.get("cert_sha256"):
         await store.set_cert(db, mk["id"], sha)

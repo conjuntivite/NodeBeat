@@ -397,3 +397,19 @@ async def test_apagar_mk_apaga_eventos(client, db):
                                       "severidade": "info", "topicos": [], "tipo": "x", "campos": {}, "mensagem": "m"}])
     assert (await client.delete(f"/api/mks/{id}")).status_code == 204
     assert await store.listar_eventos(db, id) == []
+
+
+async def test_sem_ipsec_usa_ip_publico_como_acesso(client, db):
+    id = await criar(client, ip_tunel="", sem_ipsec=True)
+    mk = (await client.get(f"/api/mks/{id}")).json()
+    assert mk["sem_ipsec"] is True and mk["ip_tunel"] == "8.8.4.4"
+    # voltar para IPsec exige o IP do túnel
+    resp = await client.put(f"/api/mks/{id}", json={**MK, "ip_tunel": ""})
+    assert resp.status_code == 422
+    resp = await client.put(f"/api/mks/{id}", json=MK)
+    assert resp.status_code == 204 and (await client.get(f"/api/mks/{id}")).json()["ip_tunel"] == "10.8.0.2"
+
+
+async def test_com_ipsec_sem_ip_tunel_da_422(client):
+    resp = await client.post("/api/mks", json={**MK, "ip_tunel": ""})
+    assert resp.status_code == 422

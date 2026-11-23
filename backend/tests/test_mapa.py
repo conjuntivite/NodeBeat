@@ -11,6 +11,7 @@ def test_norm_mac_formatos():
 def test_fabricante():
     assert fabricante("44:19:B6:00:00:01") == "Hikvision"
     assert fabricante("4C:5E:0C:00:00:01") == "MikroTik"
+    assert fabricante("D8:B3:70:00:00:01") == "Ubiquiti"
     assert fabricante("02:00:00:00:00:01") == "MAC privado"
     assert fabricante("00:00:5E:00:00:01") == "Outro"
     assert fabricante(None) == ""

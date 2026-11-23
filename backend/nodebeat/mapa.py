@@ -36,6 +36,7 @@ OUIS = {
     "0C:EA:14": "Ubiquiti",
     "18:E8:29": "Ubiquiti",
     "1C:0B:8B": "Ubiquiti",
+    "D8:B3:70": "Ubiquiti",
     "4C:5E:0C": "MikroTik",
     "00:0C:42": "MikroTik",
     "04:F4:1C": "MikroTik",

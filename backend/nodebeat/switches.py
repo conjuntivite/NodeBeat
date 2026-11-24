@@ -13,9 +13,11 @@ QFDB = "1.3.6.1.2.1.17.7.1.2.2.1.2"
 BASE_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2"
 IFNAME = "1.3.6.1.2.1.31.1.1.1.1"
 IFOPER = "1.3.6.1.2.1.2.2.1.8"
+IFHIGHSPEED = "1.3.6.1.2.1.31.1.1.1.15"
 LLDP_NOME = "1.0.8802.1.1.2.1.4.1.1.9"
 LLDP_CHASSIS = "1.0.8802.1.1.2.1.4.1.1.5"
 
+UPLINK_MIN_VIGIADOS = 3
 FABRICANTES_SWITCH = {"Intelbras", "Haiz", "Hikvision", "TP-Link", "MikroTik", "Ubiquiti", "Dahua"}
 
 
@@ -77,6 +79,39 @@ async def descobrir(ip: str, communities: list[str], *, get=snmp.get) -> tuple[s
     return None
 
 
+def _portas(base_ifindex: list, ifnames: list, oper: list, vel: list | None = None) -> dict[str, dict]:
+    """Portas físicas da bridge: nome -> {"up"} (e "velocidade" em Mbps se vel vier)."""
+    nome = {_sufixo(o, IFNAME)[0]: _texto(v) for o, v in ifnames}
+    up = {_sufixo(o, IFOPER)[0]: v == 1 for o, v in oper}
+    mbps = {_sufixo(o, IFHIGHSPEED)[0]: v for o, v in vel or []}
+    portas = {}
+    for i in (v for _, v in base_ifindex):
+        if i in nome:
+            portas[nome[i]] = {"up": up.get(i, False)}
+            if vel is not None:
+                portas[nome[i]]["velocidade"] = mbps.get(i) or None
+    return portas
+
+
+async def ler_portas(ip: str, community: str, *, walk=snmp.walk) -> dict[str, dict]:
+    """Leitura leve: {porta: {"up", "velocidade"}}. SnmpErro propaga."""
+    return _portas(await walk(ip, community, BASE_IFINDEX), await walk(ip, community, IFNAME),
+                   await walk(ip, community, IFOPER), await walk(ip, community, IFHIGHSPEED))
+
+
+def uplinks(switch_ip: str, ips: list[dict]) -> dict[str, dict]:
+    """Portas que levam a outro switch: com filho gerenciável ou com >= UPLINK_MIN_VIGIADOS vigiados."""
+    por_porta: dict[str, dict] = {}
+    for ap in ips:
+        if ap.get("switch_ip") != switch_ip or not ap.get("switch_porta"):
+            continue
+        p = por_porta.setdefault(ap["switch_porta"], {"filho": None, "vigiados": 0})
+        if ap.get("gerenciavel") and p["filho"] is None:
+            p["filho"] = ap.get("ip")
+        p["vigiados"] += mapa.vigiado(ap)
+    return {k: v for k, v in por_porta.items() if v["filho"] or v["vigiados"] >= UPLINK_MIN_VIGIADOS}
+
+
 async def ler_switch(ip: str, community: str, *, walk=snmp.walk, get=snmp.get) -> dict:
     descr = _texto(await get(ip, community, SYS_DESCR))  # SnmpErro aqui propaga
     base = await get(ip, community, BASE_MAC)
@@ -89,10 +124,7 @@ async def ler_switch(ip: str, community: str, *, walk=snmp.walk, get=snmp.get) -
         vizinhos = _vizinhos(await walk(ip, community, LLDP_NOME), await walk(ip, community, LLDP_CHASSIS))
     except snmp.SnmpErro:
         vizinhos = {}
-    nome = {_sufixo(o, IFNAME)[0]: _texto(v) for o, v in ifnames}
-    up = {_sufixo(o, IFOPER)[0]: v == 1 for o, v in oper}
-    portas = {nome[i]: {"up": up.get(i, False)}
-              for i in (v for _, v in base_ifindex) if i in nome}
+    portas = _portas(base_ifindex, ifnames, oper)
     return {
         "descr": descr,
         "base_mac": base.hex(":").upper() if isinstance(base, bytes) and len(base) == 6 else None,

@@ -102,3 +102,35 @@ def test_ler_switch_fdb_vazia_e_primeiro_get_propaga():
         assert False
     except SnmpErro:
         pass
+
+
+def test_ler_portas_com_velocidade():
+    d = {switches.BASE_IFINDEX: [(switches.BASE_IFINDEX + ".1", 1), (switches.BASE_IFINDEX + ".2", 2)],
+         switches.IFNAME: [(switches.IFNAME + ".1", b"0/1"), (switches.IFNAME + ".2", b"0/2"),
+                           (switches.IFNAME + ".9", b"CPU")],
+         switches.IFOPER: [(switches.IFOPER + ".1", 1), (switches.IFOPER + ".2", 2)],
+         switches.IFHIGHSPEED: [(switches.IFHIGHSPEED + ".1", 1000), (switches.IFHIGHSPEED + ".2", 0)]}
+
+    async def walk(ip, community, oid):
+        return d[oid]
+    assert rodar(switches.ler_portas("10.0.0.1", "c", walk=walk)) == {
+        "0/1": {"up": True, "velocidade": 1000}, "0/2": {"up": False, "velocidade": None}}
+
+
+def test_ler_portas_propaga_snmperro():
+    async def walk(ip, community, oid):
+        raise SnmpErro("x")
+    try:
+        rodar(switches.ler_portas("10.0.0.1", "c", walk=walk))
+        assert False
+    except SnmpErro:
+        pass
+
+
+def test_uplinks_filho_e_switch_burro():
+    ips = [{"ip": "10.0.0.20", "switch_ip": "10.0.0.2", "switch_porta": "0/5", "gerenciavel": True},
+           *[{"ip": f"10.0.0.{i}", "switch_ip": "10.0.0.2", "switch_porta": "0/12", "fabricante": "Hikvision"} for i in (31, 32, 33)],
+           *[{"ip": f"10.0.0.{i}", "switch_ip": "10.0.0.2", "switch_porta": "0/13", "fabricante": "Hikvision"} for i in (41, 42)],
+           {"ip": "10.0.0.50", "switch_ip": "10.0.0.9", "switch_porta": "0/1", "fabricante": "Hikvision"}]
+    assert switches.uplinks("10.0.0.2", ips) == {"0/5": {"filho": "10.0.0.20", "vigiados": 1},
+                                                 "0/12": {"filho": None, "vigiados": 3}}

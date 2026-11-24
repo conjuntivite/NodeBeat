@@ -837,3 +837,20 @@ async def test_erro_acesso_nao_vai_para_o_webhook(db, r):
         await run_cycle(db, r, eng, SET, T0 + timedelta(seconds=t), fetch=fetch_fail, ping=sim_ok, reference_ok=sim_ok)
     assert (await history.load_states(r))[id]["status"] == "erro_acesso"
     assert await r.llen(QUEUE) == 0
+
+
+async def test_estado_da_mk_guarda_portas_fisicas_e_caiu(db, r):
+    mk = await store.insert_mk(db, doc())
+    eng = AlertEngine(recover_s=600)
+
+    def fetch(ether2):
+        return lambda *a: (Snapshot("7.1", 10.0, 20.0, "1d",
+                                    {"ether1": True, "ether2": ether2, "bridge": True}), "abc")
+
+    await ciclos(db, r, eng, [0], fetch=fetch(True))
+    assert set((await history.load_states(r))[mk]["portas"]) == {"ether1", "ether2"}
+    await ciclos(db, r, eng, [30], fetch=fetch(False))
+    p2 = (await history.load_states(r))[mk]["portas"]
+    assert p2["ether2"]["caiu_em"] == (T0 + timedelta(seconds=30)).isoformat()
+    await ciclos(db, r, eng, [60], fetch=fetch_fail)
+    assert (await history.load_states(r))[mk]["portas"] == p2

@@ -12,7 +12,9 @@ import httpx
 import redis.asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from . import crypto, history, inventario, mapa, probes, routeros, snmp, store, switches, webhook
+from . import crypto, history, inventario, mapa, probes
+from . import portas as portas_mod
+from . import routeros, snmp, store, switches, webhook
 from .classify import classify
 from .config import Settings, load_settings
 from .rules import AlertEngine, MkRef, MkState
@@ -69,6 +71,11 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
     if status != "reiniciando":
         await _emit(r, engine.observe_mk(MkRef(mk["id"], mk["nome"]), obs, now))
     ant = antes.get(mk["id"])
+    if ok:
+        portas = portas_mod.atualizar(
+            (ant or {}).get("portas"), {n: v for n, v in snap.ifaces.items() if portas_mod.fisica_mk(n)}, now)
+    else:
+        portas = (ant or {}).get("portas", {})  # sem leitura não se sabe o link
     # entre tipos de queda (offline/vpn_caiu/erro_acesso) o relógio continua: conta desde que saiu do ar
     mesmo = ant and (ant["status"] == status or (ant["status"] != "no_ar" and not ok))
     desde = ant["desde"] if mesmo else now.isoformat()
@@ -76,7 +83,7 @@ async def _check(db, r, engine, settings, now, mk, antes, fetch, ping) -> None:
         "status": status, "detalhe": obs.detalhe, "desde": desde,
         "cpu": obs.cpu if ok else None, "mem": obs.mem if ok else None,
         "uptime": snap.uptime if ok else None, "ifaces": obs.ifaces if ok else {},
-        "portas_link": dict(snap.ifaces) if ok else {},
+        "portas_link": dict(snap.ifaces) if ok else {}, "portas": portas,
         "versao": snap.version if ok else None, "atualizado_em": now.isoformat()})
 
 

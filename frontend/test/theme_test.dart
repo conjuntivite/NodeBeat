@@ -51,4 +51,12 @@ void main() {
       expect(contrast(t.borderStrong, t.bgSurface), greaterThanOrEqualTo(3));
     }
   });
+
+  test('setas (↗ ↘ →) que a Poppins não tem caem na Space Mono, em todo estilo', () {
+    for (final st in [TradeType.displayXl, TradeType.heading1, TradeType.bodyMd, TradeType.bodySm, TradeType.label, TradeType.dataSm, TradeType.button]) {
+      expect(st.fontFamily, 'Poppins');
+      expect(st.fontFamilyFallback, contains(TradeType.monoFamily));
+    }
+    expect(tradeTheme(Brightness.light).textTheme.bodyMedium!.fontFamilyFallback, contains(TradeType.monoFamily));
+  });
 }

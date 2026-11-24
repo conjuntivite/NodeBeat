@@ -256,6 +256,16 @@ void main() {
     expect(e.flat, isTrue);
     await t.pumpWidget(const SizedBox());
   });
+  testWidgets('som fica na barra lateral, logo acima do tema; sair por último', (t) async {
+    await _show(t, _status(), sound: _FakeEngine()..suspended = false);
+    final som = t.getCenter(find.byTooltip('Som')), tema = t.getCenter(find.byType(ThemeToggle));
+    final sair = t.getCenter(find.byTooltip('Sair'));
+    expect(som.dx, lessThan(56)); // dentro da barra lateral de 56 px
+    expect(som.dy, lessThan(tema.dy));
+    expect(tema.dy - som.dy, lessThan(56)); // vizinhos
+    expect(sair.dy, greaterThan(tema.dy));
+    await t.pumpWidget(const SizedBox());
+  });
   testWidgets('menu do som: desligar "perda" para o apito e salva a escolha', (t) async {
     final e = _FakeEngine()..suspended = false;
     await _show(t, _status(), sound: e);

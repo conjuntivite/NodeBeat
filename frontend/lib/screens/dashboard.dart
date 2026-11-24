@@ -293,8 +293,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               padding: EdgeInsets.only(right: t.space2),
               child: Text('Clique para ativar o som', style: TradeType.label.copyWith(color: t.warning)),
             ),
+        ],
+        rodape: [
           PopupMenuButton<String>(
             tooltip: 'Som',
+            position: PopupMenuPosition.over,
             icon: Icon(_soundOn ? Icons.volume_up_outlined : Icons.volume_off_outlined, size: 20, color: t.fgSecondary),
             onSelected: _toggleSound,
             itemBuilder: (_) => [
@@ -303,10 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ],
           ),
         ],
-        rodape: [
-          IconButton(tooltip: 'Sair', icon: const Icon(Icons.logout, size: 20), onPressed: _logout),
-          SizedBox(height: t.space1),
-        ],
+        fim: [IconButton(tooltip: 'Sair', icon: const Icon(Icons.logout, size: 20), onPressed: _logout)],
         body: IndexedStack(
           index: aba,
           children: [

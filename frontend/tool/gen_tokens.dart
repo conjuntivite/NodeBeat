@@ -54,12 +54,14 @@ void main() {
   b.writeln('\nclass TradeType {');
   b.writeln("  static const sansFamily = 'Poppins';");
   b.writeln("  static const monoFamily = 'SpaceMono';");
+  // A Poppins não tem setas (↗ ↘ →): elas vêm da Space Mono, já empacotada.
+  b.writeln("  static const fallback = [monoFamily];");
   for (final g in (j['type']['groups'] as List).cast<Map<String, dynamic>>()) {
     for (final t in (g['styles'] as List).cast<Map<String, dynamic>>()) {
       final size = px(t['fontSize']);
       final ls = t['letterSpacing'] == null ? 0 : num.parse((t['letterSpacing'] as String).replaceAll('em', '')) * size;
       final family = g['family'] == 'mono' ? 'monoFamily' : 'sansFamily';
-      b.writeln('  static const ${camel(t['name'])} = TextStyle(fontFamily: $family, fontSize: $size, '
+      b.writeln('  static const ${camel(t['name'])} = TextStyle(fontFamily: $family, fontFamilyFallback: fallback, fontSize: $size, '
           'height: ${(px(t['lineHeight']) / size).toStringAsFixed(4)}, fontWeight: FontWeight.w${t['fontWeight']}, '
           'letterSpacing: ${ls.toStringAsFixed(3)});');
     }

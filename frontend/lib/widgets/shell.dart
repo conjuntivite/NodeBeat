@@ -58,6 +58,7 @@ class AppShell extends StatelessWidget {
     this.acoes = const [],
     this.topo = const [],
     this.rodape = const [],
+    this.fim = const [],
     this.contadores = const {},
     this.aoNavegar,
   });
@@ -68,7 +69,8 @@ class AppShell extends StatelessWidget {
   final Widget? migalhas; // breadcrumb acima do título
   final List<Widget> acoes; // botões à direita do título
   final List<Widget> topo; // à direita da barra do topo (antes do tema)
-  final List<Widget> rodape; // fim da barra lateral (antes de tema/sair)
+  final List<Widget> rodape; // fim da barra lateral, logo acima do tema (ex.: som)
+  final List<Widget> fim; // depois do tema (ex.: sair)
   final Map<String, int> contadores; // problemas por item da barra
   final void Function(String chave)? aoNavegar;
   final Widget body;
@@ -99,9 +101,9 @@ class AppShell extends StatelessWidget {
         const Spacer(),
         Row(
           mainAxisAlignment: comRotulo ? MainAxisAlignment.start : MainAxisAlignment.center,
-          children: [if (comRotulo) ...rodape, if (comRotulo) const ThemeToggle()],
+          children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...fim]],
         ),
-        if (!comRotulo) ...[...rodape, const ThemeToggle()],
+        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...fim],
       ],
     );
     final lateral = Container(

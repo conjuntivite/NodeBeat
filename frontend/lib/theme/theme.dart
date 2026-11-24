@@ -26,6 +26,7 @@ ThemeData tradeTheme(Brightness b) {
     useMaterial3: true,
     brightness: b,
     fontFamily: TradeType.sansFamily,
+    fontFamilyFallback: TradeType.fallback,
     scaffoldBackgroundColor: t.bgPage,
     splashFactory: NoSplash.splashFactory, // sem animação decorativa: só a troca de cor (150 ms)
     hoverColor: t.bgHover,

@@ -310,3 +310,13 @@ def test_detalhe_vazio_e_so_o_nome():
     _eq(e, EqObs("offline"), 0)
     [ev] = _eq(e, EqObs("offline"), 120)
     assert ev.detalhe == "USW Sede"
+
+
+def test_offline_que_vira_erro_acesso_continua_offline():
+    """Oscilação ping/SNMP durante a queda não pode virar um ticket por volta (I1)."""
+    e = AlertEngine(recover_s=600)
+    seq = ["offline"] * 4 + ["erro_acesso"] * 3 + ["offline"] * 3 + ["erro_acesso"] * 3 + ["offline"] * 3
+    evs = []
+    for i, st in enumerate(seq):
+        evs += e.observe_equipamento(EQ, SEDE, EqObs(st), T0 + timedelta(seconds=60 * i), acima_fora=False)
+    assert [(ev.evento, ev.tipo) for ev in evs] == [("queda", "offline")]

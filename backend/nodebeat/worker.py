@@ -24,6 +24,8 @@ log = logging.getLogger(__name__)
 PEDIDO_INVENTARIO = "inventario:pedido"
 REINICIO = "reinicio:"  # + id da MK; TTL = janela sem alerta após reinício pelo painel
 JANELA_REINICIO = 300
+CARENCIA_RETORNO_S = 300  # MK/switch pai que acabou de voltar: o de baixo ainda está subindo (energia)
+TIMEOUT_EQ_S = 20  # um switch lento não segura a rodada dos outros
 RECOVER_S = 600  # MK oscilando (cai/volta) dentro dessa janela é UM incidente = um ticket só
 # pool próprio: o inventário (até 10 s por MK offline) não pode ocupar as threads do ciclo de 30 s
 _POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="inventario")
@@ -302,7 +304,10 @@ async def run_switches(db, r, settings: Settings, now: datetime, *, engine: Aler
 async def sincronizar_descobertos(db, r, engine: AlertEngine | None) -> None:
     """Switch gerenciável vira equipamento descoberto; o que deixou de ser some (estado e trackers)."""
     vivos = set()
+    manuais = {(e["local"], e["ip"]) for e in await store.listar_equipamentos(db) if e.get("origem") == "manual"}
     async for s in db.switches.find({"gerenciavel": True}):
+        if (s["mk_id"], s["ip"]) in manuais:  # o operador já cadastrou: não duplica
+            continue
         nome = (s.get("descr") or "")[:40] or s["ip"]
         vivos.add(await store.upsert_descoberto(db, "switch", s["mk_id"], s["ip"], nome))
     for eq in await store.listar_equipamentos(db):
@@ -315,6 +320,14 @@ async def sincronizar_descobertos(db, r, engine: AlertEngine | None) -> None:
 
 SEM_SNMP_EQ = "Responde ping, mas não o SNMP"
 SEM_PING_EQ = "Sem resposta ao ping"
+
+
+def _voltou_ha_pouco(estado: dict, now: datetime) -> bool:
+    try:
+        desde = datetime.fromisoformat(estado["desde"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return estado.get("status") == "no_ar" and (now - desde).total_seconds() < CARENCIA_RETORNO_S
 
 
 async def _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas) -> None:
@@ -361,8 +374,10 @@ async def _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas) -> N
             local_ref = MkRef(local, mks.get(local, {}).get("nome", local))
             pai_ip = next((a.get("switch_ip") for a in ips.get(local, []) if a["ip"] == ip), None)
             pai = antes.get(por_ip.get((local, pai_ip)), {})
-            acima_fora = (mk_estados.get(local, {}).get("status") != "no_ar"
-                          or pai.get("status") == "offline")  # pai em erro_acesso ainda responde: não silencia
+            mk_est = mk_estados.get(local, {})
+            acima_fora = (mk_est.get("status") != "no_ar" or _voltou_ha_pouco(mk_est, now)
+                          or pai.get("status") == "offline"  # pai em erro_acesso ainda responde: não silencia
+                          or _voltou_ha_pouco(pai, now))
         await _emit(r, engine.observe_equipamento(EqRef(eq["id"], eq["nome"], eq["tipo"]), local_ref,
                                                   EqObs(status, detalhe, caidos), now, acima_fora=acima_fora))
     mesmo = ant and (ant.get("status") == status or (ant.get("status") != "no_ar" and status != "no_ar"))
@@ -393,7 +408,8 @@ async def run_equipamentos(db, r, engine: AlertEngine, settings: Settings, now: 
         async def um(eq):
             async with sem:
                 try:
-                    await _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas)
+                    async with asyncio.timeout(TIMEOUT_EQ_S):  # estourou: fica para a próxima rodada
+                        await _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas)
                 except Exception as e:
                     log.warning("equipamento %s: %s", eq.get("id"), type(e).__name__)
 
@@ -431,7 +447,7 @@ async def main() -> None:
         inv_task, ultimo_inv = None, None
         mapa_task, ultimo_mapa = None, None
         sw_task, ultimo_sw = None, None
-        ultimo_eq = None
+        eq_task, ultimo_eq = None, None
 
         async def _inv(s):
             nonlocal ultimo_inv
@@ -463,16 +479,13 @@ async def main() -> None:
                     ultimo_mapa = loop.time()
             except Exception as e:
                 log.warning("agendamento do mapa falhou: %s", type(e).__name__)
-            try:  # inline, sem task: o motor é o mesmo do run_cycle e não pode ser mexido em paralelo
-                if not engine.frozen and (ultimo_eq is None or loop.time() - ultimo_eq >= s.mapa_s):
+            try:  # tarefa própria como o mapa; os métodos do motor são síncronos (sem corrida), o run_cycle persiste
+                if (not engine.frozen and (eq_task is None or eq_task.done())
+                        and (ultimo_eq is None or loop.time() - ultimo_eq >= s.mapa_s)):
+                    eq_task = asyncio.create_task(run_equipamentos(db, r, engine, s, datetime.now(UTC)))
                     ultimo_eq = loop.time()
-                    try:
-                        async with asyncio.timeout(s.mapa_s):
-                            await run_equipamentos(db, r, engine, s, datetime.now(UTC))
-                    finally:
-                        await r.set("engine", json.dumps(engine.dump()))
             except Exception as e:
-                log.warning("equipamentos falharam: %s", type(e).__name__)
+                log.warning("agendamento dos equipamentos falhou: %s", type(e).__name__)
             try:  # idem os switches (SNMP)
                 if (not engine.frozen and (sw_task is None or sw_task.done())
                         and (ultimo_sw is None or loop.time() - ultimo_sw >= s.switch_s)):

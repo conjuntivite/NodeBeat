@@ -102,12 +102,22 @@ async def test_mapa_reflete_alteracao(db):
 
 
 async def test_mapa_ips_inclui_equipamentos(db):
-    await store.insert_mk(db, {"nome": "a", "ip_tunel": "10.0.0.1"})
+    id_mk = await store.insert_mk(db, {"nome": "a", "ip_tunel": "10.0.0.1"})
     id_eq = await store.inserir_equipamento(db, {"nome": "sw", "ip": "10.0.0.5", "tipo": "switch"})
     await store.inserir_equipamento(db, {"nome": "dup_mk", "ip": "10.0.0.1", "tipo": "switch"})
     await store.inserir_equipamento(db, {"nome": "x", "ip": "10.0.0.7", "tipo": "switch"})
     await store.inserir_equipamento(db, {"nome": "y", "ip": "10.0.0.7", "tipo": "switch"})
-    assert await syslog.mapa_ips(db) == {"10.0.0.1": None, "10.0.0.5": f"eq:{id_eq}", "10.0.0.7": None}
+    # MK x equipamento no mesmo IP: a MK ganha; equipamento x equipamento continua ambíguo
+    assert await syslog.mapa_ips(db) == {"10.0.0.1": id_mk, "10.0.0.5": f"eq:{id_eq}", "10.0.0.7": None}
+
+
+async def test_mapa_ips_mk_ganha_mesmo_com_dois_equipamentos_e_mk_duplicada_segue_ambigua(db):
+    id_mk = await store.insert_mk(db, {"nome": "a", "ip_tunel": "10.0.0.1"})
+    for n in ("e1", "e2"):
+        await store.inserir_equipamento(db, {"nome": n, "ip": "10.0.0.1", "tipo": "switch"})
+    await db.mks.insert_many([{"nome": "b", "ip_tunel": "10.0.0.2"}, {"nome": "c", "ip_tunel": "10.0.0.2"}])
+    await store.inserir_equipamento(db, {"nome": "e3", "ip": "10.0.0.2", "tipo": "switch"})
+    assert await syslog.mapa_ips(db) == {"10.0.0.1": id_mk, "10.0.0.2": None}
 
 
 def doc(i):

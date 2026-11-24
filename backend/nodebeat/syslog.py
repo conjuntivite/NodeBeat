@@ -22,13 +22,17 @@ PORTA = 5514  # o compose publica 514 -> 5514 (container não-root, sem cap)
 
 
 async def mapa_ips(db) -> dict[str, str | None]:
-    """ip_tunel -> mk_id, ip -> eq:<id> para equipamentos; None quando o IP é de mais de uma MK/equipamento."""
-    fontes = [(mk["ip_tunel"], mk["id"]) for mk in await store.list_mks(db)]
-    fontes += [(eq["ip"], f"eq:{eq['id']}") for eq in await store.listar_equipamentos(db)]
-    mapa: dict[str, str | None] = {}
-    for ip, dono in fontes:
-        mapa[ip] = None if ip in mapa else dono
-    return mapa
+    """ip_tunel -> mk_id, ip -> eq:<id> para equipamentos; None quando o IP é de mais de uma MK
+    (ou de mais de um equipamento). IP de MK e de equipamento ao mesmo tempo fica com a MK."""
+    def montar(fontes) -> dict[str, str | None]:
+        m: dict[str, str | None] = {}
+        for ip, dono in fontes:
+            m[ip] = None if ip in m else dono
+        return m
+
+    mks = montar((mk["ip_tunel"], mk["id"]) for mk in await store.list_mks(db))
+    eqs = montar((eq["ip"], f"eq:{eq['id']}") for eq in await store.listar_equipamentos(db))
+    return eqs | mks
 
 
 class Receptor(asyncio.DatagramProtocol):

@@ -177,3 +177,50 @@ async def test_limpeza_usa_todos_os_tipos(db, r):
     await history.save_eq_state(r, outro, {"status": "no_ar"})
     await run_equipamentos(db, r, AlertEngine(), SET, T0, ping=ping_no)
     assert outro in await history.load_eq_states(r)
+
+
+async def test_mk_que_acabou_de_voltar_da_carencia_ao_switch(db, r):
+    """Energia volta: a MK sobe antes do switch; a carência evita a cascata de tickets (I2)."""
+    mk_id, _ = await descoberto(db, r)
+    await history.save_state(r, mk_id, {"status": "no_ar", "desde": (T0 - timedelta(seconds=100)).isoformat()})
+    eng = AlertEngine()
+    await ciclos(db, r, eng, range(0, 181, 60), ping=ping_no)  # carência até T0+200
+    assert await fila(r) == []
+    await ciclos(db, r, eng, range(240, 421, 60), ping=ping_no)  # fora da carência: confirma em 120 s
+    assert [p["tipo"] for p in await fila(r)] == ["offline"]
+
+
+async def test_pai_que_acabou_de_voltar_silencia_filho(db, r):
+    pai_id, filho, _ = await _filho_com_pai(db, r, "no_ar")
+    await _ciclos_estado_pai_fixo(db, r, pai_id, "no_ar", filho, range(0, 241, 60))  # pai no_ar desde T0
+    assert await fila(r) == []
+
+
+async def test_switch_lento_nao_segura_os_outros(db, r, monkeypatch):
+    import asyncio
+
+    from nodebeat import worker
+    monkeypatch.setattr(worker, "TIMEOUT_EQ_S", 0.05)
+    lento = await manual_sede(db)
+    rapido = await store.inserir_equipamento(db, {
+        "tipo": "switch", "nome": "Rápido", "ip": "192.168.0.3", "local": "sede", "origem": "manual",
+        "community_cifrada": crypto.encrypt("public", KEY)})
+
+    async def ler(ip, community):
+        if ip == "192.168.0.2":
+            await asyncio.sleep(10)
+        return {}
+
+    await asyncio.wait_for(run_equipamentos(db, r, AlertEngine(), SET, T0, ping=ping_ok, ler_portas=ler), 2)
+    st = await history.load_eq_states(r)
+    assert st[rapido]["status"] == "no_ar" and lento not in st
+
+
+async def test_sincronizar_nao_duplica_equipamento_manual(db, r):
+    mk_id = await store.insert_mk(db, doc())
+    await store.inserir_equipamento(db, {"tipo": "switch", "nome": "Meu", "ip": SW, "local": mk_id,
+                                         "origem": "manual"})
+    await store.upsert_descoberto(db, "switch", mk_id, SW, "velho")  # já existia antes do manual: some
+    await store.salvar_switch(db, mk_id, SW, {"gerenciavel": True, "descr": "Switch X"})
+    await sincronizar_descobertos(db, r, AlertEngine())
+    assert [(e["nome"], e["origem"]) for e in await store.listar_equipamentos(db)] == [("Meu", "manual")]

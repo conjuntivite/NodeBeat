@@ -198,7 +198,8 @@ async def listar_eventos(db, mk_id: str, *, tipos: list[str] | None = None, desd
 
 
 async def listar_eventos_periodo(db, desde: datetime, mk_id: str | None = None) -> list[dict]:
-    f: dict = {"recebido_em": {"$gte": desde}, **({"mk_id": mk_id} if mk_id else {})}
+    # sem filtro: só MKs (o painel lê 30 dias; os eventos eq:<id> ficam no detalhe do equipamento)
+    f: dict = {"recebido_em": {"$gte": desde}, "mk_id": mk_id or {"$not": {"$regex": "^eq:"}}}
     return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", 1)]
 
 

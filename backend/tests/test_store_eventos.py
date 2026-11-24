@@ -72,3 +72,9 @@ async def test_listar_eventos_periodo(db):
     assert todos[0]["recebido_em"].tzinfo is not None
     so_a = await store.listar_eventos_periodo(db, T0, mk_id="a")
     assert [e["mk_id"] for e in so_a] == ["a"]
+
+
+async def test_listar_eventos_periodo_sem_filtro_ignora_equipamentos(db):
+    await store.inserir_eventos(db, [ev("a", T1), ev("eq:x", T1), ev("eq:x", T2)])
+    assert [e["mk_id"] for e in await store.listar_eventos_periodo(db, T0)] == ["a"]
+    assert len(await store.listar_eventos_periodo(db, T0, mk_id="eq:x")) == 2

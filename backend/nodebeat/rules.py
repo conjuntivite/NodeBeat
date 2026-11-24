@@ -196,7 +196,10 @@ class AlertEngine:
                 del self._t[k]
             return []
         ok = obs.estado == "no_ar"
-        evs = self._step(prefix + "eq", not ok, now, obs.estado, nome(obs.detalhe), local, eq)
+        tipo, t = obs.estado, self._t.get(prefix + "eq")
+        if tipo == "erro_acesso" and t and t.phase != "pending" and t.tipo == "offline":
+            tipo = "offline"  # oscilação ping/SNMP na mesma queda: não encerra nem reabre (um ticket só)
+        evs = self._step(prefix + "eq", not ok, now, tipo, nome(obs.detalhe), local, eq)
         parallel = [k for k in self._t if k.startswith(prefix) and k != prefix + "eq"]
         if not ok:
             if any(e.evento == "queda" for e in evs):

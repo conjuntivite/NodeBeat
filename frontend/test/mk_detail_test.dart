@@ -21,7 +21,8 @@ Future<void> _show(WidgetTester t,
     {required List<String> alertas,
     String ipPublico = '203.0.113.9',
     int statusCode = 200,
-    List<Map<String, dynamic>> hist = const []}) async {
+    List<Map<String, dynamic>> hist = const [],
+    Map<String, dynamic>? portas}) async {
   t.view.physicalSize = const Size(1000, 2000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -32,7 +33,7 @@ Future<void> _show(WidgetTester t,
           'id': 'x', 'nome': 'cliente-v7', 'ip_tunel': '10.0.0.2', 'ip_publico': ipPublico, 'usuario': 'monitor',
           'interfaces_vigiadas': ['ether1'], 'cert_sha256': null,
           'estado': {'status': _estado, 'detalhe': null, 'desde': '2026-01-01T10:00:00-03:00', 'cpu': 92, 'mem': 40,
-            'uptime': '1d', 'ifaces': {'ether1': false}, 'versao': '7.14', 'atualizado_em': null},
+            'uptime': '1d', 'ifaces': {'ether1': false}, 'versao': '7.14', 'atualizado_em': null, 'portas': ?portas},
         });
       case '/api/mks/x/historico':
         return _json(hist);
@@ -62,6 +63,16 @@ HeartbeatPainter _painter(WidgetTester t) =>
         as HeartbeatPainter;
 
 void main() {
+  testWidgets('estado com portas desenha o painel; estado antigo não quebra', (t) async {
+    await _show(t, alertas: [], portas: {'ether1': {'up': true, 'desde': null, 'caiu_em': null, 'velocidade': 1000}});
+    expect(find.byKey(const Key('porta-ether1')), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    await _show(t, alertas: []);
+    expect(find.byKey(const Key('porta-ether1')), findsNothing);
+    expect(find.text('Editar'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('ícones copiam o IP no túnel e o IP público', (t) async {
     final copiado = <String>[];
     t.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {

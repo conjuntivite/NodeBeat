@@ -574,6 +574,9 @@ class ApiClient {
 
   Future<List<dynamic>> eventosEquipamento(String id) async => await _send('GET', '/equipamentos/$id/eventos') as List;
 
+  Future<List<HistEvent>> historicoEquipamento(String id) async =>
+      [for (final j in await _send('GET', '/equipamentos/$id/historico')) HistEvent.fromJson(j)];
+
   Future<String> createMk(MkInput i) async => (await _send('POST', '/mks', body: i.toJson()))['id'];
 
   Future<void> updateMk(String id, MkInput i) => _send('PUT', '/mks/$id', body: i.toJson());

@@ -8,7 +8,7 @@ import 'screens/mk_detail.dart';
 import 'screens/mk_form.dart';
 import 'screens/painel_eventos.dart';
 import 'screens/preparar_mk.dart';
-import 'screens/switches.dart';
+import 'screens/switch_detail.dart';
 import 'theme/theme.dart';
 
 void main() => runApp(NodeBeatApp(api: ApiClient()));

@@ -11,6 +11,7 @@ import '../widgets/heartbeat.dart';
 import '../widgets/eventos.dart';
 import '../widgets/inventario.dart';
 import '../widgets/mapa.dart';
+import '../widgets/painel_portas.dart';
 
 class MkDetailScreen extends StatefulWidget {
   const MkDetailScreen({super.key, required this.api, required this.id, this.chooseInterfaces = false});
@@ -215,6 +216,15 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
                   ? const CircularProgressIndicator()
                   : Text(_error!, style: TradeType.bodyMd.copyWith(color: t.negative)))
           : ListView(padding: EdgeInsets.all(t.space6), children: [
+              if (mk.estado != null && mk.estado!.portas.isNotEmpty) ...[
+                PainelPortas(portas: [
+                  for (final p in mk.estado!.portas)
+                    PortaVista(
+                        nome: p.nome, estado: p.estado, velocidade: p.velocidade, desde: p.desde,
+                        uplink: mk.interfacesVigiadas.contains(p.nome)),
+                ]),
+                SizedBox(height: t.space4),
+              ],
               _header(context, t, mk),
               SizedBox(height: t.space4),
               _interfaces(context, t, mk),

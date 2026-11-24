@@ -192,13 +192,3 @@ class _AdicionarSwitchState extends State<_AdicionarSwitch> {
     );
   }
 }
-
-/// Provisório: a Task 11 troca por o detalhe do switch.
-class SwitchDetailScreen extends StatelessWidget {
-  const SwitchDetailScreen(this.api, this.id, {super.key});
-  final ApiClient api;
-  final String id;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(leading: backFallback(context)), body: const SizedBox());
-}

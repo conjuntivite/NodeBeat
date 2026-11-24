@@ -80,7 +80,7 @@ Decisão do builder: a forma exata (Protocol, funções soltas num módulo). Man
 - Ping de cada switch-equipamento a cada 60 s (junto do `run_mapa` ou num laço próprio do worker).
 - Portas: walk só de ifName + ifOperStatus (+ ifHighSpeed para a velocidade) a cada 60 s nos switches gerenciáveis. É barato e permite o alerta de uplink em ~2 min. A leitura completa (FDB, LLDP) segue a cada 600 s.
 - Offline após 2 ciclos sem ping, igual ao mapa. Ping ok e SNMP falhando = `erro_acesso` (sem ticket, como a MK).
-- Switch da sede é lido direto da rede da sede (o CT tem eth0 na 192.168.60.0/24 e eth1 na 192.168.1.0/24); o builder confere a rota até as outras redes da sede (o `rotas-tunel.sh` manda 192.168/16 pelo gateway com origem .1.253).
+- Switch da sede é lido direto da rede da sede (o CT tem uma interface em cada rede local da sede); o builder confere a rota até as outras redes da sede (o `rotas-tunel.sh` manda as redes privadas pelo gateway com o IP de origem configurado).
 
 ### Uplink
 

@@ -242,7 +242,7 @@
 
 ### Task 7: Deploy no CT 119
 
-- [ ] Deploy `worker api web` (o syslog não muda): `git archive HEAD | ssh root@192.168.60.200 "pct exec 119 -- tar -x -C /opt/nodebeat"` + `docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build worker api web </dev/null`.
+- [ ] Deploy `worker api web` (o syslog não muda): `git archive HEAD | ssh root@<proxmox> "pct exec <CT> -- tar -x -C /opt/nodebeat"` + `docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build worker api web </dev/null`.
 - [ ] Conferir:
   - `unifi:eq:*` existe para os 2 switches, com portas e clientes;
   - existem eventos `origem: "unifi"`;

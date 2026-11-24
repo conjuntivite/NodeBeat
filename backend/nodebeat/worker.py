@@ -5,6 +5,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
@@ -26,6 +27,8 @@ REINICIO = "reinicio:"  # + id da MK; TTL = janela sem alerta após reinício pe
 JANELA_REINICIO = 300
 CARENCIA_RETORNO_S = 300  # MK/switch pai que acabou de voltar: o de baixo ainda está subindo (energia)
 TIMEOUT_EQ_S = 20  # um switch lento não segura a rodada dos outros
+# NODEBEAT_WEBHOOK_ATIVO=0 desliga a abertura de tickets; a queda continua no histórico/painel
+WEBHOOK_ATIVO = os.environ.get("NODEBEAT_WEBHOOK_ATIVO", "1") != "0"
 RECOVER_S = 600  # MK oscilando (cai/volta) dentro dessa janela é UM incidente = um ticket só
 # pool próprio: o inventário (até 10 s por MK offline) não pode ocupar as threads do ciclo de 30 s
 _POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="inventario")
@@ -36,7 +39,7 @@ async def _emit(r, evs) -> None:
         await history.record(r, ev)
         # o webhook abre ticket no sistema de chamados; o retorno fica só no histórico.
         # Erro de acesso (MK responde ping, API não) não abre ticket: só painel/histórico.
-        if ev.evento == "queda" and ev.tipo != MkState.ERRO_ACESSO.value:
+        if WEBHOOK_ATIVO and ev.evento == "queda" and ev.tipo != MkState.ERRO_ACESSO.value:
             await webhook.enqueue(r, ev.to_payload())
 
 

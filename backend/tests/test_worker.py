@@ -854,3 +854,11 @@ async def test_estado_da_mk_guarda_portas_fisicas_e_caiu(db, r):
     assert p2["ether2"]["caiu_em"] == (T0 + timedelta(seconds=30)).isoformat()
     await ciclos(db, r, eng, [60], fetch=fetch_fail)
     assert (await history.load_states(r))[mk]["portas"] == p2
+
+
+async def test_webhook_desligado_grava_historico_sem_ticket(db, r, monkeypatch):
+    monkeypatch.setattr("nodebeat.worker.WEBHOOK_ATIVO", False)
+    id = await store.insert_mk(db, doc())
+    await ciclos(db, r, AlertEngine(), range(0, 121, 30), fetch=fetch_fail)
+    assert await r.llen(QUEUE) == 0
+    assert "queda" in [h["evento"] for h in await history.history(r, id, now=(T0 + timedelta(seconds=300)).timestamp())]

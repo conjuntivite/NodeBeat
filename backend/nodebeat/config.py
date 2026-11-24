@@ -24,6 +24,8 @@ class Settings:
     mapa_s: int = 60  # intervalo do ping dos aparelhos vigiados (mapa de rede)
     snmp_communities: list[str] = field(default_factory=lambda: ["public"])  # segredo: nunca logar
     switch_s: int = 600  # intervalo da leitura SNMP dos switches gerenciáveis
+    unifi_url: str | None = None  # controlador UniFi Network (opcional)
+    unifi_api_key: str | None = None  # segredo: nunca logar
 
 
 def _req(nome: str) -> str:
@@ -77,4 +79,6 @@ def load_settings() -> Settings:
         _ip_opcional("NODEBEAT_IP_ORIGEM"), _ips("NODEBEAT_IPS_PUBLICOS_SEDE"), _redes("NODEBEAT_REDES_TUNEL_EXTRA"),
         _dias("NODEBEAT_SYSLOG_DIAS", 30), _dias("NODEBEAT_MAPA_S", 60),
         [c.strip() for c in (os.environ.get("NODEBEAT_SNMP_COMMUNITIES") or "").split(",") if c.strip()]
-        or ["public"], _dias("NODEBEAT_SWITCH_S", 600))
+        or ["public"], _dias("NODEBEAT_SWITCH_S", 600),
+        (os.environ.get("NODEBEAT_UNIFI_URL") or "").strip() or None,
+        (os.environ.get("NODEBEAT_UNIFI_API_KEY") or "").strip() or None)

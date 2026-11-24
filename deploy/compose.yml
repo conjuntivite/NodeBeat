@@ -69,7 +69,10 @@ services:
     # ping ICMP sem privilégio (socket datagram): dispensa NET_RAW, que não chega ao usuário não-root num LXC
     sysctls:
       net.ipv4.ping_group_range: "0 65535"
-    environment: *env
+    environment:
+      <<: *env
+      NODEBEAT_UNIFI_URL: ${NODEBEAT_UNIFI_URL:-}
+      NODEBEAT_UNIFI_API_KEY: ${NODEBEAT_UNIFI_API_KEY:-}
     depends_on:
       mongo: {condition: service_healthy}
       redis: {condition: service_healthy}

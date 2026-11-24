@@ -463,17 +463,19 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     final hora = '${dois(l.hour)}:${dois(l.minute)}';
     final agora = DateTime.now();
     final quando = l.year == agora.year && l.month == agora.month && l.day == agora.day ? hora : '${dois(l.day)}/${dois(l.month)} $hora';
-    final cor = switch (e.severidade) {
-      'high' || 'critical' => t.negative,
-      'medium' => t.warning,
-      _ => t.fgSecondary,
+    final (rotuloSev, cor) = switch (e.severidade) {
+      'critical' => ('Crítico', t.negative),
+      'high' => ('Alta', t.negative),
+      'medium' => ('Média', t.warning),
+      'low' => ('Baixa', t.fgSecondary),
+      _ => (null, t.fgSecondary),
     };
     return Padding(
       padding: EdgeInsets.symmetric(vertical: t.space1),
       child: Wrap(spacing: t.space2, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text(quando, style: TradeType.ticker.copyWith(color: t.fgMuted)),
         Text(e.porta == null ? e.switchNome : '${e.switchNome} · Porta ${e.porta}', style: TradeType.label.copyWith(color: t.fgPrimary)),
-        if (e.severidade != null) Selo(e.severidade!, cor),
+        if (rotuloSev != null) Selo(rotuloSev, cor),
         Text(e.mensagem, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
       ]),
     );

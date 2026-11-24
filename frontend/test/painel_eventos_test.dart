@@ -278,6 +278,10 @@ void main() {
       expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
       expect(find.text('Switch Teste'), findsOneWidget); // sem porta: só o nome
       expect(find.text('PoE religado na porta'), findsOneWidget);
+      expect(find.text('Alta'), findsOneWidget);
+      expect(find.text('Média'), findsOneWidget);
+      expect(find.text('high'), findsNothing);
+      expect(find.text('medium'), findsNothing);
       expect(find.text('02/01 ${_hora('2020-01-02T12:30:00Z')}'), findsOneWidget);
       expect(t.takeException(), isNull);
     });

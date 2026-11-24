@@ -50,3 +50,20 @@ async def save_aparelhos(r, mk_id: str, estados: dict[str, dict]) -> None:
 async def load_aparelhos(r, mk_id: str) -> dict[str, dict]:
     v = await r.get(f"state:ap:{mk_id}")
     return json.loads(v) if v else {}
+
+
+async def save_eq_state(r, eq_id: str, row: dict) -> None:
+    await r.set(f"state:eq:{eq_id}", json.dumps(row, ensure_ascii=False))
+
+
+async def load_eq_states(r) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    async for k in r.scan_iter(match="state:eq:*"):
+        v = await r.get(k)
+        if v is not None:
+            out[k.removeprefix("state:eq:")] = json.loads(v)
+    return out
+
+
+async def delete_eq(r, eq_id: str) -> None:
+    await r.delete(f"hist:eq:{eq_id}", f"state:eq:{eq_id}")

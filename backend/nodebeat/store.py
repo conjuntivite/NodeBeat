@@ -209,3 +209,39 @@ async def ultimo_evento(db, mk_id: str) -> datetime | None:
 
 async def apagar_eventos(db, mk_id: str) -> None:
     await db.eventos.delete_many({"mk_id": mk_id})
+
+
+async def listar_equipamentos(db, tipo: str | None = None) -> list[dict]:
+    f = {"tipo": tipo} if tipo else {}
+    return [_out(d) async for d in db.equipamentos.find(f)]
+
+
+async def get_equipamento(db, id: str) -> dict | None:
+    oid = _oid(id)
+    d = await db.equipamentos.find_one({"_id": oid}) if oid else None
+    return _out(d) if d else None
+
+
+async def inserir_equipamento(db, doc: dict) -> str:
+    doc = {"criado_em": datetime.now(UTC), **doc}
+    return str((await db.equipamentos.insert_one(doc)).inserted_id)
+
+
+async def atualizar_equipamento(db, id: str, campos: dict) -> bool:
+    oid = _oid(id)
+    return bool(oid) and (await db.equipamentos.update_one({"_id": oid}, {"$set": campos})).matched_count > 0
+
+
+async def apagar_equipamento(db, id: str) -> bool:
+    oid = _oid(id)
+    return bool(oid) and (await db.equipamentos.delete_one({"_id": oid})).deleted_count > 0
+
+
+async def upsert_descoberto(db, tipo: str, mk_id: str, ip: str, nome: str) -> str:
+    """Um equipamento achado por MK tem chave (tipo, local, ip, origem). O nome só entra no insert:
+    o que o operador editou não é sobrescrito a cada ciclo."""
+    await db.equipamentos.create_index([("tipo", 1), ("local", 1), ("ip", 1), ("origem", 1)], unique=True)
+    filtro = {"tipo": tipo, "local": mk_id, "ip": ip, "origem": "descoberto"}
+    await db.equipamentos.update_one(
+        filtro, {"$setOnInsert": {"nome": nome, "criado_em": datetime.now(UTC)}}, upsert=True)
+    return str((await db.equipamentos.find_one(filtro))["_id"])

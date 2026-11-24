@@ -4,6 +4,8 @@ A chave de API é segredo: nunca vai para log, mensagem de erro nem repr.
 """
 from __future__ import annotations
 
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -101,3 +103,71 @@ async def ler(client: httpx.AsyncClient, url: str, chave: str, caminho: str, cor
     except (httpx.HTTPError, ValueError):
         raise UnifiErro("UniFi não respondeu") from None  # sem encadear: a causa traz URL
     return j["data"] if isinstance(j, dict) and "data" in j else j
+
+
+TIPOS = {"CLIENT_CONNECTED_WIRED": "cliente_conectou", "CLIENT_DISCONNECTED_WIRED": "cliente_desconectou",
+         "DEVICE_UNREACHABLE": "inalcancavel", "MULTIPLE_DEVICES_UNREACHABLE": "inalcancavel",
+         "DEVICE_RECONNECTED": "reconectou", "DEVICE_RECONNECTED_WITH_DOWNLINKS": "reconectou",
+         "POWER_SUPERVISOR_POWER_CYCLE_TRIGGERED": "poe_religado", "PORT_TRANSMISSION_ERRORS": "erros_transmissao",
+         "MADE_CHANGES": "mudanca_admin", "CLIENT_IP_CONFLICT": "conflito_ip"}
+GRUPOS = {"cliente_conectou": "clientes", "cliente_desconectou": "clientes", "inalcancavel": "alertas",
+          "reconectou": "alertas", "erros_transmissao": "alertas", "conflito_ip": "alertas",
+          "poe_religado": "poe", "mudanca_admin": "mudancas", "outro": "alertas"}
+
+
+def _params(ev: dict) -> dict[str, dict]:
+    p = ev.get("parameters")
+    return {k: v for k, v in p.items() if isinstance(v, dict)} if isinstance(p, dict) else {}
+
+
+def _pn(p: dict, chave: str) -> str | None:
+    return p.get(chave, {}).get("name") or None
+
+
+def switch_do_evento(ev: dict, switches: list[dict]) -> dict | None:
+    p = _params(ev)
+    ids = {str(v["id"]).lower() for v in p.values() if v.get("id")}
+    nomes = {_pn(p, "DEVICE"), _pn(p, "OBJECT")} - {None}
+    com_porta = _pn(p, "DEVICE_WITH_PORT") or ""
+    for sw in switches:
+        if sw["mac"] in ids or sw["nome"] in nomes or (com_porta.startswith(sw["nome"] + " ")):
+            return sw
+    return None
+
+
+def _mensagem(tipo: str, ev: dict, p: dict, c: dict) -> str:
+    porta = c["porta"]
+    if tipo == "cliente_conectou":
+        vel = _pn(p, "CONNECTION_SPEED")
+        return f"{c['cliente']} conectou na porta {porta}" + (f" ({vel})" if vel else "")
+    if tipo == "cliente_desconectou":
+        partes = [f"{c['cliente']} desconectou da porta {porta}", c["duracao"]]
+        if c["dados_down"] or c["dados_up"]:
+            partes.append(" ".join(x for x in (c["dados_down"] and f"↓ {c['dados_down']}", c["dados_up"] and f"↑ {c['dados_up']}") if x))
+        return " · ".join(x for x in partes if x)
+    if tipo == "inalcancavel":
+        return "Switch inalcançável"
+    if tipo == "reconectou":
+        return "Switch reconectou"
+    if tipo == "poe_religado":
+        return "PoE religado automaticamente" + (f" na porta {porta}" if porta is not None else "")
+    if tipo == "erros_transmissao":
+        return f"Erros de transmissão na porta {porta}"
+    if tipo == "mudanca_admin":
+        return f"{_pn(p, 'ADMIN')} alterou a configuração"
+    if tipo == "conflito_ip":
+        return f"Conflito de IP: {c['ip']}"
+    return re.sub(r"\{(\w+)\}", lambda m: _pn(p, m[1]) or m[0], ev.get("message_raw") or "")
+
+
+def evento_unifi(ev: dict, eq_id: str) -> dict:
+    p = _params(ev)
+    tipo = TIPOS.get(ev.get("event"), "outro")
+    porta = _pn(p, "PORT")
+    campos = {"porta": int(porta) if porta and porta.isdigit() else None, "cliente": _pn(p, "CLIENT"),
+              "ip": _pn(p, "IP"), "duracao": _pn(p, "DURATION"),
+              "dados_up": _pn(p, "DATA_UP"), "dados_down": _pn(p, "DATA_DOWN")}
+    return {"mk_id": f"eq:{eq_id}", "origem": "unifi", "unifi_id": ev["id"],
+            "recebido_em": datetime.fromtimestamp(ev["timestamp"] / 1000, timezone.utc),
+            "tipo": tipo, "severidade": (ev.get("severity") or "").lower() or None,
+            "campos": campos, "mensagem": _mensagem(tipo, ev, p, campos)}

@@ -1,7 +1,9 @@
 import httpx
 import pytest
 
-from nodebeat.unifi import UnifiErro, clientes_com_fio, ler, parse_switch
+from datetime import timezone
+
+from nodebeat.unifi import GRUPOS, TIPOS, UnifiErro, clientes_com_fio, evento_unifi, ler, parse_switch, switch_do_evento
 
 CHAVE = "chave-secreta-fake"
 URL = "https://192.0.2.10"
@@ -100,3 +102,67 @@ def test_parse_switch_poe_fallback_e_sem_poe():
     sis = parse_switch(nopoe)["sistema"]
     assert sis["poe_max_w"] is None and sis["poe_usado_w"] is None
     assert sis["uplink"] == {"porta": 1, "remoto": None, "remoto_porta": None}
+
+
+def _ev(evento, **params):
+    base = {"CLIENT": {"id": "02:00:00:00:00:10", "name": "pc-teste 00:10"}, "PORT": {"id": "x", "name": "21"},
+            "DEVICE": {"id": "02:00:00:00:00:01", "name": "USW Teste"},
+            "DEVICE_WITH_PORT": {"id": "02:00:00:00:00:01", "name": "USW Teste Port 21"},
+            "DURATION": {"name": "2h 44m"}, "DATA_UP": {"name": "687.03 MB"}, "DATA_DOWN": {"name": "3.56 GB"},
+            "CONNECTION_SPEED": {"name": "GbE"}, "IP": {"name": "192.0.2.29"}, "ADMIN": {"name": "Admin Teste"}}
+    base.update(params)
+    return {"id": "6b05e5819cbd5854b16ecf52", "timestamp": 1795548545000, "category": "X", "event": evento,
+            "severity": "LOW", "message_raw": "{CLIENT} em {IP} e {NADA}", "parameters": base}
+
+
+def _msg(evento, **p):
+    return evento_unifi(_ev(evento, **p), "e1")["mensagem"]
+
+
+def test_switch_do_evento_tres_caminhos_e_none():
+    sws = [{"id": "a", "nome": "USW Teste", "mac": "02:00:00:00:00:01"}, {"id": "b", "nome": "Outro", "mac": "02:00:00:00:00:02"}]
+    por_mac = {"X": {"id": "02:00:00:00:00:02"}}
+    assert switch_do_evento({"parameters": por_mac}, sws)["id"] == "b"
+    assert switch_do_evento({"parameters": {"X": {"id": "02:00:00:00:00:AA"}, "OBJECT": {"name": "Outro"}}}, sws)["id"] == "b"
+    assert switch_do_evento({"parameters": {"DEVICE": {"name": "USW Teste"}}}, sws)["id"] == "a"
+    assert switch_do_evento({"parameters": {"DEVICE_WITH_PORT": {"name": "Outro Port 3"}}}, sws)["id"] == "b"
+    assert switch_do_evento({"parameters": {"DEVICE_WITH_PORT": {"name": "OutroX Port 3"}}}, sws) is None
+    assert switch_do_evento({"parameters": None}, sws) is None
+
+
+def test_evento_unifi_documento():
+    d = evento_unifi(_ev("CLIENT_DISCONNECTED_WIRED"), "e1")
+    assert d["mk_id"] == "eq:e1" and d["origem"] == "unifi" and d["unifi_id"] == "6b05e5819cbd5854b16ecf52"
+    assert d["tipo"] == "cliente_desconectou" and d["severidade"] == "low"
+    assert d["recebido_em"].tzinfo is timezone.utc and d["recebido_em"].year == 2026
+    assert d["campos"] == {"porta": 21, "cliente": "pc-teste 00:10", "ip": "192.0.2.29", "duracao": "2h 44m",
+                           "dados_up": "687.03 MB", "dados_down": "3.56 GB"}
+    assert d["mensagem"] == "pc-teste 00:10 desconectou da porta 21 · 2h 44m · ↓ 3.56 GB ↑ 687.03 MB"
+
+
+def test_mensagens():
+    assert _msg("CLIENT_CONNECTED_WIRED") == "pc-teste 00:10 conectou na porta 21 (GbE)"
+    assert _msg("CLIENT_CONNECTED_WIRED", CONNECTION_SPEED=None) == "pc-teste 00:10 conectou na porta 21"
+    assert _msg("CLIENT_DISCONNECTED_WIRED", DURATION={}, DATA_UP={}, DATA_DOWN={}) == "pc-teste 00:10 desconectou da porta 21"
+    assert _msg("DEVICE_UNREACHABLE") == "Switch inalcançável"
+    assert _msg("MULTIPLE_DEVICES_UNREACHABLE") == "Switch inalcançável"
+    assert _msg("DEVICE_RECONNECTED_WITH_DOWNLINKS") == "Switch reconectou"
+    assert _msg("POWER_SUPERVISOR_POWER_CYCLE_TRIGGERED") == "PoE religado automaticamente na porta 21"
+    assert _msg("POWER_SUPERVISOR_POWER_CYCLE_TRIGGERED", PORT=None) == "PoE religado automaticamente"
+    assert _msg("PORT_TRANSMISSION_ERRORS") == "Erros de transmissão na porta 21"
+    assert _msg("MADE_CHANGES") == "Admin Teste alterou a configuração"
+    assert _msg("CLIENT_IP_CONFLICT") == "Conflito de IP: 192.0.2.29"
+    d = evento_unifi(_ev("ALGO_NOVO"), "e1")
+    assert d["tipo"] == "outro" and d["mensagem"] == "pc-teste 00:10 em 192.0.2.29 e {NADA}"
+
+
+def test_porta_nao_numerica_e_parametros_nulos():
+    d = evento_unifi(_ev("PORT_TRANSMISSION_ERRORS", PORT={"name": "SFP"}), "e1")
+    assert d["campos"]["porta"] is None
+    ev = _ev("DEVICE_UNREACHABLE"); ev["parameters"] = None; ev["severity"] = None
+    d = evento_unifi(ev, "e1")
+    assert d["campos"]["porta"] is None and d["severidade"] is None and d["mensagem"] == "Switch inalcançável"
+
+
+def test_grupos_cobrem_tipos():
+    assert {*TIPOS.values(), "outro"} == set(GRUPOS)

@@ -17,7 +17,7 @@ from . import portas as portas_mod
 from . import routeros, snmp, store, switches, webhook
 from .classify import classify
 from .config import Settings, load_settings
-from .rules import AlertEngine, MkRef, MkState
+from .rules import AlertEngine, EqObs, EqRef, MkRef, MkState
 
 log = logging.getLogger(__name__)
 
@@ -279,7 +279,7 @@ async def _switches_mk(db, settings, mk_id: str, agora: datetime, sem, descobrir
         await store.registrar_ligacoes(db, mk_id, ligs)
 
 
-async def run_switches(db, r, settings: Settings, now: datetime, *,
+async def run_switches(db, r, settings: Settings, now: datetime, *, engine: AlertEngine | None = None,
                        descobrir=switches.descobrir, ler=switches.ler_switch) -> None:
     """Descobre/lê por SNMP os switches candidatos das MKs no ar; nunca levanta."""
     try:
@@ -294,8 +294,111 @@ async def run_switches(db, r, settings: Settings, now: datetime, *,
 
         await asyncio.gather(*(um(mk) for mk in await store.list_mks(db)
                                if estados.get(mk["id"], {}).get("status") == "no_ar"))  # fora: mantém o doc
+        await sincronizar_descobertos(db, r, engine)
     except Exception as e:
         log.warning("switches falharam: %s", type(e).__name__)
+
+
+async def sincronizar_descobertos(db, r, engine: AlertEngine | None) -> None:
+    """Switch gerenciável vira equipamento descoberto; o que deixou de ser some (estado e trackers)."""
+    vivos = set()
+    async for s in db.switches.find({"gerenciavel": True}):
+        nome = (s.get("descr") or "")[:40] or s["ip"]
+        vivos.add(await store.upsert_descoberto(db, "switch", s["mk_id"], s["ip"], nome))
+    for eq in await store.listar_equipamentos(db):
+        if eq.get("origem") == "descoberto" and eq["id"] not in vivos:
+            await store.apagar_equipamento(db, eq["id"])
+            await history.delete_eq(r, eq["id"])
+            if engine is not None:
+                engine.forget_eq(eq["id"])
+
+
+SEM_SNMP_EQ = "Responde ping, mas não o SNMP"
+SEM_PING_EQ = "Sem resposta ao ping"
+
+
+async def _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas) -> None:
+    # a community é segredo: nunca no log, no erro ou em texto puro no banco
+    antes, mks, mk_estados, ips, sws, por_ip = ctx
+    ant = antes.get(eq["id"]) or {}
+    ip, local = eq["ip"], eq["local"]
+    portas = ant.get("portas", {})
+    ups = ant.get("uplinks", {})
+    caidos: dict[str, str] = {}
+    observar = True
+    if await ping(ip):
+        falhas = 0
+        cifrada = (eq.get("community_cifrada") if eq.get("origem") == "manual"
+                   else sws.get(local, {}).get(ip, {}).get("community_cifrada"))
+        lidas = None
+        try:
+            lidas = await ler_portas(ip, crypto.decrypt(cifrada or "", settings.secret_key))
+        except (ValueError, snmp.SnmpErro):
+            pass
+        except Exception as e:
+            log.warning("equipamento %s: portas: %s", eq["id"], type(e).__name__)
+        if lidas is None:
+            status, detalhe = "erro_acesso", SEM_SNMP_EQ
+        else:
+            status, detalhe = "no_ar", ""
+            portas = portas_mod.atualizar(portas, {n: p["up"] for n, p in lidas.items()}, now)
+            for n, p in portas.items():
+                p["velocidade"] = lidas[n].get("velocidade")
+            ups = switches.uplinks(ip, ips.get(local, [])) if eq.get("origem") == "descoberto" else {}
+            caidos = {p: f"porta {p} sem link ({u['vigiados']} aparelhos)" for p, u in ups.items()
+                      if u["filho"] is None and p in portas and not portas[p]["up"]}
+    else:
+        falhas = ant.get("falhas", 0) + 1
+        if falhas >= 2:
+            status, detalhe = "offline", SEM_PING_EQ
+        else:  # 1ª falha: mantém o anterior, sem passar pelo motor (como mapa.proximo_estado)
+            status, detalhe = ant.get("status", "desconhecido"), ant.get("detalhe", "")
+            observar = False
+    if observar:
+        if local == "sede":
+            local_ref, acima_fora = MkRef("sede", "Sede"), False
+        else:
+            local_ref = MkRef(local, mks.get(local, {}).get("nome", local))
+            pai_ip = next((a.get("switch_ip") for a in ips.get(local, []) if a["ip"] == ip), None)
+            pai = antes.get(por_ip.get((local, pai_ip)), {})
+            acima_fora = (mk_estados.get(local, {}).get("status") != "no_ar"
+                          or pai.get("status", "no_ar") != "no_ar")
+        await _emit(r, engine.observe_equipamento(EqRef(eq["id"], eq["nome"], eq["tipo"]), local_ref,
+                                                  EqObs(status, detalhe, caidos), now, acima_fora=acima_fora))
+    mesmo = ant and (ant.get("status") == status or (ant.get("status") != "no_ar" and status != "no_ar"))
+    await history.save_eq_state(r, eq["id"], {
+        "status": status, "detalhe": detalhe, "desde": ant["desde"] if mesmo else now.isoformat(),
+        "falhas": falhas, "portas": portas, "uplinks": ups, "atualizado_em": now.isoformat()})
+
+
+async def run_equipamentos(db, r, engine: AlertEngine, settings: Settings, now: datetime, *,
+                           ping=probes.ping, ler_portas=switches.ler_portas) -> None:
+    """Pinga e lê as portas de cada switch cadastrado; alerta pelo motor; nunca levanta."""
+    try:
+        eqs = await store.listar_equipamentos(db, "switch")
+        ids = {e["id"] for e in eqs}
+        for id in engine.eq_ids() - ids:
+            engine.forget_eq(id)
+        antes = await history.load_eq_states(r)
+        for id in antes.keys() - ids:
+            await history.delete_eq(r, id)
+        locais = {e["local"] for e in eqs} - {"sede"}
+        ctx = (antes, {m["id"]: m for m in await store.list_mks(db)}, await history.load_states(r),
+               {m: await store.listar_ips(db, m) for m in locais},
+               {m: {s["ip"]: s for s in await store.listar_switches(db, m)} for m in locais},
+               {(e["local"], e["ip"]): e["id"] for e in eqs})
+        sem = asyncio.Semaphore(10)
+
+        async def um(eq):
+            async with sem:
+                try:
+                    await _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas)
+                except Exception as e:
+                    log.warning("equipamento %s: %s", eq.get("id"), type(e).__name__)
+
+        await asyncio.gather(*(um(e) for e in eqs))
+    except Exception as e:
+        log.warning("equipamentos falharam: %s", type(e).__name__)
 
 
 def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido: bool) -> bool:
@@ -327,6 +430,7 @@ async def main() -> None:
         inv_task, ultimo_inv = None, None
         mapa_task, ultimo_mapa = None, None
         sw_task, ultimo_sw = None, None
+        ultimo_eq = None
 
         async def _inv(s):
             nonlocal ultimo_inv
@@ -358,10 +462,20 @@ async def main() -> None:
                     ultimo_mapa = loop.time()
             except Exception as e:
                 log.warning("agendamento do mapa falhou: %s", type(e).__name__)
+            try:  # inline, sem task: o motor é o mesmo do run_cycle e não pode ser mexido em paralelo
+                if not engine.frozen and (ultimo_eq is None or loop.time() - ultimo_eq >= s.mapa_s):
+                    ultimo_eq = loop.time()
+                    try:
+                        async with asyncio.timeout(s.mapa_s):
+                            await run_equipamentos(db, r, engine, s, datetime.now(UTC))
+                    finally:
+                        await r.set("engine", json.dumps(engine.dump()))
+            except Exception as e:
+                log.warning("equipamentos falharam: %s", type(e).__name__)
             try:  # idem os switches (SNMP)
                 if (not engine.frozen and (sw_task is None or sw_task.done())
                         and (ultimo_sw is None or loop.time() - ultimo_sw >= s.switch_s)):
-                    sw_task = asyncio.create_task(run_switches(db, r, s, datetime.now(UTC)))
+                    sw_task = asyncio.create_task(run_switches(db, r, s, datetime.now(UTC), engine=engine))
                     ultimo_sw = loop.time()
             except Exception as e:
                 log.warning("agendamento dos switches falhou: %s", type(e).__name__)

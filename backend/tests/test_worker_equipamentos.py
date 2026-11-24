@@ -123,3 +123,57 @@ async def test_community_nunca_no_log(db, r, caplog):
     with caplog.at_level(logging.DEBUG):
         await ciclos(db, r, AlertEngine(), [0], ping=ping_ok, ler_portas=ler)
     assert "public" not in caplog.text
+
+
+async def _filho_com_pai(db, r, status_pai):
+    mk_id, pai_id = await descoberto(db, r)
+    await history.save_eq_state(r, pai_id, {"status": status_pai, "desde": T0.isoformat()})
+    filho = "10.0.0.9"
+    await store.salvar_switch(db, mk_id, filho, {"gerenciavel": True, "descr": "Filho",
+                                                 "community_cifrada": crypto.encrypt("public", KEY)})
+    filho_id = await store.upsert_descoberto(db, "switch", mk_id, filho, "Filho")
+    await db.inventario_ips.insert_many([{"mk_id": mk_id, "ip": SW},
+                                         {"mk_id": mk_id, "ip": filho, "switch_ip": SW, "switch_porta": "0/5"}])
+    return pai_id, filho, filho_id
+
+
+async def _ciclos_estado_pai_fixo(db, r, pai_id, status_pai, filho, secs):
+    async def ping(ip):  # o pai não é pingado de verdade: o estado dele fica fixo
+        return False if ip == filho else True
+
+    async def ler(ip, community):
+        return {}
+
+    eng = AlertEngine()
+    for s in secs:
+        await run_equipamentos(db, r, eng, SET, T0 + timedelta(seconds=s), ping=ping, ler_portas=ler)
+        await history.save_eq_state(r, pai_id, {"status": status_pai, "desde": T0.isoformat()})
+
+
+async def test_pai_offline_silencia_filho(db, r):
+    pai_id, filho, filho_id = await _filho_com_pai(db, r, "offline")
+    await _ciclos_estado_pai_fixo(db, r, pai_id, "offline", filho, range(0, 241, 60))
+    assert await fila(r) == []
+    assert (await history.load_eq_states(r))[filho_id]["status"] == "offline"
+
+
+async def test_pai_erro_acesso_nao_silencia_filho(db, r):
+    pai_id, filho, _ = await _filho_com_pai(db, r, "erro_acesso")
+    await _ciclos_estado_pai_fixo(db, r, pai_id, "erro_acesso", filho, range(0, 241, 60))
+    q = await fila(r)
+    assert [(p["tipo"], p["equipamento"]["nome"]) for p in q] == [("offline", "Filho")]
+
+
+async def test_ticket_offline_sede_nome_e_mk(db, r):
+    await manual_sede(db)
+    await ciclos(db, r, AlertEngine(), [0, 60, 120, 180], ping=ping_no)
+    (p,) = await fila(r)
+    assert p["detalhe"].startswith("Core") and p["mk"] == {"id": "sede", "nome": "Sede"}
+
+
+async def test_limpeza_usa_todos_os_tipos(db, r):
+    outro = await store.inserir_equipamento(db, {"tipo": "camera", "nome": "C", "ip": "1.1.1.1",
+                                                 "local": "sede", "origem": "manual"})
+    await history.save_eq_state(r, outro, {"status": "no_ar"})
+    await run_equipamentos(db, r, AlertEngine(), SET, T0, ping=ping_no)
+    assert outro in await history.load_eq_states(r)

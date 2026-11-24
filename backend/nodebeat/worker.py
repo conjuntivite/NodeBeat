@@ -362,7 +362,7 @@ async def _equipamento(r, engine, settings, now, eq, ctx, ping, ler_portas) -> N
             pai_ip = next((a.get("switch_ip") for a in ips.get(local, []) if a["ip"] == ip), None)
             pai = antes.get(por_ip.get((local, pai_ip)), {})
             acima_fora = (mk_estados.get(local, {}).get("status") != "no_ar"
-                          or pai.get("status", "no_ar") != "no_ar")
+                          or pai.get("status") == "offline")  # pai em erro_acesso ainda responde: não silencia
         await _emit(r, engine.observe_equipamento(EqRef(eq["id"], eq["nome"], eq["tipo"]), local_ref,
                                                   EqObs(status, detalhe, caidos), now, acima_fora=acima_fora))
     mesmo = ant and (ant.get("status") == status or (ant.get("status") != "no_ar" and status != "no_ar"))
@@ -375,8 +375,9 @@ async def run_equipamentos(db, r, engine: AlertEngine, settings: Settings, now: 
                            ping=probes.ping, ler_portas=switches.ler_portas) -> None:
     """Pinga e lê as portas de cada switch cadastrado; alerta pelo motor; nunca levanta."""
     try:
-        eqs = await store.listar_equipamentos(db, "switch")
-        ids = {e["id"] for e in eqs}
+        todos = await store.listar_equipamentos(db)
+        ids = {e["id"] for e in todos}  # limpeza por todos os tipos; só o switch é monitorado
+        eqs = [e for e in todos if e["tipo"] == "switch"]
         for id in engine.eq_ids() - ids:
             engine.forget_eq(id)
         antes = await history.load_eq_states(r)

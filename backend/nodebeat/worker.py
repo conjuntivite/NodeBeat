@@ -30,7 +30,9 @@ _POOL_INVENTARIO = ThreadPoolExecutor(max_workers=10, thread_name_prefix="invent
 async def _emit(r, evs) -> None:
     for ev in evs:
         await history.record(r, ev)
-        if ev.evento == "queda":  # o webhook abre ticket no sistema de chamados; o retorno fica só no histórico
+        # o webhook abre ticket no sistema de chamados; o retorno fica só no histórico.
+        # Erro de acesso (MK responde ping, API não) não abre ticket: só painel/histórico.
+        if ev.evento == "queda" and ev.tipo != MkState.ERRO_ACESSO.value:
             await webhook.enqueue(r, ev.to_payload())
 
 

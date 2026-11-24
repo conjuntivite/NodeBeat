@@ -828,3 +828,12 @@ async def test_sem_ipsec_pinga_so_um_ip_e_nunca_vpn_caiu(db, r):
     await run_cycle(db, r, AlertEngine(), SET, T0, fetch=fetch_fail, ping=ping, reference_ok=sim_ok)
     assert vistos == ["8.8.4.4"]  # com IPsec seriam dois pings (túnel e público)
     assert (await history.load_states(r))[id]["status"] == "erro_acesso"
+
+
+async def test_erro_acesso_nao_vai_para_o_webhook(db, r):
+    id = await store.insert_mk(db, doc())
+    eng = AlertEngine()
+    for t in range(0, 121, 30):
+        await run_cycle(db, r, eng, SET, T0 + timedelta(seconds=t), fetch=fetch_fail, ping=sim_ok, reference_ok=sim_ok)
+    assert (await history.load_states(r))[id]["status"] == "erro_acesso"
+    assert await r.llen(QUEUE) == 0

@@ -53,6 +53,60 @@ class StatusData {
   final List<MkRow> mks;
 }
 
+/// Porta de switch/MK pronta para desenhar. estado: 'up' | 'down' | 'caiu'.
+class PortaVista {
+  const PortaVista({required this.nome, required this.estado, this.velocidade, this.desde, this.uplink = false, this.ligadoA});
+  final String nome, estado;
+  final int? velocidade;
+  final String? desde, ligadoA;
+  final bool uplink;
+}
+
+/// 'caiu' = link fora há menos de 24 h; 'down' = fora há mais (ou sem data).
+String estadoPorta(Map p, DateTime agora) {
+  if (p['up'] == true) return 'up';
+  final caiu = DateTime.tryParse('${p['caiu_em'] ?? ''}');
+  return caiu != null && agora.difference(caiu) < const Duration(hours: 24) ? 'caiu' : 'down';
+}
+
+/// `portas` = {nome: {up, desde, caiu_em, velocidade}}; `uplinks` = {porta: {filho, ...}}.
+List<PortaVista> portasVista(Object? portas, Map uplinks) {
+  final agora = DateTime.now().toUtc();
+  return [
+    for (final e in ((portas as Map?) ?? const {}).entries)
+      PortaVista(
+        nome: '${e.key}',
+        estado: estadoPorta(e.value as Map, agora),
+        velocidade: (e.value['velocidade'] as num?)?.toInt(),
+        desde: e.value['desde'],
+        uplink: uplinks.containsKey(e.key),
+        ligadoA: (uplinks[e.key] as Map?)?['filho'] as String?,
+      ),
+  ];
+}
+
+class Equipamento {
+  Equipamento.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        tipo = j['tipo'],
+        nome = j['nome'],
+        ip = j['ip'],
+        local = j['local'],
+        localNome = j['local_nome'],
+        origem = j['origem'],
+        estado = j['estado'] as Map<String, dynamic>?,
+        portasTotal = j['portas_total'] ?? 0,
+        portasUp = j['portas_up'] ?? 0,
+        uplinks = Map<String, dynamic>.from(j['uplinks'] ?? (j['estado'] as Map?)?['uplinks'] ?? {}),
+        portas = portasVista((j['estado'] as Map?)?['portas'], j['uplinks'] ?? (j['estado'] as Map?)?['uplinks'] ?? const {});
+  final String id, tipo, nome, ip;
+  final String? local, localNome, origem;
+  final Map<String, dynamic>? estado;
+  final int portasTotal, portasUp;
+  final List<PortaVista> portas;
+  final Map<String, dynamic> uplinks;
+}
+
 /// Estado atual guardado pelo worker; null em MkDetail se a MK ainda não foi lida.
 class MkEstado {
   MkEstado.fromJson(Map<String, dynamic> j)
@@ -64,7 +118,9 @@ class MkEstado {
         uptime = j['uptime'],
         ifaces = Map<String, bool>.from(j['ifaces'] ?? {}),
         versao = j['versao'],
-        atualizadoEm = j['atualizado_em'];
+        atualizadoEm = j['atualizado_em'],
+        portas = portasVista(j['portas'], const {});
+  final List<PortaVista> portas;
   final String status;
   final String? detalhe, desde, uptime, versao, atualizadoEm;
   final double? cpu, mem;
@@ -494,6 +550,29 @@ class ApiClient {
   Future<StatusData> status() async => StatusData.fromJson(await _send('GET', '/status'));
 
   Future<MkDetail> mk(String id) async => MkDetail.fromJson(await _send('GET', '/mks/$id'));
+
+  Future<List<Equipamento>> equipamentos({String? tipo}) async => [
+        for (final j in await _send('GET', '/equipamentos${tipo == null ? '' : '?tipo=${Uri.encodeQueryComponent(tipo)}'}'))
+          Equipamento.fromJson(j)
+      ];
+
+  Future<Equipamento> equipamento(String id) async => Equipamento.fromJson(await _send('GET', '/equipamentos/$id'));
+
+  Future<String> criarEquipamento({required String tipo, required String nome, required String ip, String? local, String? community}) async =>
+      (await _send('POST', '/equipamentos', body: {
+        'tipo': tipo, 'nome': nome, 'ip': ip, 'local': local,
+        'community': ?community,
+      }))['id'];
+
+  Future<void> atualizarEquipamento(String id, {String? nome, String? ip, String? community}) => _send('PUT', '/equipamentos/$id', body: {
+        'nome': ?nome,
+        'ip': ?ip,
+        'community': ?community,
+      });
+
+  Future<void> apagarEquipamento(String id) => _send('DELETE', '/equipamentos/$id');
+
+  Future<List<dynamic>> eventosEquipamento(String id) async => await _send('GET', '/equipamentos/$id/eventos') as List;
 
   Future<String> createMk(MkInput i) async => (await _send('POST', '/mks', body: i.toJson()))['id'];
 

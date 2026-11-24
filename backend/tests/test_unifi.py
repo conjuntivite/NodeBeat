@@ -11,11 +11,12 @@ def _dev():
     return {"ip": "192.0.2.20", "mac": "02:00:00:aa:bb:01", "name": "sw-teste", "model": "USW-FAKE",
             "version": "7.0.1", "upgradable": True, "uptime": 1234, "system-stats": {"cpu": "16.0", "mem": "40.5"},
             "general_temperature": 51, "total_max_power": 95, "num_sta": 7,
-            "uplink": {"port_idx": 2, "uplink_mac": "02:00:00:aa:bb:02", "uplink_remote_port": 5},
+            "uplink": {"port_idx": 2, "uplink_device_name": "sw-core", "uplink_remote_port": 5},
+            "total_used_power": 51.01,
             "port_table": [
                 {"port_idx": 1, "poe_power": "2.50", "poe_class": "Class 3", "rx_bytes-r": 1250000.0,
                  "tx_bytes-r": 125000, "rx_errors": 2, "tx_errors": 1, "rx_dropped": 4, "tx_dropped": 3,
-                 "stp_state": "forwarding", "link_down_count": 3, "mac_table": [{}, {}]},
+                 "stp_state": "forwarding", "link_down_count": 3, "mac_table_count": 2},
                 {"port_idx": 2, "is_uplink": True}]}
 
 
@@ -31,8 +32,8 @@ def test_parse_switch_poe():
     sis = s["sistema"]
     assert sis["cpu"] == 16.0 and sis["mem"] == 40.5 and sis["temperatura"] == 51.0
     assert sis["firmware"] == "7.0.1" and sis["atualizacao"] is True and sis["uptime_s"] == 1234
-    assert sis["poe_usado_w"] == 2.5 and sis["poe_max_w"] == 95.0 and sis["clientes"] == 7
-    assert sis["uplink"] == {"porta": 2, "remoto": "02:00:00:aa:bb:02", "remoto_porta": 5}
+    assert sis["poe_usado_w"] == 51.0 and sis["poe_max_w"] == 95.0 and sis["clientes"] == 7
+    assert sis["uplink"] == {"porta": 2, "remoto": "sw-core", "remoto_porta": 5}
 
 
 def test_parse_switch_campos_ausentes():
@@ -88,3 +89,14 @@ def test_settings_unifi_opcional(monkeypatch):
     assert s.unifi_url is None and s.unifi_api_key is None
     monkeypatch.setenv("NODEBEAT_UNIFI_URL", URL)
     assert load_settings().unifi_url == URL
+
+
+def test_parse_switch_poe_fallback_e_sem_poe():
+    d = _dev()
+    del d["total_used_power"]
+    assert parse_switch(d)["sistema"]["poe_usado_w"] == 2.5
+    nopoe = {"ip": "192.0.2.21", "mac": "02:00:00:aa:bb:03", "name": "x", "total_max_power": 0,
+             "uplink": {"port_idx": 1}, "port_table": [{"port_idx": 1}]}
+    sis = parse_switch(nopoe)["sistema"]
+    assert sis["poe_max_w"] is None and sis["poe_usado_w"] is None
+    assert sis["uplink"] == {"porta": 1, "remoto": None, "remoto_porta": None}

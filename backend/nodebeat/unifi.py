@@ -45,7 +45,7 @@ def _porta(p: dict, uplink_idx: int | None) -> dict:
         "descartes": int((_num(p.get("rx_dropped")) or 0) + (_num(p.get("tx_dropped")) or 0)),
         "stp": p.get("stp_state"), "quedas_link": _int(p.get("link_down_count")),
         "uplink": bool(p.get("is_uplink")) or p.get("port_idx") == uplink_idx,
-        "aparelhos": len(p["mac_table"]) if isinstance(p.get("mac_table"), list) else None,
+        "aparelhos": _int(p.get("mac_table_count")),
         "clientes": [],
     }
 
@@ -56,15 +56,18 @@ def parse_switch(dev: dict) -> dict:
     portas = [p for p in dev.get("port_table") or [] if isinstance(p.get("port_idx"), int)]
     poe = [w for w in (_num(p.get("poe_power")) for p in portas) if w is not None]
     stats = dev.get("system-stats") or {}
+    usado = _arred(dev.get("total_used_power"))
+    if usado is None and poe:
+        usado = round(sum(poe), 1)
     return {
         "ip": dev.get("ip"), "mac": dev.get("mac"), "nome": dev.get("name"), "modelo": dev.get("model"),
         "sistema": {
             "modelo": dev.get("model"), "firmware": dev.get("version"), "atualizacao": bool(dev.get("upgradable")),
             "uptime_s": _int(dev.get("uptime")), "cpu": _arred(stats.get("cpu")), "mem": _arred(stats.get("mem")),
             "temperatura": _arred(dev.get("general_temperature")),
-            "poe_usado_w": round(sum(poe), 1) if poe else None, "poe_max_w": _arred(dev.get("total_max_power")),
+            "poe_usado_w": usado, "poe_max_w": _arred(dev.get("total_max_power")) or None,  # 0 = switch sem PoE
             "clientes": _int(dev.get("num_sta")),
-            "uplink": {"porta": up_idx, "remoto": up.get("uplink_mac"), "remoto_porta": _int(up.get("uplink_remote_port"))}
+            "uplink": {"porta": up_idx, "remoto": up.get("uplink_device_name"), "remoto_porta": _int(up.get("uplink_remote_port"))}
             if up and up_idx is not None else None,
         },
         "portas": {str(p["port_idx"]): _porta(p, up_idx) for p in portas},

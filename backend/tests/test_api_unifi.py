@@ -2,8 +2,10 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 
+from nodebeat import store
 from tests.test_api_equipamentos import _novo
 from tests.test_api_inventario import anon, client, db, r  # noqa: F401  (fixtures)
+from tests.test_api_mks import criar
 
 PORTA = {"poe_w": 4.5, "poe_classe": 2, "rx_mbps": 1.0, "tx_mbps": 2.0, "erros": 0, "descartes": 0, "stp": "forwarding",
          "quedas_link": 0, "uplink": False, "aparelhos": 1, "clientes": []}
@@ -52,8 +54,19 @@ async def test_eventos_switches(client, db):
     assert re.match(r"\d{4}-", e["quando"])
 
 
-async def test_periodo_invalido_e_painel(client, db):
-    id = await _novo(client)
-    await _ev(db, id, "inalcancavel", 1)
+async def test_periodo_invalido(client):
     assert (await client.get("/api/eventos/switches?periodo=2h")).status_code == 422
-    assert (await client.get("/api/eventos/painel")).status_code == 200
+
+
+async def test_painel_nao_conta_eventos_unifi(client, db):
+    mk = await criar(client)
+    id = await _novo(client)
+    falha = {"recebido_em": datetime.now(UTC) - timedelta(minutes=10), "severidade": "crit", "tipo": "login_falha",
+             "topicos": ["system", "error", "critical"], "campos": {},
+             "mensagem": "login failure for user root from 203.0.113.9 via ssh"}
+    await store.inserir_eventos(db, [falha | {"mk_id": mk}, falha | {"mk_id": f"eq:{id}", "origem": "unifi"}])
+    body = (await client.get("/api/eventos/painel")).json()
+    assert body["resumo"]["acesso"] == 1
+    # o painel também ignora MKs desconhecidas; a exclusão em si é do store
+    evs = await store.listar_eventos_periodo(db, datetime.now(UTC) - timedelta(days=1))
+    assert [e["mk_id"] for e in evs] == [mk]

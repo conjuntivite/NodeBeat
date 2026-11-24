@@ -76,7 +76,12 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
 
   Future<void> _carregar() async {
     final meu = ++_pedido;
-    setState(() => _erro = null);
+    // limpa o bloco dos switches: sem dados velhos de outro período enquanto carrega ou se falhar
+    setState(() {
+      _erro = null;
+      _sw = null;
+      _swErro = null;
+    });
     _carregarSwitches(meu);
     try {
       final d = await widget.api.painelEventos(_periodo, mkId: _mk);

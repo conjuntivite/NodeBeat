@@ -57,7 +57,7 @@ Map<String, dynamic> _switches() => {
     };
 
 Future<List<Uri>> _show(WidgetTester t,
-    {Map<String, dynamic>? corpo, int status = 200, Map<String, dynamic>? sw, int swStatus = 200, Brightness b = Brightness.light, double largura = 1100, double altura = 2400}) async {
+    {Map<String, dynamic>? corpo, int status = 200, Map<String, dynamic>? sw, int swStatus = 200, bool swFalhaNaSegunda = false, Brightness b = Brightness.light, double largura = 1100, double altura = 2400}) async {
   t.view.physicalSize = Size(largura, altura);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -65,7 +65,10 @@ Future<List<Uri>> _show(WidgetTester t,
   final api = ApiClient(
     client: MockClient((req) async {
       urls.add(req.url);
-      if (req.url.path == '/api/eventos/switches') return _json(sw ?? _switches(), swStatus);
+      if (req.url.path == '/api/eventos/switches') {
+        if (swFalhaNaSegunda && req.url.queryParameters['periodo'] != '24h') return _json({'detail': 'x'}, 500);
+        return _json(sw ?? _switches(), swStatus);
+      }
       return req.url.path == '/api/eventos/painel' ? _json(corpo ?? painelJson(), status) : http.Response('', 404);
     }),
   );
@@ -297,6 +300,18 @@ void main() {
     expect(find.text('Mudanças de configuração'), findsOneWidget);
     expect(find.text('Switches'), findsOneWidget);
     expect(find.text('Tentar de novo'), findsNothing);
+  });
+
+  testWidgets('recarga que falha limpa os dados antigos e mostra o erro', (t) async {
+    await _show(t, swFalhaNaSegunda: true, altura: 6000);
+    expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+    await t.tap(find.text('7 dias'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.text('Switches'), findsOneWidget);
+    expect(find.text('Switch Teste · Porta 5'), findsNothing);
+    expect(find.text('Clientes com fio'), findsNothing);
+    expect(find.text('x'), findsOneWidget);
   });
 
   testWidgets('erro nas MKs não derruba o bloco Switches', (t) async {

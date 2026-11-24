@@ -98,13 +98,73 @@ class Equipamento {
         portasTotal = j['portas_total'] ?? 0,
         portasUp = j['portas_up'] ?? 0,
         uplinks = Map<String, dynamic>.from(j['uplinks'] ?? (j['estado'] as Map?)?['uplinks'] ?? {}),
-        portas = portasVista((j['estado'] as Map?)?['portas'], j['uplinks'] ?? (j['estado'] as Map?)?['uplinks'] ?? const {});
+        portas = portasVista((j['estado'] as Map?)?['portas'], j['uplinks'] ?? (j['estado'] as Map?)?['uplinks'] ?? const {}),
+        unifi = j['unifi'] is Map ? UnifiSwitch.fromJson(Map<String, dynamic>.from(j['unifi'])) : null;
   final String id, tipo, nome, ip;
+  final UnifiSwitch? unifi;
   final String? local, localNome, origem;
   final Map<String, dynamic>? estado;
   final int portasTotal, portasUp;
   final List<PortaVista> portas;
   final Map<String, dynamic> uplinks;
+}
+
+double? _d(Object? v) => (v as num?)?.toDouble();
+int? _i(Object? v) => (v as num?)?.toInt();
+
+class UnifiCliente {
+  UnifiCliente.fromJson(Map j)
+      : nome = j['nome'] as String?,
+        ip = j['ip'] as String?,
+        mac = j['mac'] as String?,
+        fabricante = j['fabricante'] as String?,
+        mbps = _d(j['mbps']);
+  final String? nome, ip, mac, fabricante;
+  final double? mbps;
+}
+
+class UnifiPorta {
+  UnifiPorta.fromJson(Map j)
+      : poeW = _d(j['poe_w']),
+        rxMbps = _d(j['rx_mbps']),
+        txMbps = _d(j['tx_mbps']),
+        erros = _i(j['erros']),
+        stp = j['stp'] as String?,
+        uplink = j['uplink'] == true,
+        clientes = [for (final c in (j['clientes'] as List?) ?? const []) UnifiCliente.fromJson(c as Map)],
+        aparelhos = _i(j['aparelhos']) ?? ((j['clientes'] as List?)?.length ?? 0);
+  final double? poeW, rxMbps, txMbps;
+  final int? erros;
+  final String? stp;
+  final bool uplink;
+  final int aparelhos;
+  final List<UnifiCliente> clientes;
+}
+
+/// Dados do controlador UniFi do switch (`sistema` + `portas` por nome SNMP); campos numéricos podem ser null.
+class UnifiSwitch {
+  UnifiSwitch.fromJson(Map<String, dynamic> j)
+      : sistema = Map<String, dynamic>.from((j['sistema'] as Map?) ?? const {}),
+        portas = {
+          for (final e in ((j['portas'] as Map?) ?? const {}).entries) '${e.key}': UnifiPorta.fromJson(e.value as Map),
+        };
+  final Map<String, dynamic> sistema;
+  final Map<String, UnifiPorta> portas;
+  String? get firmware => sistema['firmware'] as String?;
+  bool get atualizacao => sistema['atualizacao'] == true;
+  double? get cpu => _d(sistema['cpu']);
+  double? get mem => _d(sistema['mem']);
+  double? get temperatura => _d(sistema['temperatura']);
+  double? get poeUsadoW => _d(sistema['poe_usado_w']);
+  double? get poeMaxW => _d(sistema['poe_max_w']);
+  int? get clientes => _i(sistema['clientes']);
+  Map? get uplink => sistema['uplink'] as Map?;
+
+  /// A porta SNMP (ex.: 0/12) cujo número final é o índice do uplink no UniFi.
+  bool ehUplink(String nomePorta) {
+    final n = uplink?['porta'];
+    return n != null && RegExp(r'(\d+)$').firstMatch(nomePorta)?.group(1) == '$n';
+  }
 }
 
 /// Estado atual guardado pelo worker; null em MkDetail se a MK ainda não foi lida.

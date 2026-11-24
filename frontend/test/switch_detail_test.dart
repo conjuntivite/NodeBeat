@@ -12,8 +12,37 @@ import 'package:nodebeat/theme/theme.dart';
 http.Response _json(Object o) =>
     http.Response(jsonEncode(o), 200, headers: {'content-type': 'application/json; charset=utf-8'});
 
-Future<void> _show(WidgetTester t, {String origem = 'manual'}) async {
-  t.view.physicalSize = const Size(1400, 2000);
+Map<String, dynamic> _unifi({int clientes30 = 30}) => {
+      'lido_em': '2026-11-24T10:00:00Z',
+      'sistema': {
+        'modelo': 'USW-48-PoE', 'firmware': '7.6.11', 'atualizacao': true, 'uptime_s': 1000, 'cpu': 16, 'mem': 40,
+        'temperatura': 53, 'poe_usado_w': 51.0, 'poe_max_w': 195, 'clientes': 31,
+        'uplink': {'porta': 12, 'remoto': 'sw-core', 'remoto_porta': 3},
+      },
+      'portas': {
+        '0/1': {
+          'poe_w': 2.5, 'poe_classe': 'Class 2', 'rx_mbps': 10.0, 'tx_mbps': 0.4, 'erros': 0, 'descartes': 0, 'stp': 'forwarding',
+          'quedas_link': 0, 'uplink': false, 'aparelhos': 1,
+          'clientes': [{'nome': 'camera-01', 'ip': '192.0.2.10', 'mac': '02:00:00:00:00:01', 'fabricante': 'Acme', 'mbps': 5}],
+        },
+        '0/2': {
+          'poe_w': null, 'poe_classe': null, 'rx_mbps': null, 'tx_mbps': null, 'erros': null, 'descartes': null, 'stp': null,
+          'quedas_link': null, 'uplink': false, 'aparelhos': clientes30,
+          'clientes': [
+            for (var i = 0; i < clientes30; i++)
+              {'nome': i.isEven ? 'host-$i' : null, 'ip': '192.0.2.${i + 20}', 'mac': '02:00:00:00:01:${i.toRadixString(16).padLeft(2, '0')}', 'fabricante': null, 'mbps': null}
+          ],
+        },
+        '0/12': {
+          'poe_w': null, 'poe_classe': null, 'rx_mbps': 1.0, 'tx_mbps': 2.0, 'erros': 0, 'descartes': 0, 'stp': 'forwarding',
+          'quedas_link': 0, 'uplink': true, 'aparelhos': 0, 'clientes': [],
+        },
+      },
+    };
+
+Future<void> _show(WidgetTester t,
+    {String origem = 'manual', Map<String, dynamic>? unifi, double largura = 1400, Brightness brilho = Brightness.light}) async {
+  t.view.physicalSize = Size(largura, 2000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final portas = {
@@ -28,10 +57,11 @@ Future<void> _show(WidgetTester t, {String origem = 'manual'}) async {
             'estado': {'status': 'no_ar', 'detalhe': null, 'desde': '2026-01-01T10:00:00Z', 'portas': portas,
               'uplinks': {'0/12': {'filho': null, 'vigiados': 4}}},
             'uplinks': {'0/12': {'filho': null, 'vigiados': 4}},
+            'unifi': unifi,
           }),
         _ => _json([]),
       });
-  await t.pumpWidget(MaterialApp(theme: tradeTheme(Brightness.light), home: SwitchDetailScreen(ApiClient(client: mock), 's1')));
+  await t.pumpWidget(MaterialApp(theme: tradeTheme(brilho), home: SwitchDetailScreen(ApiClient(client: mock), 's1')));
   await t.pump();
   await t.pump();
 }
@@ -87,4 +117,59 @@ void main() {
     expect(find.text('Apagar'), findsNothing);
     await t.pumpWidget(const SizedBox());
   });
+
+  testWidgets('indicadores do UniFi aparecem com unifi e somem sem ele', (t) async {
+    await _show(t, unifi: _unifi());
+    for (final x in ['CPU', 'Memória', 'Temperatura', 'PoE', 'Clientes']) {
+      expect(find.text(x), findsWidgets, reason: x);
+    }
+    expect(find.text('16%'), findsOneWidget);
+    expect(find.text('53 °C'), findsOneWidget);
+    expect(find.text('51,0 W'), findsOneWidget);
+    expect(find.text('de 195 W'), findsOneWidget);
+    expect(find.textContaining('Firmware 7.6.11 · atualização disponível'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    await _show(t);
+    expect(find.text('CPU'), findsNothing);
+    expect(find.textContaining('Firmware'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('linha da 0/1 mostra PoE e tráfego; tocar mostra o cliente', (t) async {
+    await _show(t, unifi: _unifi());
+    final l = find.byKey(const Key('linha-porta-0/1'));
+    expect(find.descendant(of: l, matching: find.text('2,5 W')), findsOneWidget);
+    expect(find.descendant(of: l, matching: find.text('10,0 / 0,4 Mbps')), findsOneWidget);
+    await t.ensureVisible(l);
+    await t.pump();
+    await t.tap(l);
+    await t.pump();
+    final det = find.byKey(const Key('detalhe-porta'));
+    expect(find.descendant(of: det, matching: find.text('camera-01')), findsOneWidget);
+    expect(find.descendant(of: det, matching: find.textContaining('192.0.2.10')), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('porta de uplink mostra para onde vai', (t) async {
+    await _show(t, unifi: _unifi());
+    await t.tap(find.byKey(const Key('porta-0/12')));
+    await t.pump();
+    expect(find.text('Uplink para sw-core (porta 3)'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  for (final b in Brightness.values) {
+    testWidgets('30 clientes em 360 px sem overflow (${b.name})', (t) async {
+      await _show(t, unifi: _unifi(), largura: 360, brilho: b);
+      final l = find.byKey(const Key('linha-porta-0/2'));
+      await t.ensureVisible(l);
+      await t.pump();
+      await t.tapAt(t.getTopLeft(l) + const Offset(10, 10));
+      await t.pump();
+      expect(find.text('Equipamentos nesta porta (30)'), findsOneWidget);
+      expect(find.text('Sem nome'), findsWidgets);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+  }
 }

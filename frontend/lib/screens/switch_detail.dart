@@ -11,6 +11,12 @@ import '../widgets/shell.dart';
 /// Velocidade em Mbps: 1000 -> "1 Gbps", 100 -> "100 Mbps".
 String velocidadeTxt(int mbps) => mbps >= 1000 ? '${mbps % 1000 == 0 ? mbps ~/ 1000 : mbps / 1000} Gbps' : '$mbps Mbps';
 
+/// Decimal com vírgula e 1 casa: 2.5 -> "2,5"; null -> "—".
+String _dec(double? v) => v == null ? '—' : v.toStringAsFixed(1).replaceAll('.', ',');
+
+/// Inteiro sem casas: 16.0 -> "16".
+String _int(double v) => v.round().toString();
+
 /// Detalhe de um switch: indicadores, painel frontal, tabela de portas, histórico e syslog.
 class SwitchDetailScreen extends StatefulWidget {
   const SwitchDetailScreen(this.api, this.id, {super.key});
@@ -113,7 +119,12 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
       titulo: eq?.nome ?? 'Switch',
       subtitulo: eq == null
           ? null
-          : [eq.ip, eq.localNome ?? 'Sem local', if (eq.estado?['detalhe'] != null) '${eq.estado!['detalhe']}'].join(' · '),
+          : [
+              eq.ip,
+              eq.localNome ?? 'Sem local',
+              if (eq.estado?['detalhe'] != null) '${eq.estado!['detalhe']}',
+              if (eq.unifi?.firmware != null) 'Firmware ${eq.unifi!.firmware}${eq.unifi!.atualizacao ? ' · atualização disponível' : ''}',
+            ].join(' · '),
       migalhas: Migalhas(anterior: 'Switches', atual: eq?.nome ?? 'Switch', aoVoltar: () => voltar(context)),
       acoes: eq == null
           ? const []
@@ -157,6 +168,7 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
     final up = eq.portas.where((p) => p.estado == 'up').length;
     final caiu = eq.portas.where((p) => p.estado == 'caiu').length;
     final rapidas = eq.portas.where((p) => p.estado == 'up' && (p.velocidade ?? 0) >= 1000).length;
+    final u = eq.unifi;
     return Wrap(spacing: t.space4, runSpacing: t.space4, children: [
       Indicador(rotulo: 'Portas', valor: '${eq.portas.length}'),
       Indicador(rotulo: 'Com link', valor: '$up', dica: '$rapidas a 1 Gbps ou mais'),
@@ -167,8 +179,19 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
         corDica: caiu == 0 ? null : t.negative,
       ),
       Indicador(rotulo: 'Uplinks', valor: '${eq.uplinks.length}', dica: 'levam a outro switch'),
+      if (u != null) ...[
+        if (u.cpu != null) Indicador(rotulo: 'CPU', valor: '${_int(u.cpu!)}%'),
+        if (u.mem != null) Indicador(rotulo: 'Memória', valor: '${_int(u.mem!)}%'),
+        if (u.temperatura != null) Indicador(rotulo: 'Temperatura', valor: '${_int(u.temperatura!)} °C'),
+        if (u.poeUsadoW != null)
+          Indicador(rotulo: 'PoE', valor: '${_dec(u.poeUsadoW)} W', dica: u.poeMaxW == null ? null : 'de ${_int(u.poeMaxW!)} W'),
+        if (u.clientes != null) Indicador(rotulo: 'Clientes', valor: '${u.clientes}'),
+      ],
     ]);
   }
+
+  /// "10,0 / 0,4 Mbps" (↓ / ↑); "—" sem dado.
+  String _trafego(UnifiPorta? u) => u == null || (u.rxMbps == null && u.txMbps == null) ? '—' : '${_dec(u.rxMbps)} / ${_dec(u.txMbps)} Mbps';
 
   String _estadoTxt(String e) => switch (e) { 'up' => 'Com link', 'caiu' => 'Caiu', _ => 'Sem link' };
 
@@ -181,7 +204,8 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
   Widget _tabelaPortas(TradeTokens t, Equipamento eq) {
     final head = TradeType.label.copyWith(color: t.fgSecondary);
     final cel = TradeType.bodyMd.copyWith(color: t.fgPrimary);
-    const flex = [2, 3, 2, 2, 4];
+    const flex = [2, 3, 2, 2, 4, 2, 3, 2, 2, 2];
+    UnifiPorta? un(PortaVista p) => eq.unifi?.portas[p.nome];
     Widget linha(List<Widget> c, {Color? fundo, VoidCallback? onTap, Key? key}) => InkWell(
           key: key,
           onTap: onTap,
@@ -198,12 +222,12 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
         builder: (_, box) => SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
-            width: box.maxWidth < 560 ? 560 : box.maxWidth,
+            width: box.maxWidth < 900 ? 900 : box.maxWidth,
             child: Container(
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(t.radiusMd), border: Border.all(color: t.borderSubtle)),
               child: Column(children: [
-                linha([for (final h in ['Porta', 'Estado', 'Velocidade', 'Há quanto tempo', 'Ligado a']) Text(h, style: head)],
+                linha([for (final h in ['Porta', 'Estado', 'Velocidade', 'Há quanto tempo', 'Ligado a', 'PoE', '↓ / ↑', 'Erros', 'STP', 'Clientes']) Text(h, style: head)],
                     fundo: t.bgSubtle),
                 for (final p in eq.portas)
                   linha(
@@ -220,6 +244,11 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
                           style: cel.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
                       Text(relativo(p.desde).isEmpty ? '—' : relativo(p.desde), style: cel),
                       Text(_ligado(eq, p.nome) ?? '—', overflow: TextOverflow.ellipsis, style: cel),
+                      Text(un(p)?.poeW == null ? '—' : '${_dec(un(p)!.poeW)} W', style: cel),
+                      Text(_trafego(un(p)), overflow: TextOverflow.ellipsis, style: cel),
+                      Text(un(p)?.erros == null ? '—' : '${un(p)!.erros}', style: cel),
+                      Text(un(p)?.stp ?? '—', overflow: TextOverflow.ellipsis, style: cel),
+                      Text(un(p) == null || un(p)!.aparelhos == 0 ? '—' : '${un(p)!.aparelhos}', style: cel),
                     ],
                   ),
               ]),
@@ -234,6 +263,8 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
     final up = p.estado == 'up';
     final rel = relativo(p.desde);
     final ligado = _ligado(eq, p.nome);
+    final un = eq.unifi?.portas[p.nome];
+    final uplink = eq.unifi != null && eq.unifi!.ehUplink(p.nome) ? eq.unifi!.uplink : null;
     Widget linha(String k, String v) => Padding(
           padding: EdgeInsets.symmetric(vertical: t.space1),
           child: Row(children: [
@@ -252,8 +283,34 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
         if (up && p.velocidade != null) linha('Velocidade', velocidadeTxt(p.velocidade!)),
         if (rel.isNotEmpty) linha(up ? 'Com link' : 'Sem link', 'há $rel'),
         if (ligado != null) linha('Ligado a', ligado),
+        if (un != null) ...[
+          if (un.poeW != null) linha('PoE', '${_dec(un.poeW)} W'),
+          if (_trafego(un) != '—') linha('↓ / ↑', _trafego(un)),
+        ],
+        if (uplink != null)
+          linha('Uplink', 'Uplink para ${uplink['remoto'] ?? 'outro switch'}${uplink['remoto_porta'] != null ? ' (porta ${uplink['remoto_porta']})' : ''}'),
+        if (un != null && un.clientes.isNotEmpty) ..._clientes(t, un.clientes),
       ]),
     );
+  }
+
+  List<Widget> _clientes(TradeTokens t, List<UnifiCliente> cs) {
+    Widget cli(UnifiCliente c) => Padding(
+          padding: EdgeInsets.symmetric(vertical: t.space1),
+          child: Wrap(spacing: t.space3, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text(c.nome ?? c.fabricante ?? 'Sem nome', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
+            Text([if (c.ip != null) c.ip!, if (c.mac != null) c.mac!].join(' · '), style: TradeType.ticker.copyWith(color: t.fgSecondary)),
+            if (c.mbps != null) Text('${_dec(c.mbps)} Mbps', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+          ]),
+        );
+    return [
+      SizedBox(height: t.space3),
+      Text('Equipamentos nesta porta (${cs.length})', style: TradeType.label.copyWith(color: t.fgSecondary)),
+      if (cs.length > 8)
+        ConstrainedBox(constraints: const BoxConstraints(maxHeight: 320), child: ListView(shrinkWrap: true, children: [for (final c in cs) cli(c)]))
+      else
+        for (final c in cs) cli(c),
+    ];
   }
 
   Widget _historico(TradeTokens t) => TradeCard(

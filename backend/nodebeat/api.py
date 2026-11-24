@@ -61,6 +61,23 @@ class AparelhoIn(BaseModel):
     e_switch: bool | None = None
 
 
+TIPOS_EQ = {"switch"}
+
+
+class EquipamentoIn(BaseModel):
+    tipo: str
+    nome: str = Field(min_length=1, max_length=80)
+    ip: str
+    local: str
+    community: str | None = None
+
+
+class EquipamentoPut(BaseModel):
+    nome: str | None = Field(default=None, max_length=80)
+    ip: str | None = None
+    community: str | None = None
+
+
 class RotuloPortaIn(BaseModel):
     porta: str = Field(min_length=1, max_length=100)
     rotulo: str | None = Field(None, max_length=40)
@@ -435,6 +452,97 @@ def create_app(db, r, settings) -> FastAPI:
         await _achar(id)
         await store.set_rotulo_porta(db, id, body.porta, body.rotulo or None)
         return Response(status_code=204)
+
+    async def _eq(id: str) -> dict:
+        eq = await store.get_equipamento(db, id)
+        if not eq:
+            raise HTTPException(404, "Equipamento não encontrado")
+        return eq
+
+    async def _linha(eq: dict, estado: dict | None, nomes: dict[str, str]) -> dict:
+        portas = (estado or {}).get("portas") or {}
+        return {"id": eq["id"], "tipo": eq["tipo"], "nome": eq["nome"], "ip": eq["ip"], "local": eq["local"],
+                "local_nome": "Sede" if eq["local"] == "sede" else nomes.get(eq["local"], eq["local"]),
+                "origem": eq["origem"], "estado": estado, "portas_total": len(portas),
+                "portas_up": sum(p.get("up") is True for p in portas.values())}
+
+    async def _nomes_mks() -> dict[str, str]:
+        return {m["id"]: m["nome"] for m in await store.list_mks(db)}
+
+    def _ip_ok(ip: str) -> str:
+        try:
+            return str(ipaddress.IPv4Address(ip))
+        except ValueError:
+            raise HTTPException(422, [{"loc": ["body", "ip"], "msg": "IP inválido"}]) from None
+
+    async def _eq_livre(local: str, ip: str, ignorar: str | None = None) -> None:
+        if any(e["local"] == local and e["ip"] == ip and e["id"] != ignorar
+               for e in await store.listar_equipamentos(db)):
+            raise HTTPException(409, "Já existe um equipamento com esse IP nesse local")
+
+    @mks.get("/equipamentos")
+    async def listar_eqs(tipo: str | None = None) -> list[dict]:
+        estados, nomes = await history.load_eq_states(r), await _nomes_mks()
+        linhas = [await _linha(e, estados.get(e["id"]), nomes) for e in await store.listar_equipamentos(db, tipo)]
+        linhas.sort(key=lambda x: (x["local"] != "sede", x["local_nome"].casefold(), x["nome"].casefold()))
+        return linhas
+
+    @mks.post("/equipamentos", status_code=201)
+    async def criar_eq(body: EquipamentoIn) -> dict:
+        if body.tipo not in TIPOS_EQ:
+            raise HTTPException(422, [{"loc": ["body", "tipo"], "msg": "Tipo desconhecido"}])
+        ip = _ip_ok(body.ip)
+        if body.local != "sede" and not await store.get_mk(db, body.local):
+            raise HTTPException(422, [{"loc": ["body", "local"], "msg": "Local não existe"}])
+        await _eq_livre(body.local, ip)
+        community = body.community or settings.snmp_communities[0]
+        return {"id": await store.inserir_equipamento(db, {
+            "tipo": body.tipo, "nome": body.nome, "ip": ip, "local": body.local, "origem": "manual",
+            "community_cifrada": crypto.encrypt(community, settings.secret_key)})}
+
+    @mks.get("/equipamentos/{id}")
+    async def obter_eq(id: str) -> dict:
+        eq = await _eq(id)
+        estado = (await history.load_eq_states(r)).get(id)
+        return await _linha(eq, estado, await _nomes_mks()) | {"uplinks": (estado or {}).get("uplinks") or {}}
+
+    @mks.put("/equipamentos/{id}", status_code=204)
+    async def editar_eq(id: str, body: EquipamentoPut) -> Response:
+        eq = await _eq(id)
+        dados = body.model_dump(exclude_unset=True)
+        if eq["origem"] != "manual" and set(dados) - {"nome"}:
+            raise HTTPException(422, [{"loc": ["body", k], "msg": "Switch descoberto só aceita o nome"}
+                                      for k in dados if k != "nome"])
+        campos: dict = {}
+        if dados.get("nome"):
+            campos["nome"] = dados["nome"]
+        if dados.get("ip"):
+            campos["ip"] = _ip_ok(dados["ip"])
+            await _eq_livre(eq["local"], campos["ip"], id)
+        if dados.get("community"):
+            campos["community_cifrada"] = crypto.encrypt(dados["community"], settings.secret_key)
+        if campos:
+            await store.atualizar_equipamento(db, id, campos)
+        return Response(status_code=204)
+
+    @mks.delete("/equipamentos/{id}", status_code=204)
+    async def apagar_eq(id: str) -> Response:
+        eq = await _eq(id)
+        if eq["origem"] != "manual":
+            raise HTTPException(409, "Switch descoberto some sozinho quando deixa de responder SNMP")
+        await store.apagar_equipamento(db, id)
+        await history.delete_eq(r, id)
+        return Response(status_code=204)
+
+    @mks.get("/equipamentos/{id}/eventos")
+    async def eventos_eq(id: str) -> list[dict]:
+        await _eq(id)
+        return await store.listar_eventos(db, f"eq:{id}", limite=200)
+
+    @mks.get("/equipamentos/{id}/historico")
+    async def historico_eq(id: str) -> list[dict]:
+        await _eq(id)
+        return await history.history(r, f"eq:{id}")
 
     app.include_router(mks)
     return app

@@ -4,9 +4,11 @@ import '../api/client.dart';
 import '../theme/theme.dart';
 
 const _porGrupo = 12;
+const _largPorta = 24.0, _altPorta = 20.0, _pontoUplink = 6.0, _bordaUplink = 2.0;
+const _semNumero = 1 << 30;
 
 /// Número natural no nome ("0/12" -> 12, "ether5" -> 5); sem número vai para o fim.
-int _numero(String nome) => int.tryParse(RegExp(r'(\d+)\D*$').firstMatch(nome)?.group(1) ?? '') ?? 1 << 30;
+int _numero(String nome) => int.tryParse(RegExp(r'(\d+)\D*$').firstMatch(nome)?.group(1) ?? '') ?? _semNumero;
 
 bool _sfp(String n) => n.toLowerCase().startsWith('sfp') || n.toLowerCase().startsWith('qsfp');
 
@@ -19,7 +21,10 @@ class PainelPortas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    int cmp(PortaVista a, PortaVista b) => _numero(a.nome).compareTo(_numero(b.nome));
+    int cmp(PortaVista a, PortaVista b) {
+      final n = _numero(a.nome).compareTo(_numero(b.nome));
+      return n != 0 ? n : a.nome.compareTo(b.nome);
+    }
     final normais = portas.where((p) => !_sfp(p.nome)).toList()..sort(cmp);
     final sfps = portas.where((p) => _sfp(p.nome)).toList()..sort(cmp);
     return Wrap(
@@ -35,11 +40,18 @@ class PainelPortas extends StatelessWidget {
 
   Widget _grupo(BuildContext context, List<PortaVista> g) {
     final t = tokensOf(context);
-    // Posição 0,2,4... = fileira de cima (portas ímpares); 1,3,5... = embaixo.
-    Widget fileira(int resto) => Row(mainAxisSize: MainAxisSize.min, children: [
-          for (var i = resto; i < g.length; i += 2) Padding(padding: EdgeInsets.all(t.space1 / 2), child: _porta(context, g[i])),
+    // Número ímpar no nome = fileira de cima, par = embaixo; sem número, alterna por posição.
+    final cima = <PortaVista>[], baixo = <PortaVista>[];
+    var semNum = 0;
+    for (final p in g) {
+      final n = _numero(p.nome);
+      final emCima = n == _semNumero ? semNum++ % 2 == 0 : n.isOdd;
+      (emCima ? cima : baixo).add(p);
+    }
+    Widget fileira(List<PortaVista> l) => Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final p in l) Padding(padding: EdgeInsets.all(t.space1 / 2), child: _porta(context, p)),
         ]);
-    return Column(mainAxisSize: MainAxisSize.min, children: [fileira(0), fileira(1)]);
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [fileira(cima), fileira(baixo)]);
   }
 
   Widget _porta(BuildContext context, PortaVista p) {
@@ -56,15 +68,15 @@ class PainelPortas extends StatelessWidget {
           onTap: aoTocar == null ? null : () => aoTocar!(p),
           child: Container(
             key: Key('porta-${p.nome}'),
-            width: 24,
-            height: 20,
+            width: _largPorta,
+            height: _altPorta,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: cor,
               borderRadius: BorderRadius.circular(t.radiusXs),
-              border: p.uplink ? Border.all(color: t.fgPrimary, width: 2) : null,
+              border: p.uplink ? Border.all(color: t.fgPrimary, width: _bordaUplink) : null,
             ),
-            child: p.uplink ? Container(width: 6, height: 6, decoration: BoxDecoration(color: t.fgPrimary, shape: BoxShape.circle)) : null,
+            child: p.uplink ? Container(width: _pontoUplink, height: _pontoUplink, decoration: BoxDecoration(color: t.fgPrimary, shape: BoxShape.circle)) : null,
           ),
         ),
       ),

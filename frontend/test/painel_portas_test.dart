@@ -20,6 +20,20 @@ void main() {
     expect(at('0/1').dx, lessThan(at('0/3').dx));
   });
 
+  testWidgets('5 portas: fileira de baixo alinhada à esquerda com a de cima', (tester) async {
+    await tester.pumpWidget(_app(PainelPortas(portas: [for (var i = 1; i <= 5; i++) _p('0/$i')])));
+    Offset at(String n) => tester.getTopLeft(find.byKey(Key('porta-$n')));
+    expect(at('0/2').dx, at('0/1').dx);
+  });
+
+  testWidgets('paridade pelo número do nome: ether2..ether5', (tester) async {
+    await tester.pumpWidget(_app(PainelPortas(portas: [for (var i = 2; i <= 5; i++) _p('ether$i')])));
+    Offset at(String n) => tester.getTopLeft(find.byKey(Key('porta-$n')));
+    expect(at('ether3').dy, at('ether5').dy);
+    expect(at('ether2').dy, at('ether4').dy);
+    expect(at('ether3').dy, lessThan(at('ether2').dy));
+  });
+
   testWidgets('SFP vai para o grupo da direita', (tester) async {
     await tester.pumpWidget(_app(PainelPortas(portas: [_p('sfp1'), _p('ether1'), _p('ether2')])));
     expect(tester.getTopLeft(find.byKey(const Key('porta-sfp1'))).dx,
@@ -34,7 +48,7 @@ void main() {
       Color? cor(String n) => ((tester.widget<Container>(find.byKey(Key('porta-$n'))).decoration) as BoxDecoration).color;
       expect(cor('1'), t.negativeFill);
       expect(cor('2'), t.positiveFill);
-      expect(cor('3'), isNot(anyOf(t.negativeFill, t.positiveFill)));
+      expect(cor('3'), t.borderSubtle);
     }
   });
 

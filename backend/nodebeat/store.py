@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from bson import ObjectId
 from bson.errors import InvalidId
+from pymongo.errors import BulkWriteError
 
 
 def _oid(id: str) -> ObjectId | None:
@@ -178,6 +179,24 @@ async def garantir_indices_eventos(db, dias: int) -> None:
         # ponytail: drop+create deixa a coleção alguns ms sem TTL, o que não importa
         await db.eventos.drop_index("ttl_recebido_em")
     await db.eventos.create_index("recebido_em", name="ttl_recebido_em", expireAfterSeconds=segundos)
+
+
+async def garantir_indice_unifi(db) -> None:
+    await db.eventos.create_index("unifi_id", unique=True, name="unifi_id_unico",
+                                  partialFilterExpression={"unifi_id": {"$exists": True}})
+
+
+async def inserir_eventos_unifi(db, docs: list[dict]) -> int:
+    """Insere ignorando os que já existem (o log é relido com sobreposição); devolve quantos entraram."""
+    if not docs:
+        return 0
+    try:
+        return len((await db.eventos.insert_many(docs, ordered=False)).inserted_ids)
+    except BulkWriteError as e:
+        erros = e.details.get("writeErrors", [])
+        if any(x.get("code") != 11000 for x in erros):
+            raise
+        return len(docs) - len(erros)
 
 
 async def inserir_eventos(db, docs: list[dict]) -> None:

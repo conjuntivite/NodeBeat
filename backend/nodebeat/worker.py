@@ -15,7 +15,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from . import crypto, history, inventario, mapa, probes
 from . import portas as portas_mod
-from . import routeros, snmp, store, switches, webhook
+from . import routeros, snmp, store, switches, unifi, webhook
 from .classify import classify
 from .config import Settings, load_settings
 from .rules import AlertEngine, EqObs, EqRef, MkRef, MkState
@@ -421,6 +421,65 @@ async def run_equipamentos(db, r, engine: AlertEngine, settings: Settings, now: 
         log.warning("equipamentos falharam: %s", type(e).__name__)
 
 
+UNIFI_CURSOR = "unifi:log:ultimo_ms"
+UNIFI_API = "/proxy/network/api/s/default/stat/"
+UNIFI_LOG = "/proxy/network/v2/api/site/default/system-log/"
+UNIFI_SOBREPOSICAO_MS = 60_000  # o log chega com atraso: relê o último minuto (o índice único descarta repetidos)
+UNIFI_PAGINA, UNIFI_PAGINAS = 500, 5
+
+
+async def _log_unifi(ler, client, s: Settings, de: int, ate: int) -> list[dict]:
+    out: list[dict] = []
+    for rota in ("all", "device-alert"):
+        for n in range(UNIFI_PAGINAS):
+            pag = await ler(client, s.unifi_url, s.unifi_api_key, UNIFI_LOG + rota,
+                            {"pageNumber": n, "pageSize": UNIFI_PAGINA, "timestampFrom": de, "timestampTo": ate})
+            out += pag
+            if len(pag) < UNIFI_PAGINA:
+                break
+    return out
+
+
+async def run_unifi(db, r, settings: Settings, now: datetime, *, ler=unifi.ler, client=None) -> None:
+    """Lê switches, clientes e log do UniFi; grava estado no Redis e eventos no Mongo; nunca levanta."""
+    if not (settings.unifi_url and settings.unifi_api_key):
+        return
+    try:
+        eqs = {e["ip"]: e for e in await store.listar_equipamentos(db, tipo="switch")}
+        u, k = settings.unifi_url, settings.unifi_api_key
+        devs = [d for d in await ler(client, u, k, UNIFI_API + "device") if d.get("type") == "usw"]
+        com_fio = unifi.clientes_com_fio(await ler(client, u, k, UNIFI_API + "sta"))
+        agora_ms = int(now.timestamp() * 1000)
+        ultimo = await r.get(UNIFI_CURSOR)
+        de = int(ultimo) - UNIFI_SOBREPOSICAO_MS if ultimo else agora_ms - 24 * 3600 * 1000
+        log_ev = await _log_unifi(ler, client, settings, de, agora_ms)  # antes de gravar: erro não deixa estado pela metade
+        sws = []
+        for dev in devs:
+            sw = unifi.parse_switch(dev)
+            eq = eqs.get(sw["ip"])
+            if not eq:
+                continue
+            for idx, cli in com_fio.get((sw["mac"] or "").lower(), {}).items():
+                if str(idx) in sw["portas"]:
+                    sw["portas"][str(idx)]["clientes"] = cli
+            await r.set(f"unifi:eq:{eq['id']}", json.dumps(
+                {"lido_em": now.isoformat(), "sistema": sw["sistema"], "portas": sw["portas"]}))
+            sws.append({"id": eq["id"], "nome": sw["nome"], "mac": (sw["mac"] or "").lower()})
+        docs = []
+        for e in log_ev:
+            if not (e.get("id") and e.get("timestamp")):
+                continue
+            sw = unifi.switch_do_evento(e, sws)
+            if sw:
+                docs.append(unifi.evento_unifi(e, sw["id"]))
+        await store.inserir_eventos_unifi(db, docs)
+        tops = [e["timestamp"] for e in log_ev if isinstance(e.get("timestamp"), int)]
+        if tops:
+            await r.set(UNIFI_CURSOR, max(tops))
+    except Exception as e:
+        log.warning("unifi falhou: %s", type(e).__name__)
+
+
 def inventario_devido(ultimo: float | None, agora: float, intervalo: int, pedido: bool) -> bool:
     return pedido or ultimo is None or agora - ultimo >= intervalo
 
@@ -451,6 +510,11 @@ async def main() -> None:
         mapa_task, ultimo_mapa = None, None
         sw_task, ultimo_sw = None, None
         eq_task, ultimo_eq = None, None
+        un_task, ultimo_un = None, None
+        # ponytail: o controlador UniFi usa certificado autoassinado interno; verify=False só neste cliente
+        un_client = httpx.AsyncClient(verify=False, timeout=15) if s.unifi_url and s.unifi_api_key else None
+        if un_client:
+            await store.garantir_indice_unifi(db)
 
         async def _inv(s):
             nonlocal ultimo_inv
@@ -496,6 +560,13 @@ async def main() -> None:
                     ultimo_sw = loop.time()
             except Exception as e:
                 log.warning("agendamento dos switches falhou: %s", type(e).__name__)
+            try:  # idem o UniFi (só com URL e chave)
+                if (un_client and (un_task is None or un_task.done())
+                        and (ultimo_un is None or loop.time() - ultimo_un >= s.mapa_s)):
+                    un_task = asyncio.create_task(run_unifi(db, r, s, datetime.now(UTC), client=un_client))
+                    ultimo_un = loop.time()
+            except Exception as e:
+                log.warning("agendamento do UniFi falhou: %s", type(e).__name__)
             await asyncio.sleep(max(0, s.interval_s - (loop.time() - t0)))
 
 

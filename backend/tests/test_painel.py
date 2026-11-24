@@ -163,6 +163,14 @@ def test_filtro_mk():
     assert r["resumo"]["acesso"] == 1
 
 
+def test_painel_ignora_eventos_de_equipamento():
+    base = [falha("a"), EV("b", "interface", "ether3 link down")]
+    com_eq = base + [falha("eq:x"), EV("eq:x", "interface", "ether3 link down"),
+                     EV("eq:x", "reboot", "system rebooted")]
+    assert M(com_eq) == M(base)
+    assert all(m["mk_id"] in ("a", "b") for m in M(com_eq)["por_mk"])
+
+
 def test_periodo_invalido_levanta_valueerror():
     with pytest.raises(ValueError):
         M([], "1h")

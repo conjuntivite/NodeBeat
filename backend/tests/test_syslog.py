@@ -101,6 +101,15 @@ async def test_mapa_reflete_alteracao(db):
     assert await syslog.mapa_ips(db) == {"10.0.0.9": id1}
 
 
+async def test_mapa_ips_inclui_equipamentos(db):
+    await store.insert_mk(db, {"nome": "a", "ip_tunel": "10.0.0.1"})
+    id_eq = await store.inserir_equipamento(db, {"nome": "sw", "ip": "10.0.0.5", "tipo": "switch"})
+    await store.inserir_equipamento(db, {"nome": "dup_mk", "ip": "10.0.0.1", "tipo": "switch"})
+    await store.inserir_equipamento(db, {"nome": "x", "ip": "10.0.0.7", "tipo": "switch"})
+    await store.inserir_equipamento(db, {"nome": "y", "ip": "10.0.0.7", "tipo": "switch"})
+    assert await syslog.mapa_ips(db) == {"10.0.0.1": None, "10.0.0.5": f"eq:{id_eq}", "10.0.0.7": None}
+
+
 def doc(i):
     return {"mk_id": "m", "mensagem": str(i)}
 

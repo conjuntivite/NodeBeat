@@ -22,11 +22,12 @@ PORTA = 5514  # o compose publica 514 -> 5514 (container não-root, sem cap)
 
 
 async def mapa_ips(db) -> dict[str, str | None]:
-    """ip_tunel -> mk_id; None quando o IP é de mais de uma MK."""
+    """ip_tunel -> mk_id, ip -> eq:<id> para equipamentos; None quando o IP é de mais de uma MK/equipamento."""
+    fontes = [(mk["ip_tunel"], mk["id"]) for mk in await store.list_mks(db)]
+    fontes += [(eq["ip"], f"eq:{eq['id']}") for eq in await store.listar_equipamentos(db)]
     mapa: dict[str, str | None] = {}
-    for mk in await store.list_mks(db):
-        ip = mk["ip_tunel"]
-        mapa[ip] = None if ip in mapa else mk["id"]
+    for ip, dono in fontes:
+        mapa[ip] = None if ip in mapa else dono
     return mapa
 
 

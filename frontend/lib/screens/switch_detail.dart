@@ -185,10 +185,14 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
         if (u.temperatura != null) Indicador(rotulo: 'Temperatura', valor: '${_int(u.temperatura!)} °C'),
         if (u.poeUsadoW != null)
           Indicador(rotulo: 'PoE', valor: '${_dec(u.poeUsadoW)} W', dica: u.poeMaxW == null ? null : 'de ${_int(u.poeMaxW!)} W'),
+        if (u.uptimeS != null) Indicador(rotulo: 'Uptime', valor: formatDuration(u.uptimeS!)),
         if (u.clientes != null) Indicador(rotulo: 'Clientes', valor: '${u.clientes}'),
       ],
     ]);
   }
+
+  /// Clientes da lista (mesmo número do detalhe); sem lista, os aparelhos vistos na porta.
+  int _nClientes(UnifiPorta? u) => u == null ? 0 : u.clientes.isNotEmpty ? u.clientes.length : u.aparelhos;
 
   /// "10,0 / 0,4 Mbps" (↓ / ↑); "—" sem dado.
   String _trafego(UnifiPorta? u) => u == null || (u.rxMbps == null && u.txMbps == null) ? '—' : '${_dec(u.rxMbps)} / ${_dec(u.txMbps)} Mbps';
@@ -248,7 +252,7 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
                       Text(_trafego(un(p)), overflow: TextOverflow.ellipsis, style: cel),
                       Text(un(p)?.erros == null ? '—' : '${un(p)!.erros}', style: cel),
                       Text(un(p)?.stp ?? '—', overflow: TextOverflow.ellipsis, style: cel),
-                      Text(un(p) == null || un(p)!.aparelhos == 0 ? '—' : '${un(p)!.aparelhos}', style: cel),
+                      Text(_nClientes(un(p)) == 0 ? '—' : '${_nClientes(un(p))}', style: cel),
                     ],
                   ),
               ]),
@@ -288,7 +292,7 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
           if (_trafego(un) != '—') linha('↓ / ↑', _trafego(un)),
         ],
         if (uplink != null)
-          linha('Uplink', 'Uplink para ${uplink['remoto'] ?? 'outro switch'}${uplink['remoto_porta'] != null ? ' (porta ${uplink['remoto_porta']})' : ''}'),
+          linha('Uplink', 'para ${uplink['remoto'] ?? 'outro switch'}${uplink['remoto_porta'] != null ? ' (porta ${uplink['remoto_porta']})' : ''}'),
         if (un != null && un.clientes.isNotEmpty) ..._clientes(t, un.clientes),
       ]),
     );
@@ -300,7 +304,7 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
           child: Wrap(spacing: t.space3, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
             Text(c.nome ?? c.fabricante ?? 'Sem nome', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
             Text([if (c.ip != null) c.ip!, if (c.mac != null) c.mac!].join(' · '), style: TradeType.ticker.copyWith(color: t.fgSecondary)),
-            if (c.mbps != null) Text('${_dec(c.mbps)} Mbps', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+            if (c.mbps != null) Text(velocidadeTxt(c.mbps!.round()), style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
           ]),
         );
     return [

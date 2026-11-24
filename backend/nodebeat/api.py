@@ -399,13 +399,13 @@ def create_app(db, r, settings) -> FastAPI:
         evs = await store.listar_eventos_unifi(db, desde)
         nomes = {e["id"]: e["nome"] for e in await store.listar_equipamentos(db)}
         contagens = dict.fromkeys(("clientes", "alertas", "poe", "mudancas"), 0)
-        for e in evs:
-            contagens[unifi.GRUPOS.get(e["tipo"], "alertas")] += 1
+        for tipo, n in (await store.contar_eventos_unifi(db, desde)).items():
+            contagens[unifi.GRUPOS.get(tipo, "alertas")] += n
         return {"contagens": contagens, "eventos": [
             {"quando": e["recebido_em"].isoformat(), "switch_id": e["mk_id"][3:],
              "switch_nome": nomes.get(e["mk_id"][3:], "Switch removido"), "porta": (e.get("campos") or {}).get("porta"),
              "tipo": e["tipo"], "grupo": unifi.GRUPOS.get(e["tipo"], "alertas"), "mensagem": e["mensagem"],
-             "severidade": e["severidade"]} for e in evs[:100]]}
+             "severidade": e["severidade"]} for e in evs]}
 
     @mks.get("/mks/{id}/portas/conferir")
     async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),

@@ -70,3 +70,13 @@ async def test_painel_nao_conta_eventos_unifi(client, db):
     # o painel também ignora MKs desconhecidas; a exclusão em si é do store
     evs = await store.listar_eventos_periodo(db, datetime.now(UTC) - timedelta(days=1))
     assert [e["mk_id"] for e in evs] == [mk]
+
+
+async def test_eventos_switches_contagem_total_e_lista_limitada(client, db):
+    id = await _novo(client)
+    docs = [{"mk_id": f"eq:{id}", "origem": "unifi", "unifi_id": f"u{i}", "recebido_em": datetime.now(UTC) - timedelta(minutes=i),
+             "tipo": "cliente_conectou", "severidade": "info", "campos": {}, "mensagem": f"m{i}"} for i in range(130)]
+    docs.append({**docs[0], "mk_id": "outra-mk", "unifi_id": "x"})  # fora do prefixo eq:
+    await db.eventos.insert_many(docs)
+    body = (await client.get("/api/eventos/switches?periodo=24h")).json()
+    assert body["contagens"]["clientes"] == 130 and len(body["eventos"]) == 100

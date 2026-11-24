@@ -158,6 +158,7 @@ class UnifiSwitch {
   double? get poeUsadoW => _d(sistema['poe_usado_w']);
   double? get poeMaxW => _d(sistema['poe_max_w']);
   int? get clientes => _i(sistema['clientes']);
+  int? get uptimeS => _i(sistema['uptime_s']);
   Map? get uplink => sistema['uplink'] as Map?;
 
   /// A porta SNMP (ex.: 0/12) cujo número final é o índice do uplink no UniFi.

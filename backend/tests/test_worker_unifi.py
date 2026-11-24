@@ -71,15 +71,45 @@ async def test_eventos_sem_duplicar_e_ap_fora(db, r):
     assert {d["mk_id"] for d in docs} == {f"eq:{eq}"}
 
 
-async def test_erro_mantem_estado_e_cursor(db, r):
+async def test_erro_mantem_estado_e_cursor(db, r, caplog):
     eq = await com_switch(db)
     await run_unifi(db, r, CFG, T0, ler=falso())
     antes = await r.get(f"unifi:eq:{eq}")
+    await r.set("unifi:log:ultimo_ms", 777)
 
     async def quebra(*a, **k):
         raise unifi.UnifiErro("x")
-    await run_unifi(db, r, CFG, T0 + timedelta(minutes=1), ler=quebra)
+    with caplog.at_level("DEBUG"):
+        await run_unifi(db, r, CFG, T0 + timedelta(minutes=1), ler=quebra)
     assert await r.get(f"unifi:eq:{eq}") == antes
+    assert await r.get("unifi:log:ultimo_ms") == "777"
+    assert "unifi falhou" in caplog.text and "chave-falsa" not in caplog.text
+
+
+async def test_estado_expira(db, r):
+    eq = await com_switch(db)
+    await run_unifi(db, r, CFG, T0, ler=falso())
+    assert 0 < await r.ttl(f"unifi:eq:{eq}") <= 600
+
+
+async def test_switch_malformado_nao_impede_o_outro(db, r):
+    eq = await com_switch(db)
+    outro = await store.inserir_equipamento(db, {"tipo": "switch", "nome": "B", "ip": "192.0.2.11", "local": "sede", "origem": "manual"})
+    devs = [{"type": "usw", "ip": "192.0.2.11", "mac": 5, "name": "Ruim", "port_table": []},
+            {"type": "usw", "ip": "192.0.2.10", "mac": MAC, "name": "SwFalso", "port_table": [{"port_idx": 3}]}]
+    await run_unifi(db, r, CFG, T0, ler=falso(devs=devs))
+    assert await r.get(f"unifi:eq:{eq}") and await r.get(f"unifi:eq:{outro}") is None
+
+
+async def test_evento_malformado_nao_trava_nem_segura_o_cursor(db, r):
+    await com_switch(db)
+    await store.garantir_indice_unifi(db)
+    ruim = ev("ruim", 9_000_000_000_000_000_000)  # estoura datetime
+    ruim2 = ev("ruim2", "nan")
+    ler = falso(all_=[ruim, ruim2, ev("ok", 4000)])
+    await run_unifi(db, r, CFG, T0, ler=ler)
+    assert [d["unifi_id"] async for d in db.eventos.find({"origem": "unifi"})] == ["ok"]
+    assert await r.get("unifi:log:ultimo_ms") == "4000"
 
 
 async def test_cursor_do_log(db, r):

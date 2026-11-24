@@ -222,9 +222,18 @@ async def listar_eventos_periodo(db, desde: datetime, mk_id: str | None = None) 
     return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", 1)]
 
 
-async def listar_eventos_unifi(db, desde: datetime) -> list[dict]:
-    f = {"origem": "unifi", "recebido_em": {"$gte": desde}}
-    return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", -1)]
+def _filtro_unifi(desde: datetime) -> dict:
+    return {"mk_id": {"$regex": "^eq:"}, "origem": "unifi", "recebido_em": {"$gte": desde}}  # prefixo usa o índice (mk_id, recebido_em)
+
+
+async def listar_eventos_unifi(db, desde: datetime, limite: int = 100) -> list[dict]:
+    return [_utc(d) async for d in db.eventos.find(_filtro_unifi(desde)).sort("recebido_em", -1).limit(limite)]
+
+
+async def contar_eventos_unifi(db, desde: datetime) -> dict[str, int]:
+    """Contagem por tipo no período."""
+    pipe = [{"$match": _filtro_unifi(desde)}, {"$group": {"_id": "$tipo", "n": {"$sum": 1}}}]
+    return {d["_id"]: d["n"] async for d in db.eventos.aggregate(pipe)}
 
 
 async def ultimo_evento(db, mk_id: str) -> datetime | None:

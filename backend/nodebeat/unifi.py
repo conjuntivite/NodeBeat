@@ -4,6 +4,7 @@ A chave de API é segredo: nunca vai para log, mensagem de erro nem repr.
 """
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -19,9 +20,10 @@ def _num(v: Any) -> float | None:
     if isinstance(v, bool) or v is None:
         return None
     try:
-        return float(v)
+        n = float(v)
     except (TypeError, ValueError):
         return None
+    return n if math.isfinite(n) else None
 
 
 def _arred(v: Any) -> float | None:
@@ -62,7 +64,7 @@ def parse_switch(dev: dict) -> dict:
     if usado is None and poe:
         usado = round(sum(poe), 1)
     return {
-        "ip": dev.get("ip"), "mac": dev.get("mac"), "nome": dev.get("name"), "modelo": dev.get("model"),
+        "ip": dev.get("ip"), "mac": dev.get("mac"), "nome": dev["name"] if isinstance(dev.get("name"), str) else None, "modelo": dev.get("model"),
         "sistema": {
             "modelo": dev.get("model"), "firmware": dev.get("version"), "atualizacao": bool(dev.get("upgradable")),
             "uptime_s": _int(dev.get("uptime")), "cpu": _arred(stats.get("cpu")), "mem": _arred(stats.get("mem")),
@@ -79,10 +81,11 @@ def parse_switch(dev: dict) -> dict:
 def clientes_com_fio(sta: list[dict]) -> dict[str, dict[int, list[dict]]]:
     out: dict[str, dict[int, list[dict]]] = {}
     for c in sta:
-        if not c.get("is_wired") or not c.get("sw_mac") or not isinstance(c.get("sw_port"), int):
+        if not c.get("is_wired") or not isinstance(c.get("sw_mac"), str) or not c["sw_mac"] or not isinstance(c.get("sw_port"), int):
             continue
-        mac = c.get("mac") or ""
+        mac = c.get("mac") if isinstance(c.get("mac"), str) else ""
         nome = c.get("hostname") or c.get("name")
+        nome = nome if isinstance(nome, str) else None
         out.setdefault(c["sw_mac"].lower(), {}).setdefault(c["sw_port"], []).append({
             "nome": None if not nome or nome.lower() == mac.lower() else nome,
             "ip": c.get("ip") or c.get("last_ip"), "mac": mac, "fabricante": c.get("oui") or None,
@@ -121,7 +124,8 @@ def _params(ev: dict) -> dict[str, dict]:
 
 
 def _pn(p: dict, chave: str) -> str | None:
-    return p.get(chave, {}).get("name") or None
+    n = p.get(chave, {}).get("name")
+    return n if isinstance(n, str) and n else None
 
 
 def switch_do_evento(ev: dict, switches: list[dict]) -> dict | None:
@@ -136,12 +140,12 @@ def switch_do_evento(ev: dict, switches: list[dict]) -> dict | None:
 
 
 def _mensagem(tipo: str, ev: dict, p: dict, c: dict) -> str:
-    porta = c["porta"]
+    porta, cli = c["porta"], c["cliente"] or "Cliente"
     if tipo == "cliente_conectou":
         vel = _pn(p, "CONNECTION_SPEED")
-        return f"{c['cliente']} conectou na porta {porta}" + (f" ({vel})" if vel else "")
+        return f"{cli} conectou" + (f" na porta {porta}" if porta is not None else "") + (f" ({vel})" if vel else "")
     if tipo == "cliente_desconectou":
-        partes = [f"{c['cliente']} desconectou da porta {porta}", c["duracao"]]
+        partes = [f"{cli} desconectou" + (f" da porta {porta}" if porta is not None else ""), c["duracao"]]
         if c["dados_down"] or c["dados_up"]:
             partes.append(" ".join(x for x in (c["dados_down"] and f"↓ {c['dados_down']}", c["dados_up"] and f"↑ {c['dados_up']}") if x))
         return " · ".join(x for x in partes if x)
@@ -152,22 +156,29 @@ def _mensagem(tipo: str, ev: dict, p: dict, c: dict) -> str:
     if tipo == "poe_religado":
         return "PoE religado automaticamente" + (f" na porta {porta}" if porta is not None else "")
     if tipo == "erros_transmissao":
-        return f"Erros de transmissão na porta {porta}"
+        return "Erros de transmissão" + (f" na porta {porta}" if porta is not None else "")
     if tipo == "mudanca_admin":
-        return f"{_pn(p, 'ADMIN')} alterou a configuração"
+        return f"{_pn(p, 'ADMIN') or 'Alguém'} alterou a configuração"
     if tipo == "conflito_ip":
-        return f"Conflito de IP: {c['ip']}"
+        return "Conflito de IP" + (f": {c['ip']}" if c["ip"] else "")
     return re.sub(r"\{(\w+)\}", lambda m: _pn(p, m[1]) or m[0], ev.get("message_raw") or "")
 
 
 def evento_unifi(ev: dict, eq_id: str) -> dict:
     p = _params(ev)
     tipo = TIPOS.get(ev.get("event"), "outro")
-    porta = _pn(p, "PORT")
-    campos = {"porta": int(porta) if porta and porta.isdigit() else None, "cliente": _pn(p, "CLIENT"),
+    ts = _num(ev.get("timestamp"))
+    if ts is None:
+        raise ValueError("evento sem timestamp numérico")
+    try:
+        porta = int(_pn(p, "PORT"))
+    except (TypeError, ValueError):
+        porta = None
+    cid = p.get("CLIENT", {}).get("id")
+    campos = {"porta": porta, "cliente": _pn(p, "CLIENT") or (cid if isinstance(cid, str) and cid else None),
               "ip": _pn(p, "IP"), "duracao": _pn(p, "DURATION"),
               "dados_up": _pn(p, "DATA_UP"), "dados_down": _pn(p, "DATA_DOWN")}
     return {"mk_id": f"eq:{eq_id}", "origem": "unifi", "unifi_id": ev["id"],
-            "recebido_em": datetime.fromtimestamp(ev["timestamp"] / 1000, timezone.utc),
+            "recebido_em": datetime.fromtimestamp(ts / 1000, timezone.utc),
             "tipo": tipo, "severidade": (ev.get("severity") or "").lower() or None,
             "campos": campos, "mensagem": _mensagem(tipo, ev, p, campos)}

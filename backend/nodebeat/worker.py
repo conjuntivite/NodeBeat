@@ -455,25 +455,32 @@ async def run_unifi(db, r, settings: Settings, now: datetime, *, ler=unifi.ler, 
         log_ev = await _log_unifi(ler, client, settings, de, agora_ms)  # antes de gravar: erro não deixa estado pela metade
         sws = []
         for dev in devs:
-            sw = unifi.parse_switch(dev)
-            eq = eqs.get(sw["ip"])
-            if not eq:
-                continue
-            for idx, cli in com_fio.get((sw["mac"] or "").lower(), {}).items():
-                if str(idx) in sw["portas"]:
-                    sw["portas"][str(idx)]["clientes"] = cli
-            await r.set(f"unifi:eq:{eq['id']}", json.dumps(
-                {"lido_em": now.isoformat(), "sistema": sw["sistema"], "portas": sw["portas"]}))
-            sws.append({"id": eq["id"], "nome": sw["nome"], "mac": (sw["mac"] or "").lower()})
-        docs = []
+            try:
+                sw = unifi.parse_switch(dev)
+                eq = eqs.get(sw["ip"])
+                if not eq:
+                    continue
+                for idx, cli in com_fio.get((sw["mac"] or "").lower(), {}).items():
+                    if str(idx) in sw["portas"]:
+                        sw["portas"][str(idx)]["clientes"] = cli
+                await r.set(f"unifi:eq:{eq['id']}", json.dumps(
+                    {"lido_em": now.isoformat(), "sistema": sw["sistema"], "portas": sw["portas"]}), ex=600)  # velho expira se o controlador some
+                sws.append({"id": eq["id"], "nome": sw["nome"] or "", "mac": (sw["mac"] or "").lower()})
+            except Exception as e:  # um switch malformado não derruba os outros
+                log.warning("unifi: switch ignorado: %s", type(e).__name__)
+        docs, tops = [], []
         for e in log_ev:
-            if not (e.get("id") and e.get("timestamp")):
-                continue
-            sw = unifi.switch_do_evento(e, sws)
-            if sw:
-                docs.append(unifi.evento_unifi(e, sw["id"]))
+            try:
+                ts = unifi._num(e.get("timestamp"))
+                if not e.get("id") or ts is None:
+                    continue
+                sw = unifi.switch_do_evento(e, sws)
+                if sw:
+                    docs.append(unifi.evento_unifi(e, sw["id"]))
+                tops.append(int(ts))  # só depois de processar: evento malformado não move o cursor
+            except Exception as ex:  # um evento malformado não trava a rodada
+                log.warning("unifi: evento ignorado: %s", type(ex).__name__)
         await store.inserir_eventos_unifi(db, docs)
-        tops = [e["timestamp"] for e in log_ev if isinstance(e.get("timestamp"), int)]
         if tops:
             await r.set(UNIFI_CURSOR, max(tops))
     except Exception as e:

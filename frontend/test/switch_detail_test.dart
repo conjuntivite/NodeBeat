@@ -23,7 +23,7 @@ Map<String, dynamic> _unifi({int clientes30 = 30}) => {
         '0/1': {
           'poe_w': 2.5, 'poe_classe': 'Class 2', 'rx_mbps': 10.0, 'tx_mbps': 0.4, 'erros': 0, 'descartes': 0, 'stp': 'forwarding',
           'quedas_link': 0, 'uplink': false, 'aparelhos': 1,
-          'clientes': [{'nome': 'camera-01', 'ip': '192.0.2.10', 'mac': '02:00:00:00:00:01', 'fabricante': 'Acme', 'mbps': 5}],
+          'clientes': [{'nome': 'camera-01', 'ip': '192.0.2.10', 'mac': '02:00:00:00:00:01', 'fabricante': 'Acme', 'mbps': 1000.0}],
         },
         '0/2': {
           'poe_w': null, 'poe_classe': null, 'rx_mbps': null, 'tx_mbps': null, 'erros': null, 'descartes': null, 'stp': null,
@@ -32,6 +32,15 @@ Map<String, dynamic> _unifi({int clientes30 = 30}) => {
             for (var i = 0; i < clientes30; i++)
               {'nome': i.isEven ? 'host-$i' : null, 'ip': '192.0.2.${i + 20}', 'mac': '02:00:00:00:01:${i.toRadixString(16).padLeft(2, '0')}', 'fabricante': null, 'mbps': null}
           ],
+        },
+        '0/3': {
+          'poe_w': null, 'poe_classe': null, 'rx_mbps': null, 'tx_mbps': null, 'erros': null, 'descartes': null, 'stp': null,
+          'quedas_link': null, 'uplink': false, 'aparelhos': 4,
+          'clientes': [{'nome': 'pc-1', 'ip': null, 'mac': null, 'fabricante': null, 'mbps': null}],
+        },
+        '0/4': {
+          'poe_w': null, 'poe_classe': null, 'rx_mbps': null, 'tx_mbps': null, 'erros': null, 'descartes': null, 'stp': null,
+          'quedas_link': null, 'uplink': false, 'aparelhos': 3, 'clientes': [],
         },
         '0/12': {
           'poe_w': null, 'poe_classe': null, 'rx_mbps': 1.0, 'tx_mbps': 2.0, 'erros': 0, 'descartes': 0, 'stp': 'forwarding',
@@ -123,6 +132,8 @@ void main() {
     for (final x in ['CPU', 'Memória', 'Temperatura', 'PoE', 'Clientes']) {
       expect(find.text(x), findsWidgets, reason: x);
     }
+    expect(find.text('Uptime'), findsOneWidget);
+    expect(find.text('16 min'), findsOneWidget);
     expect(find.text('16%'), findsOneWidget);
     expect(find.text('53 °C'), findsOneWidget);
     expect(find.text('51,0 W'), findsOneWidget);
@@ -147,6 +158,14 @@ void main() {
     final det = find.byKey(const Key('detalhe-porta'));
     expect(find.descendant(of: det, matching: find.text('camera-01')), findsOneWidget);
     expect(find.descendant(of: det, matching: find.textContaining('192.0.2.10')), findsOneWidget);
+    expect(find.descendant(of: det, matching: find.text('1 Gbps')), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('coluna Clientes usa a lista quando existe, senão os aparelhos', (t) async {
+    await _show(t, unifi: _unifi());
+    expect(find.descendant(of: find.byKey(const Key('linha-porta-0/3')), matching: find.text('1')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const Key('linha-porta-0/4')), matching: find.text('3')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
@@ -154,7 +173,8 @@ void main() {
     await _show(t, unifi: _unifi());
     await t.tap(find.byKey(const Key('porta-0/12')));
     await t.pump();
-    expect(find.text('Uplink para sw-core (porta 3)'), findsOneWidget);
+    expect(find.text('Uplink'), findsOneWidget);
+    expect(find.text('para sw-core (porta 3)'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

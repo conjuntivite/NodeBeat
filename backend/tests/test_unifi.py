@@ -3,7 +3,7 @@ import pytest
 
 from datetime import timezone
 
-from nodebeat.unifi import GRUPOS, TIPOS, UnifiErro, clientes_com_fio, evento_unifi, ler, parse_switch, switch_do_evento
+from nodebeat.unifi import GRUPOS, TIPOS, UnifiErro, _num, clientes_com_fio, evento_unifi, ler, parse_switch, switch_do_evento
 
 CHAVE = "chave-secreta-fake"
 URL = "https://192.0.2.10"
@@ -166,3 +166,26 @@ def test_porta_nao_numerica_e_parametros_nulos():
 
 def test_grupos_cobrem_tipos():
     assert {*TIPOS.values(), "outro"} == set(GRUPOS)
+
+
+def test_mensagens_sem_cliente_porta_admin():
+    sem = {"CLIENT": None, "PORT": None, "ADMIN": None, "IP": None}
+    assert _msg("CLIENT_CONNECTED_WIRED", **sem) == "Cliente conectou (GbE)"
+    assert _msg("CLIENT_DISCONNECTED_WIRED", **sem) == "Cliente desconectou · 2h 44m · ↓ 3.56 GB ↑ 687.03 MB"
+    assert _msg("CLIENT_CONNECTED_WIRED", CLIENT={"id": "02:00:00:00:00:10"}) == "02:00:00:00:00:10 conectou na porta 21 (GbE)"
+    assert _msg("PORT_TRANSMISSION_ERRORS", **sem) == "Erros de transmissão"
+    assert _msg("MADE_CHANGES", **sem) == "Alguém alterou a configuração"
+    assert _msg("CLIENT_IP_CONFLICT", **sem) == "Conflito de IP"
+    assert all("None" not in _msg(e, **sem) for e in TIPOS)
+
+
+def test_nao_finitos_e_nomes_nao_string():
+    assert _num("nan") is None and _num(float("inf")) is None and _num("1e3") == 1000.0
+    assert parse_switch({"ip": "x", "mac": "m", "name": 5, "uptime": "nan"})["nome"] is None
+    sta = [{"is_wired": True, "sw_mac": "AA", "sw_port": 1, "mac": "m", "hostname": 7}, {"is_wired": True, "sw_mac": 3, "sw_port": 1}]
+    assert clientes_com_fio(sta) == {"aa": {1: [{"nome": None, "ip": None, "mac": "m", "fabricante": None, "mbps": None}]}}
+    ev = _ev("DEVICE_UNREACHABLE", PORT={"name": "-3x"}, CLIENT={"name": 9})
+    assert evento_unifi(ev, "e1")["campos"]["porta"] is None
+    ev["timestamp"] = "nan"
+    with pytest.raises(ValueError):
+        evento_unifi(ev, "e1")

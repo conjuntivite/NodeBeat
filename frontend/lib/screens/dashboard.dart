@@ -8,6 +8,7 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/heartbeat.dart';
+import 'switches.dart';
 
 const _refresh = Duration(seconds: 15);
 
@@ -64,12 +65,14 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final SoundEngine _engine = widget.sound ?? SoundEngine();
   late final AnimationController _beat = AnimationController(
     vsync: this,
     duration: beatPeriod,
   );
+  late final TabController _tabs = TabController(length: 3, vsync: this)..addListener(() => setState(() {}));
+  List<Equipamento> _switches = [];
   Timer? _timer;
   StatusData? _data;
   String? _error;
@@ -119,6 +122,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _focoTimer?.cancel();
     _timer?.cancel();
     _beat.dispose();
+    _tabs.dispose();
     _engine.stop();
     super.dispose();
   }
@@ -153,6 +157,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         _error = null;
       });
       _applySound();
+      try {
+        final s = await widget.api.equipamentos(tipo: 'switch');
+        if (mounted) setState(() => _switches = s);
+      } catch (_) {} // a aba Switch não derruba o painel das MKs
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
       setState(() => _error = errorText(e));
@@ -302,8 +310,12 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             SizedBox(width: t.space2),
           ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(48),
+            child: Align(alignment: Alignment.centerLeft, child: _tabBar(t, d)),
+          ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
+        floatingActionButton: _tabs.index != 0 ? null : FloatingActionButton.extended(
           backgroundColor: t.actionPrimary,
           foregroundColor: t.actionPrimaryFg,
           shape: RoundedRectangleBorder(
@@ -314,7 +326,71 @@ class _DashboardScreenState extends State<DashboardScreen>
           icon: const Icon(Icons.add, size: 20),
           label: const Text('Nova MK'),
         ),
-        body: d == null
+        body: TabBarView(
+          controller: _tabs,
+          children: [
+            _mkBody(t, d),
+            d == null
+                ? const SizedBox()
+                : SwitchesTab(api: widget.api, equipamentos: _switches, mks: d.mks, onChanged: _load),
+            Center(
+              child: Text(
+                'Nenhum firewall ainda. O suporte a firewall vem na próxima etapa.',
+                style: TradeType.bodyMd.copyWith(color: t.fgSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabBar(TradeTokens t, StatusData? d) {
+    Widget tab(String label, int n, String key) => Tab(
+      height: 36,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (n > 0) ...[
+            SizedBox(width: t.space2),
+            Container(
+              key: Key(key),
+              padding: EdgeInsets.symmetric(horizontal: t.space2),
+              decoration: BoxDecoration(
+                color: t.negativeFill,
+                borderRadius: BorderRadius.circular(t.radiusPill),
+              ),
+              child: Text('$n', style: TradeType.label.copyWith(color: t.fgPrimary)),
+            ),
+          ],
+        ],
+      ),
+    );
+    return TabBar(
+      controller: _tabs,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      dividerColor: Colors.transparent,
+      indicatorSize: TabBarIndicatorSize.tab,
+      indicator: BoxDecoration(
+        color: t.bgElevated,
+        borderRadius: BorderRadius.circular(t.radiusPill),
+        border: Border.all(color: t.borderStrong),
+      ),
+      labelColor: t.fgPrimary,
+      unselectedLabelColor: t.fgSecondary,
+      labelStyle: TradeType.label,
+      tabs: [
+        tab('MK', d == null ? 0 : d.fora + d.comAlerta, 'contador-mk'),
+        tab('Switch', _switches.where(equipamentoComProblema).length, 'contador-switch'),
+        tab('Firewall', 0, 'contador-firewall'),
+      ],
+    );
+  }
+
+  Widget _mkBody(TradeTokens t, StatusData? d) {
+    return d == null
             ? Center(
                 child: _error == null
                     ? const CircularProgressIndicator()
@@ -372,9 +448,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   SizedBox(height: t.space12),
                   _table(context, t, _sorted(d.mks)),
                 ],
-              ),
-      ),
-    );
+              );
   }
 
   Widget _table(BuildContext context, TradeTokens t, List<MkRow> rows) {

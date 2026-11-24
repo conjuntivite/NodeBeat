@@ -112,9 +112,39 @@ def test_ler_portas_com_velocidade():
          switches.IFHIGHSPEED: [(switches.IFHIGHSPEED + ".1", 1000), (switches.IFHIGHSPEED + ".2", 0)]}
 
     async def walk(ip, community, oid):
-        return d[oid]
+        return d.get(oid, [])  # sem ifType: cai na lista da bridge
     assert rodar(switches.ler_portas("10.0.0.1", "c", walk=walk)) == {
         "0/1": {"up": True, "velocidade": 1000}, "0/2": {"up": False, "velocidade": None}}
+
+
+def _snmp(base, tipos, nomes):
+    """Walk falso: base = ifIndex da bridge; tipos/nomes = {ifIndex: valor}."""
+    d = {switches.BASE_IFINDEX: [(f"{switches.BASE_IFINDEX}.{i}", i) for i in base],
+         switches.IFTYPE: [(f"{switches.IFTYPE}.{i}", t) for i, t in tipos.items()],
+         switches.IFNAME: [(f"{switches.IFNAME}.{i}", n.encode()) for i, n in nomes.items()],
+         switches.IFOPER: [(f"{switches.IFOPER}.{i}", 1) for i in nomes]}
+
+    async def walk(ip, community, oid):
+        return d.get(oid, [])
+    return walk
+
+
+def test_ler_portas_ignora_lag_e_cpu():
+    # USW-Pro-48: a bridge lista as agregações (ifType 161); a CPU (ifType 1) fica fora
+    walk = _snmp([1, 2, 100], {1: 6, 2: 6, 100: 161, 200: 1}, {1: "0/1", 2: "0/2", 100: "3/1", 200: "CPU"})
+    assert set(rodar(switches.ler_portas("10.0.0.1", "c", walk=walk))) == {"0/1", "0/2"}
+
+
+def test_ler_portas_sem_tabela_da_bridge_usa_iftype():
+    # UniFi que não publica dot1dBasePortIfIndex: as portas vêm do ifType
+    walk = _snmp([], {1: 6, 2: 117, 3: 24}, {1: "0/1", 2: "0/2", 3: "lo"})
+    assert set(rodar(switches.ler_portas("10.0.0.1", "c", walk=walk))) == {"0/1", "0/2"}
+
+
+def test_parse_fdb_sem_tabela_da_bridge_porta_e_o_ifindex():
+    fdb = [("1.3.6.1.2.1.17.4.3.1.2.68.25.182.0.0.1", 7)]
+    nomes = [("1.3.6.1.2.1.31.1.1.1.1.7", b"0/7")]
+    assert switches.parse_fdb(fdb, [], nomes) == {"44:19:B6:00:00:01": "0/7"}
 
 
 def test_ler_portas_propaga_snmperro():

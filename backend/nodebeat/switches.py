@@ -14,6 +14,9 @@ BASE_IFINDEX = "1.3.6.1.2.1.17.1.4.1.2"
 IFNAME = "1.3.6.1.2.1.31.1.1.1.1"
 IFOPER = "1.3.6.1.2.1.2.2.1.8"
 IFHIGHSPEED = "1.3.6.1.2.1.31.1.1.1.15"
+IFTYPE = "1.3.6.1.2.1.2.2.1.3"
+# ethernetCsmacd, fastEther, fastEtherFX, gigabitEthernet; fora: LAG (161), CPU/other (1), lo, vlan…
+IFTYPES_FISICOS = {6, 62, 69, 117}
 LLDP_NOME = "1.0.8802.1.1.2.1.4.1.1.9"
 LLDP_CHASSIS = "1.0.8802.1.1.2.1.4.1.1.5"
 
@@ -50,7 +53,8 @@ def parse_fdb(fdb: list, base_ifindex: list, ifnames: list, qbridge: list = []) 
     linhas = [(_sufixo(o, FDB)[-6:], v) for o, v in fdb] if fdb else \
              [(_sufixo(o, QFDB)[-6:], v) for o, v in qbridge]  # ...<vlan>.<6 octetos>
     for octetos, porta in linhas:
-        mac, nm = _mac_oct(octetos), nome.get(porta_if.get(porta))
+        # sem a tabela da bridge (alguns UniFi): a porta da bridge é o próprio ifIndex
+        mac, nm = _mac_oct(octetos), nome.get(porta_if.get(porta) if porta_if else porta)
         if mac and nm:  # porta 0 ou fora da tabela: ignora
             out.setdefault(mac, nm)  # mesmo MAC em várias VLANs: a primeira vence
     return out
@@ -79,13 +83,18 @@ async def descobrir(ip: str, communities: list[str], *, get=snmp.get) -> tuple[s
     return None
 
 
-def _portas(base_ifindex: list, ifnames: list, oper: list, vel: list | None = None) -> dict[str, dict]:
-    """Portas físicas da bridge: nome -> {"up"} (e "velocidade" em Mbps se vel vier)."""
+def _portas(base_ifindex: list, ifnames: list, oper: list, vel: list | None = None,
+            tipos: list | None = None) -> dict[str, dict]:
+    """Portas físicas: nome -> {"up"} (e "velocidade" em Mbps se vel vier).
+
+    Com ifType, vale ele (a bridge lista LAG e alguns UniFi nem publicam a bridge); sem, a bridge."""
     nome = {_sufixo(o, IFNAME)[0]: _texto(v) for o, v in ifnames}
     up = {_sufixo(o, IFOPER)[0]: v == 1 for o, v in oper}
     mbps = {_sufixo(o, IFHIGHSPEED)[0]: v for o, v in vel or []}
+    tipo = {_sufixo(o, IFTYPE)[0]: v for o, v in tipos or []}
+    indices = sorted(i for i, t in tipo.items() if t in IFTYPES_FISICOS) if tipo else [v for _, v in base_ifindex]
     portas = {}
-    for i in (v for _, v in base_ifindex):
+    for i in indices:
         if i in nome:
             portas[nome[i]] = {"up": up.get(i, False)}
             if vel is not None:
@@ -96,7 +105,8 @@ def _portas(base_ifindex: list, ifnames: list, oper: list, vel: list | None = No
 async def ler_portas(ip: str, community: str, *, walk=snmp.walk) -> dict[str, dict]:
     """Leitura leve: {porta: {"up", "velocidade"}}. SnmpErro propaga."""
     return _portas(await walk(ip, community, BASE_IFINDEX), await walk(ip, community, IFNAME),
-                   await walk(ip, community, IFOPER), await walk(ip, community, IFHIGHSPEED))
+                   await walk(ip, community, IFOPER), await walk(ip, community, IFHIGHSPEED),
+                   await walk(ip, community, IFTYPE))
 
 
 def uplinks(switch_ip: str, ips: list[dict]) -> dict[str, dict]:
@@ -124,7 +134,7 @@ async def ler_switch(ip: str, community: str, *, walk=snmp.walk, get=snmp.get) -
         vizinhos = _vizinhos(await walk(ip, community, LLDP_NOME), await walk(ip, community, LLDP_CHASSIS))
     except snmp.SnmpErro:
         vizinhos = {}
-    portas = _portas(base_ifindex, ifnames, oper)
+    portas = _portas(base_ifindex, ifnames, oper, tipos=await walk(ip, community, IFTYPE))
     return {
         "descr": descr,
         "base_mac": base.hex(":").upper() if isinstance(base, bytes) and len(base) == 6 else None,

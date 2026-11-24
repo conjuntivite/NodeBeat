@@ -56,7 +56,7 @@ class PainelPortas extends StatelessWidget {
 
   Widget _porta(BuildContext context, PortaVista p) {
     final t = tokensOf(context);
-    final cor = switch (p.estado) { 'up' => t.positiveFill, 'caiu' => t.negativeFill, _ => t.borderSubtle };
+    final cor = switch (p.estado) { 'up' => t.positiveFill, 'caiu' => t.negativeFill, _ => t.borderStrong }; // sem link: neutro visível nos dois temas
     final txt = switch (p.estado) { 'up' => 'com link', 'caiu' => 'caiu', _ => 'sem link' };
     final rotulo = '${p.nome} · $txt';
     return Semantics(

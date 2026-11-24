@@ -8,6 +8,7 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/audio/monitor_sound.dart';
 import 'package:nodebeat/screens/dashboard.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 
 class _Quiet extends SoundEngine {
   @override
@@ -35,7 +36,7 @@ final _status = {
   ],
 };
 
-Future<List<http.Request>> _show(WidgetTester t) async {
+Future<List<http.Request>> _show(WidgetTester t, {int eqStatus = 200, Brightness tema = Brightness.light}) async {
   t.view.physicalSize = const Size(1400, 900);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -44,6 +45,7 @@ Future<List<http.Request>> _show(WidgetTester t) async {
     reqs.add(req);
     if (req.url.path.endsWith('/equipamentos')) {
       if (req.method == 'POST') return http.Response(jsonEncode({'id': 'novo'}), 200);
+      if (eqStatus != 200) return http.Response(jsonEncode({'detail': 'x'}), eqStatus);
       return http.Response(jsonEncode([
         _eq('s1', 'sw-mk', 'offline', 'mk1', 'cliente-a', 8, 0),
         _eq('s2', 'sw-sede', 'no_ar', 'sede', 'Sede', 24, 10),
@@ -52,10 +54,12 @@ Future<List<http.Request>> _show(WidgetTester t) async {
     return http.Response(jsonEncode(_status), 200);
   }));
   await t.pumpWidget(MaterialApp(
-    theme: tradeTheme(Brightness.light),
+    theme: tradeTheme(tema),
     onGenerateRoute: (s) => MaterialPageRoute(
         settings: s,
-        builder: (_) => s.name!.startsWith('/switch/') ? Text('SWITCH ${s.name}') : DashboardScreen(api: api, sound: _Quiet())),
+        builder: (_) => s.name == '/login'
+            ? const Text('LOGIN')
+            : s.name!.startsWith('/switch/') ? Text('SWITCH ${s.name}') : DashboardScreen(api: api, sound: _Quiet())),
   ));
   for (var i = 0; i < 4; i++) {
     await t.pump();
@@ -111,6 +115,33 @@ void main() {
     expect(body['local'], 'sede');
     expect(body['nome'], 'novo-sw');
     expect(body.containsKey('community'), isFalse);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('contador usa negative com fgInverse nos dois temas (contraste >= 4.5:1)', (t) async {
+    for (final b in [Brightness.light, Brightness.dark]) {
+      final tk = b == Brightness.light ? TradeTokens.light : TradeTokens.dark;
+      await _show(t, tema: b);
+      final c = find.byKey(const Key('contador-mk'));
+      expect((t.widget<Container>(c).decoration as BoxDecoration).color, tk.negative);
+      expect(t.widget<Text>(find.descendant(of: c, matching: find.byType(Text))).style?.color, tk.fgInverse);
+      await t.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets('falha ao carregar switches mostra erro na aba Switch e não afeta a aba MK', (t) async {
+    await _show(t, eqStatus: 500);
+    expect(find.text('No ar'), findsOneWidget);
+    await _abaSwitch(t);
+    expect(find.text('Não foi possível carregar os switches.'), findsOneWidget);
+    expect(find.text('Nenhum switch ainda.'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('401 ao carregar switches volta ao login', (t) async {
+    await _show(t, eqStatus: 401);
+    await _settle(t);
+    expect(find.text('LOGIN'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

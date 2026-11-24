@@ -48,7 +48,7 @@ void main() {
       Color? cor(String n) => ((tester.widget<Container>(find.byKey(Key('porta-$n'))).decoration) as BoxDecoration).color;
       expect(cor('1'), t.negativeFill);
       expect(cor('2'), t.positiveFill);
-      expect(cor('3'), t.borderSubtle);
+      expect(cor('3'), t.borderStrong); // sem link: neutro forte, visível sobre bgSurface
     }
   });
 

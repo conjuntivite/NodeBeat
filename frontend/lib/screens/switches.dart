@@ -13,9 +13,10 @@ bool equipamentoComProblema(Equipamento e) {
 
 /// Lista de switches agrupada por local (Sede primeiro) e diálogo de cadastro.
 class SwitchesTab extends StatelessWidget {
-  const SwitchesTab({super.key, required this.api, required this.equipamentos, required this.mks, required this.onChanged});
+  const SwitchesTab({super.key, required this.api, required this.equipamentos, this.erro, required this.mks, required this.onChanged});
   final ApiClient api;
   final List<Equipamento> equipamentos;
+  final String? erro; // falha ao carregar: não é "nenhum switch"
   final List<MkRow> mks;
   final VoidCallback onChanged;
 
@@ -45,7 +46,9 @@ class SwitchesTab extends StatelessWidget {
           ),
         ),
         SizedBox(height: t.space6),
-        if (equipamentos.isEmpty)
+        if (erro != null)
+          Text(erro!, style: TradeType.bodyMd.copyWith(color: t.negative))
+        else if (equipamentos.isEmpty)
           Text('Nenhum switch ainda.', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
         for (final n in nomes) ...[
           Padding(

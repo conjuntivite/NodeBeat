@@ -73,6 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   );
   late final TabController _tabs = TabController(length: 3, vsync: this)..addListener(() => setState(() {}));
   List<Equipamento> _switches = [];
+  String? _erroSwitches;
   Timer? _timer;
   StatusData? _data;
   String? _error;
@@ -159,8 +160,15 @@ class _DashboardScreenState extends State<DashboardScreen>
       _applySound();
       try {
         final s = await widget.api.equipamentos(tipo: 'switch');
-        if (mounted) setState(() => _switches = s);
-      } catch (_) {} // a aba Switch não derruba o painel das MKs
+        if (!mounted) return;
+        setState(() {
+          _switches = s;
+          _erroSwitches = null;
+        });
+      } catch (e) { // a aba Switch não derruba o painel das MKs
+        if (!mounted || sessionExpired(context, e)) return;
+        setState(() => _erroSwitches = 'Não foi possível carregar os switches.');
+      }
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
       setState(() => _error = errorText(e));
@@ -332,7 +340,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             _mkBody(t, d),
             d == null
                 ? const SizedBox()
-                : SwitchesTab(api: widget.api, equipamentos: _switches, mks: d.mks, onChanged: _load),
+                : SwitchesTab(api: widget.api, equipamentos: _switches, erro: _erroSwitches, mks: d.mks, onChanged: _load),
             Center(
               child: Text(
                 'Nenhum firewall ainda. O suporte a firewall vem na próxima etapa.',
@@ -358,10 +366,10 @@ class _DashboardScreenState extends State<DashboardScreen>
               key: Key(key),
               padding: EdgeInsets.symmetric(horizontal: t.space2),
               decoration: BoxDecoration(
-                color: t.negativeFill,
+                color: t.negative, // negative + fgInverse passa 4.5:1 nos dois temas (negativeFill não, no escuro)
                 borderRadius: BorderRadius.circular(t.radiusPill),
               ),
-              child: Text('$n', style: TradeType.label.copyWith(color: t.fgPrimary)),
+              child: Text('$n', style: TradeType.label.copyWith(color: t.fgInverse)),
             ),
           ],
         ],

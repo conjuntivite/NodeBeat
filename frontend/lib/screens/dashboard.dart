@@ -8,6 +8,7 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/heartbeat.dart';
+import '../widgets/shell.dart';
 import 'switches.dart';
 
 const _refresh = Duration(seconds: 15);
@@ -95,6 +96,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     _beat.addListener(_onBeat);
+    _tabs.index = painelAba.value;
+    painelAba.addListener(_irParaAba);
     _load();
     _timer = Timer.periodic(_refresh, (_) => _load());
     final id = widget.abrir;
@@ -123,10 +126,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     _focoTimer?.cancel();
     _timer?.cancel();
     _beat.dispose();
+    painelAba.removeListener(_irParaAba);
     _tabs.dispose();
     _engine.stop();
     super.dispose();
   }
+
+  void _irParaAba() => _tabs.index = painelAba.value; // barra lateral de outra tela
 
   MonitorSound get _sound =>
       _data == null ? MonitorSound.silent : soundFor(_data!, foco: _foco);
@@ -254,88 +260,55 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final d = _data;
+    final aba = _tabs.index;
     return Listener(
       onPointerDown: (_) => _onPointerDown(),
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false, // raiz da navegação logada: sem seta de voltar
-          backgroundColor: t.bgPage,
-          title: Row(
-            children: [
-              Image.asset(
-                Theme.of(context).brightness == Brightness.dark
-                    ? 'assets/brand/nodebeat-icon-dark.png'
-                    : 'assets/brand/nodebeat-icon-light.png',
-                width: 32,
-                height: 32,
-                excludeFromSemantics: true, // o nome vem logo ao lado
-              ),
-              SizedBox(width: t.space3),
-              Text(
-                'NodeBeat',
-                style: TradeType.heading3.copyWith(color: t.fgPrimary),
-              ),
+      child: AppShell(
+        ativo: const ['mk', 'switch', 'firewall'][aba],
+        titulo: const ['MKs', 'Switches', 'Firewalls'][aba],
+        subtitulo: aba == 0 && d != null ? '${d.mks.length} condomínios monitorados' : null,
+        acoes: [
+          if (aba == 0)
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pushNamed('/mk/novo').then((_) => _load()),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Nova MK'),
+            ),
+        ],
+        contadores: {
+          'mk': d == null ? 0 : d.fora + d.comAlerta,
+          'switch': _switches.where(equipamentoComProblema).length,
+        },
+        aoNavegar: (c) => switch (c) {
+          'mk' => _tabs.index = 0,
+          'switch' => _tabs.index = 1,
+          'firewall' => _tabs.index = 2,
+          'eventos' => Navigator.of(context).pushNamed('/eventos'),
+          'faixas' => Navigator.of(context).pushNamed('/faixas'),
+          _ => Navigator.of(context).pushNamed('/preparar-mk'),
+        },
+        topo: [
+          if (_soundOn && _engine.isSuspended)
+            Padding(
+              padding: EdgeInsets.only(right: t.space2),
+              child: Text('Clique para ativar o som', style: TradeType.label.copyWith(color: t.warning)),
+            ),
+          PopupMenuButton<String>(
+            tooltip: 'Som',
+            icon: Icon(_soundOn ? Icons.volume_up_outlined : Icons.volume_off_outlined, size: 20, color: t.fgSecondary),
+            onSelected: _toggleSound,
+            itemBuilder: (_) => [
+              CheckedPopupMenuItem(value: 'bip', checked: _bip, child: const Text('Som de batimento')),
+              CheckedPopupMenuItem(value: 'queda', checked: _queda, child: const Text('Som de perda')),
             ],
           ),
-          actions: [
-            if (_soundOn && _engine.isSuspended)
-              Text(
-                'Clique para ativar o som',
-                style: TradeType.label.copyWith(color: t.warning),
-              ),
-            PopupMenuButton<String>(
-              tooltip: 'Som',
-              icon: Icon(
-                _soundOn ? Icons.volume_up_outlined : Icons.volume_off_outlined,
-                size: 20,
-              ),
-              onSelected: _toggleSound,
-              itemBuilder: (_) => [
-                CheckedPopupMenuItem(value: 'bip', checked: _bip, child: const Text('Som de batimento')),
-                CheckedPopupMenuItem(value: 'queda', checked: _queda, child: const Text('Som de perda')),
-              ],
-            ),
-            IconButton(
-              tooltip: 'Faixas de IP',
-              icon: const Icon(Icons.lan_outlined, size: 20),
-              onPressed: () => Navigator.of(context).pushNamed('/faixas'),
-            ),
-            IconButton(
-              tooltip: 'Eventos',
-              icon: const Icon(Icons.insights_outlined, size: 20),
-              onPressed: () => Navigator.of(context).pushNamed('/eventos'),
-            ),
-            IconButton(
-              tooltip: 'Preparar MK',
-              icon: const Icon(Icons.terminal, size: 20),
-              onPressed: () => Navigator.of(context).pushNamed('/preparar-mk'),
-            ),
-            const ThemeToggle(),
-            IconButton(
-              tooltip: 'Sair',
-              icon: const Icon(Icons.logout, size: 20),
-              onPressed: _logout,
-            ),
-            SizedBox(width: t.space2),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
-            child: Align(alignment: Alignment.centerLeft, child: _tabBar(t, d)),
-          ),
-        ),
-        floatingActionButton: _tabs.index != 0 ? null : FloatingActionButton.extended(
-          backgroundColor: t.actionPrimary,
-          foregroundColor: t.actionPrimaryFg,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(t.radiusPill),
-          ),
-          onPressed: () =>
-              Navigator.of(context).pushNamed('/mk/novo').then((_) => _load()),
-          icon: const Icon(Icons.add, size: 20),
-          label: const Text('Nova MK'),
-        ),
-        body: TabBarView(
-          controller: _tabs,
+        ],
+        rodape: [
+          IconButton(tooltip: 'Sair', icon: const Icon(Icons.logout, size: 20), onPressed: _logout),
+          SizedBox(height: t.space1),
+        ],
+        body: IndexedStack(
+          index: aba,
           children: [
             _mkBody(t, d),
             d == null
@@ -344,56 +317,12 @@ class _DashboardScreenState extends State<DashboardScreen>
             Center(
               child: Text(
                 'Nenhum firewall ainda. O suporte a firewall vem na próxima etapa.',
-                style: TradeType.bodyMd.copyWith(color: t.fgSecondary),
+                style: TradeType.bodyLg.copyWith(color: t.fgSecondary),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _tabBar(TradeTokens t, StatusData? d) {
-    Widget tab(String label, int n, String key) => Tab(
-      height: 36,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label),
-          if (n > 0) ...[
-            SizedBox(width: t.space2),
-            Container(
-              key: Key(key),
-              padding: EdgeInsets.symmetric(horizontal: t.space2),
-              decoration: BoxDecoration(
-                color: t.negative, // negative + fgInverse passa 4.5:1 nos dois temas (negativeFill não, no escuro)
-                borderRadius: BorderRadius.circular(t.radiusPill),
-              ),
-              child: Text('$n', style: TradeType.label.copyWith(color: t.fgInverse)),
-            ),
-          ],
-        ],
-      ),
-    );
-    return TabBar(
-      controller: _tabs,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
-      dividerColor: Colors.transparent,
-      indicatorSize: TabBarIndicatorSize.tab,
-      indicator: BoxDecoration(
-        color: t.bgElevated,
-        borderRadius: BorderRadius.circular(t.radiusPill),
-        border: Border.all(color: t.borderStrong),
-      ),
-      labelColor: t.fgPrimary,
-      unselectedLabelColor: t.fgSecondary,
-      labelStyle: TradeType.label,
-      tabs: [
-        tab('MK', d == null ? 0 : d.fora + d.comAlerta, 'contador-mk'),
-        tab('Switch', _switches.where(equipamentoComProblema).length, 'contador-switch'),
-        tab('Firewall', 0, 'contador-firewall'),
-      ],
     );
   }
 
@@ -408,27 +337,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
               )
             : ListView(
-                padding: EdgeInsets.all(t.space6),
+                padding: margemPagina(context),
                 children: [
                   if (!d.dadosOk)
-                    _Banner(
-                      'Monitor parado — dados desatualizados',
-                      t.negative,
-                    ),
+                    Aviso('Monitor parado — dados desatualizados', cor: t.negative),
                   if (!d.sedeOk)
-                    _Banner(
-                      'Sem conexão da sede — dados congelados',
-                      t.warning,
-                    ),
+                    Aviso('Sem conexão da sede — dados congelados', cor: t.warning),
                   if (d.filaPendente > 0)
-                    _Banner(
+                    Aviso(
                       d.filaPendente == 1
                           ? '1 evento aguardando envio'
                           : '${d.filaPendente} eventos aguardando envio',
-                      t.warning,
+                      cor: t.warning,
                     ),
                   if (_error != null)
-                    _Banner('Falha ao atualizar: $_error', t.negative),
+                    Aviso('Falha ao atualizar: $_error', cor: t.negative),
                   Wrap(
                     spacing: t.space4,
                     runSpacing: t.space4,
@@ -453,7 +376,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
-                  SizedBox(height: t.space12),
+                  SizedBox(height: t.space6),
                   _table(context, t, _sorted(d.mks)),
                 ],
               );
@@ -461,15 +384,25 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _table(BuildContext context, TradeTokens t, List<MkRow> rows) {
     final head = TradeType.label.copyWith(color: t.fgSecondary);
+    // cabeçalho em surface-200 (13/400), linhas com borda sutil e hover surface-300
     return LayoutBuilder(
       builder: (_, box) => SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: SizedBox(
           width: box.maxWidth < 920 ? 920 : box.maxWidth,
-          child: TradeCard(
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: t.bgSurface,
+              borderRadius: BorderRadius.circular(t.radiusLg),
+              border: Border.all(color: t.borderSubtle),
+            ),
             child: Column(
               children: [
-                Row(
+                Container(
+                  color: t.bgSubtle,
+                  padding: EdgeInsets.symmetric(horizontal: t.space3),
+                  child: Row(
                   children: [
                     for (var i = 0; i < _cols.length; i++)
                       Expanded(
@@ -504,6 +437,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     SizedBox(width: 112, child: Text('Batimento', style: head)),
                   ],
                 ),
+                ),
                 Divider(color: t.borderSubtle, height: 1),
                 for (final m in rows) _row(context, t, m),
               ],
@@ -520,8 +454,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     return InkWell(
       key: ValueKey('row-${m.id}'),
       onTap: () => _abrir(m.id),
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: t.space3),
+      hoverColor: t.bgHover,
+      child: Container(
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.borderSubtle))),
+        padding: EdgeInsets.symmetric(vertical: t.space2, horizontal: t.space3),
         child: Row(
           children: [
             Expanded(
@@ -531,10 +467,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   Text(
                     m.nome,
-                    style: TradeType.bodyMd.copyWith(
-                      color: t.fgPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TradeType.heading4.copyWith(color: t.fgPrimary),
                   ),
                   if (alert)
                     Text(
@@ -593,46 +526,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-class _Banner extends StatelessWidget {
-  const _Banner(this.text, this.color);
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: t.space4),
-      child: Semantics(
-        liveRegion: true,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: t.space4,
-            vertical: t.space3,
-          ),
-          decoration: BoxDecoration(
-            color: t.bgElevated,
-            borderRadius: BorderRadius.circular(t.radiusMd),
-            border: Border.all(color: color),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.warning_amber_outlined, size: 20, color: color),
-              SizedBox(width: t.space3),
-              Expanded(
-                child: Text(
-                  text,
-                  style: TradeType.bodyMd.copyWith(color: t.fgPrimary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Summary extends StatelessWidget {
   const _Summary(Key key, this.label, this.value, this.color) : super(key: key);
   final String label;
@@ -640,26 +533,8 @@ class _Summary extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return SizedBox(
-      width: 220,
-      child: TradeCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TradeType.label.copyWith(color: t.fgSecondary)),
-            SizedBox(height: t.space2),
-            Text(
-              '$value',
-              style: dataStyle(
-                context,
-                TradeType.dataLg,
-              ).copyWith(color: color),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+        width: 220,
+        child: Indicador(rotulo: label, valor: '$value', dica: value == 1 ? '1 MK' : '$value MKs', corDica: color),
+      );
 }

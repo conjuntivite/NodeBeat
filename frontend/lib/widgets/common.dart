@@ -50,7 +50,20 @@ Color statusColor(TradeTokens t, String status, bool alert) => switch (status) {
       _ => t.negative,
     };
 
-/// Pílula "VPN caiu · 6 min".
+/// Fundo do selo para a cor de status (`*-bg` do tema); cor sem par cai no neutro.
+Color statusBg(TradeTokens t, Color c) => c == t.positive
+    ? t.positiveBg
+    : c == t.negative
+        ? t.negativeBg
+        : c == t.warning
+            ? t.warningBg
+            : c == t.info
+                ? t.infoBg
+                : c == t.brandText
+                    ? t.brandTint
+                    : t.bgHover;
+
+/// Selo de status com ponto: "VPN caiu · 6 min".
 class StatusPill extends StatelessWidget {
   const StatusPill({super.key, required this.status, required this.alert, this.desde});
   final String status;
@@ -60,17 +73,36 @@ class StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    final c = statusColor(t, status, alert);
     final rel = relativo(desde);
+    return Selo(rel.isEmpty ? statusLabel(status, alert) : '${statusLabel(status, alert)} · $rel',
+        statusColor(t, status, alert), ponto: true);
+  }
+}
+
+/// Badge do design system: texto 12/500 na cor de status sobre o seu fundo, raio sm.
+class Selo extends StatelessWidget {
+  const Selo(this.texto, this.cor, {super.key, this.ponto = false});
+  final String texto;
+  final Color cor;
+  final bool ponto;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    final fg = cor == t.fgSecondary ? t.fgPrimary : cor; // neutro: tinta sobre surface-300
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
-      decoration: BoxDecoration(
-        color: t.bgElevated,
-        borderRadius: BorderRadius.circular(t.radiusPill),
-        border: Border.all(color: c),
-      ),
-      child: Text(rel.isEmpty ? statusLabel(status, alert) : '${statusLabel(status, alert)} · $rel',
-          style: TradeType.label.copyWith(color: c)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(color: statusBg(t, cor), borderRadius: BorderRadius.circular(t.radiusSm)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (ponto) ...[
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+            child: Text(texto,
+                overflow: TextOverflow.ellipsis,
+                style: TradeType.bodySm.copyWith(color: fg, fontWeight: FontWeight.w500))),
+      ]),
     );
   }
 }
@@ -96,22 +128,36 @@ Widget? backFallback(BuildContext context) => Navigator.of(context).canPop()
 
 String errorText(Object e) => e is ApiError ? e.message : 'Não foi possível conectar ao servidor';
 
-/// Cartão padrão: radius-xl, padding space-6.
+/// Cartão do design system: surface-100, borda sutil, radius-lg, padding space-4, sombra leve.
+/// Com [titulo], cabeçalho h3 (e [acoes] à direita) antes do corpo.
 class TradeCard extends StatelessWidget {
-  const TradeCard({super.key, required this.child});
+  const TradeCard({super.key, required this.child, this.titulo, this.acoes = const []});
   final Widget child;
+  final String? titulo;
+  final List<Widget> acoes;
 
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: EdgeInsets.all(t.space6),
+      padding: EdgeInsets.all(t.space4),
       decoration: BoxDecoration(
         color: t.bgSurface,
-        borderRadius: BorderRadius.circular(t.radiusXl),
+        borderRadius: BorderRadius.circular(t.radiusLg),
         border: Border.all(color: t.borderSubtle),
+        boxShadow: [BoxShadow(color: dark ? const Color(0x66000000) : t.fgPrimary.withValues(alpha: .10), blurRadius: 2, offset: const Offset(0, 1))],
       ),
-      child: child,
+      child: titulo == null
+          ? child
+          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(child: Text(titulo!, style: TradeType.heading3.copyWith(color: t.fgPrimary))),
+                ...acoes,
+              ]),
+              SizedBox(height: t.space4),
+              child,
+            ]),
     );
   }
 }
@@ -155,10 +201,7 @@ mixin Carrega<W extends StatefulWidget, T> on State<W> {
 Widget eyebrow(String texto, {required Color cor}) =>
     Text(texto.toUpperCase(), style: TradeType.eyebrow.copyWith(color: cor));
 
-/// Opacidade do fundo da [Pilula] (a cor semântica tingindo a superfície): mantém o texto >= 4,5:1.
-const double kAlphaPilula = 0.06;
-
-/// Pílula: cor semântica no texto e no ponto, fundo com a mesma cor tingida.
+/// Pílula: o mesmo [Selo] (cor de status sobre o seu fundo), mantida pelo nome antigo.
 class Pilula extends StatelessWidget {
   const Pilula(this.texto, {super.key, required this.cor, this.ponto = false});
   final String texto;
@@ -166,18 +209,5 @@ class Pilula extends StatelessWidget {
   final bool ponto;
 
   @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
-      decoration: BoxDecoration(color: cor.withValues(alpha: kAlphaPilula), borderRadius: BorderRadius.circular(t.radiusPill)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (ponto) ...[
-          Container(width: 8, height: 8, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
-          SizedBox(width: t.space2),
-        ],
-        Flexible(child: Text(texto, overflow: TextOverflow.ellipsis, style: TradeType.label.copyWith(color: cor, fontWeight: FontWeight.w600))),
-      ]),
-    );
-  }
+  Widget build(BuildContext context) => Selo(texto, cor, ponto: ponto);
 }

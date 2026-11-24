@@ -4,6 +4,7 @@ import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/shell.dart';
 import '../widgets/eventos.dart' show formatEventoHora;
 import '../widgets/graficos.dart';
 import '../widgets/painel_cards.dart';
@@ -76,74 +77,32 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final d = _d;
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
-      body: ListView(padding: EdgeInsets.all(t.space6), children: [
-        _cabecalho(t),
-        SizedBox(height: t.space6),
+    return AppShell(
+      ativo: 'eventos',
+      titulo: 'Eventos',
+      subtitulo: 'O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
+      acoes: [_pilulasPeriodo(t), _filtroMk(t)],
+      body: ListView(padding: margemPagina(context), children: [
         if (_erro != null) _falha(t) else if (d == null) const Center(child: CircularProgressIndicator()) else ..._conteudo(context, t, d),
       ]),
     );
   }
 
-  Widget _cabecalho(TradeTokens t) => Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.end,
-        spacing: t.space4,
-        runSpacing: t.space4,
-        children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            eyebrow('NodeBeat · segurança e eventos', cor: t.fgMuted),
-            SizedBox(height: t.space1),
-            Text('Eventos', style: TradeType.heading1.copyWith(color: t.fgPrimary)),
-            Text('O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
-                style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-          ]),
-          Wrap(spacing: t.space2, runSpacing: t.space2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            _pilulasPeriodo(t),
-            _filtroMk(t),
-          ]),
-        ],
-      );
-
-  Widget _pilulasPeriodo(TradeTokens t) => Container(
-        padding: EdgeInsets.all(t.space1),
-        decoration: BoxDecoration(
-          color: t.bgSurface,
-          borderRadius: BorderRadius.circular(t.radiusPill),
-          border: Border.all(color: t.borderSubtle),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          for (final (rotulo, valor) in _periodos)
-            InkWell(
-              borderRadius: BorderRadius.circular(t.radiusPill),
-              onTap: () {
-                _periodo = valor;
-                _carregar();
-              },
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space2),
-                decoration: BoxDecoration(
-                  color: valor == _periodo ? t.bgInverse : null,
-                  borderRadius: BorderRadius.circular(t.radiusPill),
-                ),
-                child: Text(rotulo,
-                    style: TradeType.label.copyWith(color: valor == _periodo ? t.fgInverse : t.fgSecondary)),
-              ),
-            ),
-        ]),
+  Widget _pilulasPeriodo(TradeTokens t) => AbasPilula(
+        itens: [for (final (rotulo, _) in _periodos) rotulo],
+        valor: _periodos.indexWhere((p) => p.$2 == _periodo),
+        aoMudar: (i) {
+          _periodo = _periodos[i].$2;
+          _carregar();
+        },
       );
 
   Widget _filtroMk(TradeTokens t) => Container(
-        padding: EdgeInsets.symmetric(horizontal: t.space4),
+        padding: EdgeInsets.symmetric(horizontal: t.space3),
         decoration: BoxDecoration(
           color: t.bgSurface,
-          borderRadius: BorderRadius.circular(t.radiusPill),
-          border: Border.all(color: t.borderSubtle),
+          borderRadius: BorderRadius.circular(t.radiusMd),
+          border: Border.all(color: t.borderStrong),
         ),
         child: SizedBox(
           width: 260,

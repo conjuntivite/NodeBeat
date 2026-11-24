@@ -19,26 +19,6 @@ String formatDia(String? iso) {
   return d == null ? '' : '${two(d.day)}/${two(d.month)}';
 }
 
-/// Selo em pílula (borda e texto na mesma cor semântica).
-class Selo extends StatelessWidget {
-  const Selo(this.texto, this.cor, {super.key});
-  final String texto;
-  final Color cor;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(t.radiusPill),
-        border: Border.all(color: cor),
-      ),
-      child: Text(texto, style: TradeType.label.copyWith(color: cor)),
-    );
-  }
-}
-
 /// Resultado de uma conferência: veredito colorido, detalhes e avisos.
 class ResultadoConferencia extends StatelessWidget {
   const ResultadoConferencia(this.c, {super.key});

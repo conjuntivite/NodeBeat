@@ -14,11 +14,12 @@ const rotuloCategoria = {
 };
 
 /// Cor de cada categoria; o gráfico sempre traz o rótulo ao lado (cor nunca é a única pista).
+/// Série de gráfico por categoria: chart-1..4 na ordem fixa (a cor segue a categoria, nunca o ranking).
 Color corCategoria(TradeTokens t, String cat) => switch (cat) {
-      'acesso' => t.negative,
-      'autenticacao' => t.info,
-      'vpn' => t.risk,
-      _ => t.warning,
+      'autenticacao' => t.chart1,
+      'acesso' => t.chart2,
+      'vpn' => t.chart3,
+      _ => t.chart4,
     };
 
 class _Vazio extends StatelessWidget {
@@ -114,8 +115,6 @@ class GraficoLinha extends StatelessWidget {
     final pico = picoDe(pontos, series);
     if (pico == null) return const _Vazio();
     final passo = (pontos.length / 6).ceil().clamp(1, pontos.length);
-    int total(String s) => pontos.fold(0, (a, p) => a + (p.valores[s] ?? 0));
-    final principal = series.reduce((a, b) => total(b) > total(a) ? b : a);
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Align(alignment: Alignment.centerRight, child: Pilula('Pico: $pico', cor: t.info)),
       SizedBox(height: t.space3),
@@ -123,7 +122,7 @@ class GraficoLinha extends StatelessWidget {
         height: 180,
         child: LineChart(LineChartData(
           minY: 0,
-          gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.borderSubtle, strokeWidth: 1)),
+          gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.chartGrid, strokeWidth: 1)),
           borderData: FlBorderData(show: false),
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
@@ -156,21 +155,9 @@ class GraficoLinha extends StatelessWidget {
               LineChartBarData(
                 spots: [for (var i = 0; i < pontos.length; i++) FlSpot(i.toDouble(), (pontos[i].valores[s] ?? 0).toDouble())],
                 color: corCategoria(t, s),
-                barWidth: 2.5,
-                isCurved: true,
-                curveSmoothness: 0.2,
-                preventCurveOverShooting: true,
+                barWidth: 2, // linha de 2 px, sem área nem gradiente
                 dotData: const FlDotData(show: false),
-                belowBarData: s == principal
-                    ? BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [corCategoria(t, s).withValues(alpha: 0.22), corCategoria(t, s).withValues(alpha: 0)],
-                        ),
-                      )
-                    : BarAreaData(show: false),
+                belowBarData: BarAreaData(show: false),
               ),
           ],
         )),

@@ -6,11 +6,12 @@ import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/eventos.dart';
 import '../widgets/painel_portas.dart';
+import '../widgets/shell.dart';
 
 /// Velocidade em Mbps: 1000 -> "1 Gbps", 100 -> "100 Mbps".
 String velocidadeTxt(int mbps) => mbps >= 1000 ? '${mbps % 1000 == 0 ? mbps ~/ 1000 : mbps / 1000} Gbps' : '$mbps Mbps';
 
-/// Detalhe de um switch: desenho das portas, porta tocada, histórico e eventos do syslog.
+/// Detalhe de um switch: indicadores, painel frontal, tabela de portas, histórico e syslog.
 class SwitchDetailScreen extends StatefulWidget {
   const SwitchDetailScreen(this.api, this.id, {super.key});
   final ApiClient api;
@@ -103,21 +104,48 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final eq = _eq;
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        title: Text(eq?.nome ?? 'Switch', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
+    final status = '${eq?.estado?['status'] ?? 'desconhecido'}';
+    final cor = status == 'no_ar' ? t.positive : (status == 'offline' || status == 'erro_acesso') ? t.negative : t.fgSecondary;
+    final rotulo = switch (status) { 'no_ar' => 'No ar', 'offline' => 'Offline', 'erro_acesso' => 'Erro de acesso', _ => 'Aguardando' };
+    final rel = relativo(eq?.estado?['desde']);
+    return AppShell(
+      ativo: 'switch',
+      titulo: eq?.nome ?? 'Switch',
+      subtitulo: eq == null
+          ? null
+          : [eq.ip, eq.localNome ?? 'Sem local', if (eq.estado?['detalhe'] != null) '${eq.estado!['detalhe']}'].join(' · '),
+      migalhas: Migalhas(anterior: 'Switches', atual: eq?.nome ?? 'Switch', aoVoltar: () => voltar(context)),
+      acoes: eq == null
+          ? const []
+          : [
+              Padding(
+                padding: EdgeInsets.only(top: t.space2),
+                child: Selo(rel.isEmpty ? rotulo : '$rotulo · $rel', cor, ponto: true),
+              ),
+              OutlinedButton(onPressed: _renomear, child: const Text('Renomear')),
+              if (eq.origem == 'manual')
+                OutlinedButton(
+                  onPressed: _apagar,
+                  style: OutlinedButton.styleFrom(
+                      backgroundColor: t.negativeBg, foregroundColor: t.negative, side: BorderSide(color: t.negative)),
+                  child: const Text('Apagar'),
+                ),
+            ],
       body: eq == null
           ? Center(child: _error == null ? const CircularProgressIndicator() : Text(_error!, style: TradeType.bodyMd.copyWith(color: t.negative)))
-          : ListView(padding: EdgeInsets.all(t.space6), children: [
-              _cabecalho(t, eq),
+          : ListView(padding: margemPagina(context), children: [
+              _indicadores(t, eq),
               SizedBox(height: t.space4),
-              PainelPortas(portas: eq.portas, aoTocar: (p) => setState(() => _porta = p)),
+              TradeCard(
+                titulo: 'Painel frontal',
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  PainelPortas(portas: eq.portas, aoTocar: (p) => setState(() => _porta = p)),
+                  if (_porta != null) ...[SizedBox(height: t.space4), _detalhePorta(t, eq, _porta!)],
+                ]),
+              ),
               SizedBox(height: t.space4),
-              if (_porta != null) ...[_detalhePorta(t, eq, _porta!), SizedBox(height: t.space4)],
+              _tabelaPortas(t, eq),
+              SizedBox(height: t.space4),
               _historico(t),
               SizedBox(height: t.space4),
               _syslog(t),
@@ -125,46 +153,87 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
     );
   }
 
-  Widget _cabecalho(TradeTokens t, Equipamento eq) {
-    final status = '${eq.estado?['status'] ?? 'desconhecido'}';
-    final cor = status == 'no_ar' ? t.positive : (status == 'offline' || status == 'erro_acesso') ? t.negative : t.fgSecondary;
-    final rotulo = switch (status) { 'no_ar' => 'No ar', 'offline' => 'Offline', 'erro_acesso' => 'Erro de acesso', _ => 'Aguardando' };
-    final rel = relativo(eq.estado?['desde']);
+  Widget _indicadores(TradeTokens t, Equipamento eq) {
+    final up = eq.portas.where((p) => p.estado == 'up').length;
+    final caiu = eq.portas.where((p) => p.estado == 'caiu').length;
+    final rapidas = eq.portas.where((p) => p.estado == 'up' && (p.velocidade ?? 0) >= 1000).length;
+    return Wrap(spacing: t.space4, runSpacing: t.space4, children: [
+      Indicador(rotulo: 'Portas', valor: '${eq.portas.length}'),
+      Indicador(rotulo: 'Com link', valor: '$up', dica: '$rapidas a 1 Gbps ou mais'),
+      Indicador(
+        rotulo: 'Sem link',
+        valor: '${eq.portas.length - up}',
+        dica: switch (caiu) { 0 => 'nenhuma caiu nas últimas 24 h', 1 => '1 caiu nas últimas 24 h', _ => '$caiu caíram nas últimas 24 h' },
+        corDica: caiu == 0 ? null : t.negative,
+      ),
+      Indicador(rotulo: 'Uplinks', valor: '${eq.uplinks.length}', dica: 'levam a outro switch'),
+    ]);
+  }
+
+  String _estadoTxt(String e) => switch (e) { 'up' => 'Com link', 'caiu' => 'Caiu', _ => 'Sem link' };
+
+  String? _ligado(Equipamento eq, String porta) {
+    final u = eq.uplinks[porta] as Map?;
+    return u == null ? null : (u['filho'] != null ? 'switch ${u['filho']}' : '${u['vigiados'] ?? 0} aparelhos vigiados');
+  }
+
+  /// Tabela de portas (DataTable): cabeçalho em surface-200, linha selecionada em brand-tint.
+  Widget _tabelaPortas(TradeTokens t, Equipamento eq) {
+    final head = TradeType.label.copyWith(color: t.fgSecondary);
+    final cel = TradeType.bodyMd.copyWith(color: t.fgPrimary);
+    const flex = [2, 3, 2, 2, 4];
+    Widget linha(List<Widget> c, {Color? fundo, VoidCallback? onTap, Key? key}) => InkWell(
+          key: key,
+          onTap: onTap,
+          hoverColor: t.bgHover,
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: t.space2, horizontal: t.space3),
+            decoration: BoxDecoration(color: fundo, border: Border(bottom: BorderSide(color: t.borderSubtle))),
+            child: Row(children: [for (var i = 0; i < c.length; i++) Expanded(flex: flex[i], child: c[i])]),
+          ),
+        );
     return TradeCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Wrap(spacing: t.space4, runSpacing: t.space2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          Text(eq.nome, style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-          Text(eq.localNome ?? 'Sem local', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 12, height: 12, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
-            SizedBox(width: t.space2),
-            Text(rotulo, style: TradeType.bodyMd.copyWith(color: t.fgPrimary)),
-          ]),
-          Text(eq.ip, style: dataStyle(context, TradeType.dataSm)),
-          if (rel.isNotEmpty) Text('há $rel', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-        ]),
-        if (eq.estado?['detalhe'] != null)
-          Padding(
-              padding: EdgeInsets.only(top: t.space3),
-              child: Text('${eq.estado!['detalhe']}', style: TradeType.bodyMd.copyWith(color: t.fgSecondary))),
-        SizedBox(height: t.space4),
-        Wrap(spacing: t.space2, runSpacing: t.space2, children: [
-          OutlinedButton(onPressed: _renomear, child: const Text('Renomear')),
-          if (eq.origem == 'manual')
-            FilledButton(
-                onPressed: _apagar,
-                style: FilledButton.styleFrom(backgroundColor: t.negative, foregroundColor: t.fgInverse),
-                child: const Text('Apagar')),
-        ]),
-      ]),
+      titulo: 'Portas',
+      child: LayoutBuilder(
+        builder: (_, box) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: box.maxWidth < 560 ? 560 : box.maxWidth,
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(t.radiusMd), border: Border.all(color: t.borderSubtle)),
+              child: Column(children: [
+                linha([for (final h in ['Porta', 'Estado', 'Velocidade', 'Há quanto tempo', 'Ligado a']) Text(h, style: head)],
+                    fundo: t.bgSubtle),
+                for (final p in eq.portas)
+                  linha(
+                    key: Key('linha-porta-${p.nome}'),
+                    fundo: _porta?.nome == p.nome ? t.brandTint : null,
+                    onTap: () => setState(() => _porta = p),
+                    [
+                      Text(p.nome, style: TradeType.ticker.copyWith(color: t.fgPrimary)),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Selo(_estadoTxt(p.estado), p.estado == 'up' ? t.positive : p.estado == 'caiu' ? t.negative : t.fgSecondary),
+                      ),
+                      Text(p.estado == 'up' && p.velocidade != null ? velocidadeTxt(p.velocidade!) : '—',
+                          style: cel.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+                      Text(relativo(p.desde).isEmpty ? '—' : relativo(p.desde), style: cel),
+                      Text(_ligado(eq, p.nome) ?? '—', overflow: TextOverflow.ellipsis, style: cel),
+                    ],
+                  ),
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _detalhePorta(TradeTokens t, Equipamento eq, PortaVista p) {
     final up = p.estado == 'up';
-    final u = eq.uplinks[p.nome] as Map?;
     final rel = relativo(p.desde);
-    final ligado = u == null ? null : (u['filho'] != null ? 'switch ${u['filho']}' : '${u['vigiados'] ?? 0} aparelhos vigiados');
+    final ligado = _ligado(eq, p.nome);
     Widget linha(String k, String v) => Padding(
           padding: EdgeInsets.symmetric(vertical: t.space1),
           child: Row(children: [
@@ -172,11 +241,14 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
             Expanded(child: Text(v, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
           ]),
         );
-    return TradeCard(
+    return Container(
+      key: const Key('detalhe-porta'),
+      padding: EdgeInsets.all(t.space4),
+      decoration: BoxDecoration(color: t.bgSubtle, borderRadius: BorderRadius.circular(t.radiusMd)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Porta ${p.nome}', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-        SizedBox(height: t.space3),
-        linha('Estado', switch (p.estado) { 'up' => 'Com link', 'caiu' => 'Caiu', _ => 'Sem link' }),
+        SizedBox(height: t.space2),
+        linha('Estado', _estadoTxt(p.estado)),
         if (up && p.velocidade != null) linha('Velocidade', velocidadeTxt(p.velocidade!)),
         if (rel.isNotEmpty) linha(up ? 'Com link' : 'Sem link', 'há $rel'),
         if (ligado != null) linha('Ligado a', ligado),
@@ -185,9 +257,8 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
   }
 
   Widget _historico(TradeTokens t) => TradeCard(
+        titulo: 'Histórico',
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Histórico', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-          SizedBox(height: t.space3),
           if (_hist.isEmpty) Text('Sem eventos.', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
           for (final h in _hist)
             Padding(
@@ -207,9 +278,8 @@ class _SwitchDetailScreenState extends State<SwitchDetailScreen> {
       );
 
   Widget _syslog(TradeTokens t) => TradeCard(
+        titulo: 'Eventos do syslog',
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Eventos do syslog', style: TradeType.heading4.copyWith(color: t.fgPrimary)),
-          SizedBox(height: t.space3),
           if (_eventos.isEmpty) Text('Sem eventos.', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
           for (final e in _eventos.map((j) => Evento.fromJson(j as Map<String, dynamic>)))
             Padding(

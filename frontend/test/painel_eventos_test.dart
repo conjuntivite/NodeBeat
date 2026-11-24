@@ -141,7 +141,6 @@ void main() {
     testWidgets('cabeçalho e card de situação (${b.name})', (t) async {
       await _show(t, b: b);
       expect(find.text('Eventos'), findsOneWidget);
-      expect(find.textContaining('NODEBEAT'), findsOneWidget);
       expect(find.text('Sem invasão detectada, mas 1 MK em vermelho.'), findsOneWidget);
       expect(find.textContaining('SITUAÇÃO'), findsOneWidget);
       expect(find.textContaining('1 verde'), findsOneWidget);

@@ -4,6 +4,7 @@ import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/shell.dart';
 
 /// Cadastro (id == null) ou edição de uma MK.
 class MkFormScreen extends StatefulWidget {
@@ -124,13 +125,10 @@ class _MkFormScreenState extends State<MkFormScreen> {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        title: Text(_edit ? 'Editar MK' : 'Nova MK', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
+    return AppShell(
+      ativo: 'mk',
+      titulo: _edit ? 'Editar MK' : 'Nova MK',
+      migalhas: Migalhas(anterior: 'MKs', atual: _edit ? 'Editar' : 'Nova MK', aoVoltar: () => voltar(context)),
       body: !_loaded
           ? Center(
               child: _general == null
@@ -138,7 +136,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
                   : Text(_general!, style: TradeType.bodyMd.copyWith(color: t.negative)))
           : Center(
               child: SingleChildScrollView(
-                padding: EdgeInsets.all(t.space6),
+                padding: margemPagina(context),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 480),
                   child: TradeCard(

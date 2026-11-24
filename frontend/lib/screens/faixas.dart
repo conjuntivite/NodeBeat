@@ -6,6 +6,7 @@ import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/shell.dart';
 import '../widgets/inventario.dart';
 
 class FaixasScreen extends StatefulWidget {
@@ -87,19 +88,15 @@ class _FaixasScreenState extends State<FaixasScreen> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final d = _data;
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        title: Text('Faixas de IP', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
+    return AppShell(
+      ativo: 'faixas',
+      titulo: 'Faixas de IP',
       body: d == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
                   : Text(_error!, style: TradeType.bodyMd.copyWith(color: t.negative)))
-          : ListView(padding: EdgeInsets.all(t.space6), children: [
+          : ListView(padding: margemPagina(context), children: [
               if (d.sobreposicoes.isNotEmpty) ...[_sobreposicoes(t, d), SizedBox(height: t.space4)],
               TradeCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

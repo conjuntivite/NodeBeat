@@ -24,28 +24,31 @@ void main() {
     }
   });
 
-  test('botão secundário (outlined): fgPrimary sobre bgElevated >= 4,5 e borda borderStrong', () {
+  test('botão secundário (outlined): brandText sobre bgSurface >= 4,5 e borda borderStrong', () {
     for (final b in [Brightness.light, Brightness.dark]) {
       final t = b == Brightness.light ? TradeTokens.light : TradeTokens.dark;
       final st = tradeTheme(b).outlinedButtonTheme.style!;
       final fg = st.foregroundColor!.resolve({})!, bg = st.backgroundColor!.resolve({})!;
-      expect(fg, t.fgPrimary);
-      expect(bg, t.bgElevated);
+      expect(fg, t.brandText);
+      expect(bg, t.bgSurface);
       expect(st.side!.resolve({})!.color, t.borderStrong);
       expect(contrast(fg, bg), greaterThanOrEqualTo(4.5));
     }
   });
 
-  test('marca ciano do NodeBeat: bgBrand/actionAccent e contraste do texto sobre ela e do link', () {
+  test('marca pink do NodeBeat: #FF4FA3 no escuro, tom fechado no claro; textos >= 4,5', () {
+    expect(TradeTokens.dark.actionPrimary, const Color(0xFFFF4FA3));
+    expect(TradeTokens.light.actionPrimary, const Color(0xFFCE2274));
     for (final t in [TradeTokens.light, TradeTokens.dark]) {
-      expect(t.bgBrand, const Color(0xFF22D3EE));
-      expect(t.actionAccent, const Color(0xFF22D3EE));
-      expect(t.fgOnBrand, const Color(0xFF04222A));
-      expect(contrast(t.fgOnBrand, t.bgBrand), greaterThanOrEqualTo(4.5));
+      expect(t.bgBrand, t.actionPrimary);
+      expect(contrast(t.actionPrimaryFg, t.actionPrimary), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.actionPrimaryFg, t.brandHover), greaterThanOrEqualTo(4.5));
       expect(contrast(t.brandText, t.bgSurface), greaterThanOrEqualTo(4.5));
-      expect(contrast(t.brandText, t.bgPage), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.brandText, t.brandTint), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.fgSecondary, t.bgSubtle), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.fgSecondary, t.bgHover), greaterThanOrEqualTo(4.5));
+      expect(contrast(t.fgInverse, t.negative), greaterThanOrEqualTo(4.5)); // contador da barra lateral
+      expect(contrast(t.borderStrong, t.bgSurface), greaterThanOrEqualTo(3));
     }
-    expect(TradeTokens.light.brandText, const Color(0xFF09768A));
-    expect(TradeTokens.dark.brandText, const Color(0xFF5BE0F5));
   });
 }

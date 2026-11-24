@@ -52,7 +52,7 @@ void main() {
 
   // Estilos de texto (sem cor: a cor vem do tema).
   b.writeln('\nclass TradeType {');
-  b.writeln("  static const sansFamily = 'PlusJakartaSans';");
+  b.writeln("  static const sansFamily = 'Poppins';");
   b.writeln("  static const monoFamily = 'SpaceMono';");
   for (final g in (j['type']['groups'] as List).cast<Map<String, dynamic>>()) {
     for (final t in (g['styles'] as List).cast<Map<String, dynamic>>()) {

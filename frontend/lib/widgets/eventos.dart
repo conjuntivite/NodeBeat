@@ -6,7 +6,6 @@ import '../mk_script.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import 'common.dart';
-import 'inventario.dart';
 
 const _filtros = [
   ('Todos', null),

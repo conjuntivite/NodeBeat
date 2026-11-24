@@ -7,6 +7,7 @@ import '../api/client.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/shell.dart';
 import '../widgets/heartbeat.dart';
 import '../widgets/eventos.dart';
 import '../widgets/inventario.dart';
@@ -203,19 +204,16 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final mk = _mk;
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        title: Text(mk?.nome ?? 'MK', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
+    return AppShell(
+      ativo: 'mk',
+      titulo: mk?.nome ?? 'MK',
+      migalhas: Migalhas(anterior: 'MKs', atual: mk?.nome ?? 'MK', aoVoltar: () => voltar(context)),
       body: mk == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
                   : Text(_error!, style: TradeType.bodyMd.copyWith(color: t.negative)))
-          : ListView(padding: EdgeInsets.all(t.space6), children: [
+          : ListView(padding: margemPagina(context), children: [
               if (mk.estado != null && mk.estado!.portas.isNotEmpty) ...[
                 PainelPortas(portas: [
                   for (final p in mk.estado!.portas)

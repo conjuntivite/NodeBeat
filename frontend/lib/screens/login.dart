@@ -46,7 +46,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Widget campo(String rotulo, Widget controle) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          ExcludeSemantics(child: Text(rotulo, style: TradeType.label.copyWith(color: t.fgPrimary))),
+          SizedBox(height: t.space1),
+          Semantics(label: rotulo, child: controle), // rótulo acima do campo (Field), nome acessível no campo
+        ]);
     return Scaffold(
+      backgroundColor: t.bgSubtle,
       body: SafeArea(
         child: Column(children: [
           Align(
@@ -57,43 +64,60 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Center(
               child: SingleChildScrollView(
                 padding: EdgeInsets.all(t.space4),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Container(
-                    padding: EdgeInsets.all(t.space6),
-                    decoration: BoxDecoration(
-                      color: t.bgSurface,
-                      borderRadius: BorderRadius.circular(t.radiusXl),
-                      border: Border.all(color: t.borderSubtle),
-                    ),
-                    child: AutofillGroup(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        Text('// NODEBEAT', style: TradeType.eyebrow.copyWith(color: t.fgSecondary)),
-                        SizedBox(height: t.space1),
-                        Text('Acesso ao painel', style: TradeType.heading2.copyWith(color: t.fgPrimary)),
-                        SizedBox(height: t.space6),
-                        TextField(
-                          controller: _user,
-                          decoration: const InputDecoration(labelText: 'Usuário'),
-                          autofillHints: const [AutofillHints.username],
-                          textInputAction: TextInputAction.next,
+                child: Container(
+                  width: 380,
+                  padding: EdgeInsets.all(t.space8),
+                  decoration: BoxDecoration(
+                    color: t.bgSurface,
+                    borderRadius: BorderRadius.circular(t.radiusLg),
+                    border: Border.all(color: t.borderSubtle),
+                    boxShadow: [BoxShadow(color: dark ? const Color(0x66000000) : t.fgPrimary.withValues(alpha: .10), blurRadius: 2, offset: const Offset(0, 1))],
+                  ),
+                  child: AutofillGroup(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Row(children: [
+                        Image.asset(dark ? 'assets/brand/nodebeat-icon-dark.png' : 'assets/brand/nodebeat-icon-light.png',
+                            width: 40, height: 40, excludeFromSemantics: true),
+                        SizedBox(width: t.space3),
+                        Flexible(
+                          child: Semantics(
+                            header: true,
+                            child: Text('NodeBeat',
+                                style: TradeType.displayXl.copyWith(fontSize: 40, height: 44 / 40, letterSpacing: -.5, color: t.fgPrimary)),
+                          ),
                         ),
-                        SizedBox(height: t.space4),
-                        TextField(
-                          controller: _pass,
-                          decoration: const InputDecoration(labelText: 'Senha'),
-                          obscureText: true,
-                          autofillHints: const [AutofillHints.password],
-                          onSubmitted: (_) => _submit(),
-                        ),
-                        if (_error != null) ...[
-                          SizedBox(height: t.space3),
-                          Semantics(liveRegion: true, child: Text(_error!, style: TradeType.bodySm.copyWith(color: t.negative))),
-                        ],
-                        SizedBox(height: t.space6),
-                        FilledButton(onPressed: _busy ? null : _submit, child: const Text('Entrar')),
                       ]),
-                    ),
+                      SizedBox(height: t.space1),
+                      Text('Entre para acessar o painel.', style: TradeType.bodyLg.copyWith(color: t.fgSecondary)),
+                      SizedBox(height: t.space4),
+                      campo(
+                          'Usuário',
+                          TextField(
+                            controller: _user,
+                                                        autofillHints: const [AutofillHints.username],
+                            textInputAction: TextInputAction.next,
+                          )),
+                      SizedBox(height: t.space4),
+                      campo(
+                          'Senha',
+                          TextField(
+                            controller: _pass,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.password],
+                            onSubmitted: (_) => _submit(),
+                          )),
+                      if (_error != null) ...[
+                        SizedBox(height: t.space3),
+                        Semantics(liveRegion: true, child: Text(_error!, style: TradeType.bodySm.copyWith(color: t.negative))),
+                      ],
+                      SizedBox(height: t.space4),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                            padding: EdgeInsets.symmetric(horizontal: t.space6, vertical: 13), textStyle: TradeType.bodyLg.copyWith(fontWeight: FontWeight.w500)),
+                        onPressed: _busy ? null : _submit,
+                        child: const Text('Entrar'),
+                      ),
+                    ]),
                   ),
                 ),
               ),

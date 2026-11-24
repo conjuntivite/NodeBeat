@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/screens/switch_detail.dart';
 import 'package:nodebeat/theme/theme.dart';
 
@@ -39,7 +40,7 @@ void main() {
   testWidgets('desenha as 52 portas e mostra o cabeçalho', (t) async {
     await _show(t);
     expect(find.text('sw-sede'), findsWidgets);
-    expect(find.text('10.0.0.9'), findsOneWidget);
+    expect(find.textContaining('10.0.0.9'), findsOneWidget); // subtítulo: IP · local
     expect(find.byKey(const Key('porta-0/1')), findsOneWidget);
     expect(find.byKey(const Key('porta-sfp4')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
@@ -49,11 +50,26 @@ void main() {
     await _show(t);
     await t.tap(find.byKey(const Key('porta-0/12')));
     await t.pump();
-    expect(find.text('4 aparelhos vigiados'), findsOneWidget);
-    expect(find.text('1 Gbps'), findsOneWidget);
+    final det = find.byKey(const Key('detalhe-porta'));
+    expect(find.descendant(of: det, matching: find.text('4 aparelhos vigiados')), findsOneWidget);
+    expect(find.descendant(of: det, matching: find.text('1 Gbps')), findsOneWidget);
     await t.tap(find.byKey(const Key('porta-0/5')));
     await t.pump();
-    expect(find.text('100 Mbps'), findsOneWidget);
+    expect(find.descendant(of: det, matching: find.text('100 Mbps')), findsOneWidget);
+  });
+
+  testWidgets('tabela lista todas as portas com a velocidade e marca a tocada', (t) async {
+    await _show(t);
+    final l12 = find.byKey(const Key('linha-porta-0/12'));
+    expect(find.descendant(of: l12, matching: find.text('1 Gbps')), findsOneWidget);
+    expect(find.descendant(of: l12, matching: find.text('4 aparelhos vigiados')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const Key('linha-porta-0/5')), matching: find.text('100 Mbps')), findsOneWidget);
+    await t.ensureVisible(l12);
+    await t.pump();
+    await t.tap(l12);
+    await t.pump();
+    final fundo = (t.widget<Container>(find.descendant(of: l12, matching: find.byType(Container)).first).decoration as BoxDecoration).color;
+    expect(fundo, TradeTokens.light.brandTint); // linha selecionada em brand-tint
     await t.pumpWidget(const SizedBox());
   });
 

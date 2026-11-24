@@ -73,16 +73,18 @@ Future<void> _settle(WidgetTester t) async {
 }
 
 Future<void> _abaSwitch(WidgetTester t) async {
-  await t.tap(find.text('Switch'));
+  await t.tap(find.byKey(const Key('nav-switch')));
   await _settle(t);
 }
 
 void main() {
   testWidgets('três abas, MK inicial, contadores', (t) async {
     await _show(t);
-    expect(find.text('MK'), findsOneWidget);
-    expect(find.text('Switch'), findsOneWidget);
-    expect(find.text('Firewall'), findsOneWidget);
+    // barra lateral: MK, Switch e Firewall (nome no tooltip), MK ativa
+    for (final k in ['mk', 'switch', 'firewall']) {
+      expect(find.byKey(Key('nav-$k')), findsOneWidget);
+    }
+    expect(find.text('MKs'), findsOneWidget); // título da página
     expect(find.text('No ar'), findsOneWidget); // resumo da aba MK visível
     expect(find.descendant(of: find.byKey(const Key('contador-mk')), matching: find.text('2')), findsOneWidget);
     expect(find.descendant(of: find.byKey(const Key('contador-switch')), matching: find.text('1')), findsOneWidget);
@@ -147,7 +149,7 @@ void main() {
 
   testWidgets('aba Firewall só mostra o aviso', (t) async {
     await _show(t);
-    await t.tap(find.text('Firewall'));
+    await t.tap(find.byKey(const Key('nav-firewall')));
     await _settle(t);
     expect(find.text('Nenhum firewall ainda. O suporte a firewall vem na próxima etapa.'), findsOneWidget);
     expect(find.text('Adicionar switch'), findsNothing);

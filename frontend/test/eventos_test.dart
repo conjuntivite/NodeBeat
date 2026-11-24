@@ -10,8 +10,8 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/mk_script.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
+import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/eventos.dart';
-import 'package:nodebeat/widgets/inventario.dart';
 
 http.Response _json(Object o) =>
     http.Response(jsonEncode(o), 200, headers: {'content-type': 'application/json; charset=utf-8'});

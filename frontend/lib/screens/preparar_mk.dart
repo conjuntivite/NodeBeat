@@ -6,6 +6,7 @@ import '../mk_script.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/shell.dart';
 
 /// A cópia às vezes perde a "{" do começo e o terminal roda linha a linha (as variáveis somem).
 const avisoWinbox = 'O Winbox continua na porta 8291. Se a operadora bloquear a 8291, entre pelo IP público na 18291 '
@@ -52,19 +53,15 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final i = _info;
-    return Scaffold(
-      appBar: AppBar(
-        leading: backFallback(context),
-        backgroundColor: t.bgPage,
-        title: Text('Preparar MK', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-        actions: [const ThemeToggle(), SizedBox(width: t.space2)],
-      ),
+    return AppShell(
+      ativo: 'preparar',
+      titulo: 'Preparar MK',
       body: i == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
                   : Text(_error!, style: TradeType.bodyMd.copyWith(color: t.negative)))
-          : ListView(padding: EdgeInsets.all(t.space6), children: [
+          : ListView(padding: margemPagina(context), children: [
               _novaMk(context, t, i),
               SizedBox(height: t.space4),
               _reinicioPublico(t, i),

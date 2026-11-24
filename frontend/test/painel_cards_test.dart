@@ -70,14 +70,12 @@ void main() {
     expect(t.widget<Text>(find.text('↗ +4% vs. média 7 dias')).style!.fontFeatures, contains(tab));
   });
 
-  test('texto das pílulas tem contraste >= 4,5 sobre o fundo tingido, nos dois temas', () {
+  test('texto dos selos tem contraste >= 4,5 sobre o fundo da cor de status, nos dois temas', () {
     for (final tk in [TradeTokens.light, TradeTokens.dark]) {
-      for (final cor in [tk.info, tk.positive, tk.negative, tk.warning]) {
-        for (final base in [tk.bgSurface, tk.bgPage, tk.bgElevated]) {
-          final fundo = Color.alphaBlend(cor.withValues(alpha: kAlphaPilula), base);
-          expect(_contraste(cor, fundo), greaterThanOrEqualTo(4.5), reason: '$cor sobre $base');
-        }
+      for (final cor in [tk.info, tk.positive, tk.negative, tk.warning, tk.brandText]) {
+        expect(_contraste(cor, statusBg(tk, cor)), greaterThanOrEqualTo(4.5), reason: '$cor');
       }
+      expect(_contraste(tk.fgPrimary, statusBg(tk, tk.fgSecondary)), greaterThanOrEqualTo(4.5));
     }
   });
 }

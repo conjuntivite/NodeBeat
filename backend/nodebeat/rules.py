@@ -187,12 +187,16 @@ class AlertEngine:
         if self.frozen:
             return []
         prefix = f"eq:{eq.id}|"
+
+        def nome(det: str) -> str:
+            return f"{eq.nome}: {det}" if det else eq.nome
+
         if acima_fora:  # o que está acima caiu: não é culpa deste equipamento
             for k in [k for k, t in self._t.items() if k.startswith(prefix) and t.phase == "pending"]:
                 del self._t[k]
             return []
         ok = obs.estado == "no_ar"
-        evs = self._step(prefix + "eq", not ok, now, obs.estado, f"{eq.nome}: {obs.detalhe}", local, eq)
+        evs = self._step(prefix + "eq", not ok, now, obs.estado, nome(obs.detalhe), local, eq)
         parallel = [k for k in self._t if k.startswith(prefix) and k != prefix + "eq"]
         if not ok:
             if any(e.evento == "queda" for e in evs):
@@ -201,12 +205,15 @@ class AlertEngine:
                     if t.phase != "pending":
                         evs.append(self._encerrado(t, now))
             return evs
-        for k in parallel:  # uplink que voltou/deixou de ser vigiado: descarta sem evento
+        for k in parallel:  # uplink que voltou: pendente some sem evento; confirmado recupera (retorno)
             if k[len(prefix + "uplink:"):] not in obs.uplinks_caidos:
-                del self._t[k]
+                if self._t[k].phase == "pending":
+                    del self._t[k]
+                else:
+                    evs += self._step(k, False, now, "uplink_caido", "", local, eq)
         for porta, det in obs.uplinks_caidos.items():
             evs += self._step(f"{prefix}uplink:{porta}", True, now, "uplink_caido",
-                              f"{eq.nome}: {det}", local, eq)
+                              nome(det), local, eq)
         return evs
 
     def mk_ids(self) -> set[str]:

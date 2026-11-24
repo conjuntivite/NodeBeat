@@ -276,3 +276,37 @@ def test_load_de_engine_antigo_sem_eq():
 def test_dump_load_preserva_eq():
     e = AlertEngine(); e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0, acima_fora=False)
     assert AlertEngine.load(e.dump())._t["eq:e1|eq"].eq == EQ
+
+
+UP = EqObs("no_ar", uplinks_caidos={"0/12": "porta 0/12 sem link"})
+NO_AR = EqObs("no_ar")
+
+
+def _eq(e, o, s):
+    return e.observe_equipamento(EQ, SEDE, o, T0 + timedelta(seconds=s), acima_fora=False)
+
+
+def test_uplink_confirmado_que_volta_gera_retorno_apos_recover():
+    e = AlertEngine()
+    _eq(e, UP, 0)
+    assert [x.evento for x in _eq(e, UP, 120)] == ["queda"]
+    assert _eq(e, NO_AR, 130) == []
+    assert _eq(e, NO_AR, 150) == []
+    [ev] = _eq(e, NO_AR, 190)
+    assert ev.evento == "retorno" and ev.tipo == "uplink_caido" and ev.equipamento == EQ
+
+
+def test_uplink_oscilando_dentro_do_recover_nao_reabre_queda():
+    e = AlertEngine()
+    _eq(e, UP, 0)
+    _eq(e, UP, 120)
+    assert _eq(e, NO_AR, 130) == []
+    assert _eq(e, UP, 150) == []
+    assert _eq(e, UP, 300) == []
+
+
+def test_detalhe_vazio_e_so_o_nome():
+    e = AlertEngine()
+    _eq(e, EqObs("offline"), 0)
+    [ev] = _eq(e, EqObs("offline"), 120)
+    assert ev.detalhe == "USW Sede"

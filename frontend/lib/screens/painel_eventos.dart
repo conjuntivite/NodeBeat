@@ -50,6 +50,8 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   List<MkPainel> _mks = []; // lista completa, vinda da carga sem filtro
   String? _erro;
   int _pedido = 0;
+  EventosSwitches? _sw;
+  String? _swErro;
 
   @override
   void initState() {
@@ -57,9 +59,25 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     _carregar();
   }
 
+  // Bloco dos switches: carga independente, uma falha não esconde o resto da tela.
+  Future<void> _carregarSwitches(int meu) async {
+    try {
+      final d = await widget.api.eventosSwitches(_periodo);
+      if (!mounted || meu != _pedido) return;
+      setState(() {
+        _sw = d;
+        _swErro = null;
+      });
+    } catch (e) {
+      if (!mounted || meu != _pedido || sessionExpired(context, e)) return;
+      setState(() => _swErro = errorText(e));
+    }
+  }
+
   Future<void> _carregar() async {
     final meu = ++_pedido;
     setState(() => _erro = null);
+    _carregarSwitches(meu);
     try {
       final d = await widget.api.painelEventos(_periodo, mkId: _mk);
       if (!mounted || meu != _pedido) return;
@@ -84,6 +102,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       acoes: [_pilulasPeriodo(t), _filtroMk(t)],
       body: ListView(padding: margemPagina(context), children: [
         if (_erro != null) _falha(t) else if (d == null) const Center(child: CircularProgressIndicator()) else ..._conteudo(context, t, d),
+        if (_sw != null || _swErro != null) ...[SizedBox(height: t.space4), _switches(t)],
       ]),
     );
   }
@@ -413,4 +432,50 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
             ),
         ],
       );
+
+  Widget _switches(TradeTokens t) {
+    final d = _sw;
+    final c = d?.contagens ?? const <String, int>{};
+    String n(String k) => '${c[k] ?? 0}';
+    return TradeCard(
+      titulo: 'Switches',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (d == null)
+          Text(_swErro!, style: TradeType.bodyMd.copyWith(color: t.negative))
+        else ...[
+          Wrap(spacing: t.space4, runSpacing: t.space4, children: [
+            Indicador(rotulo: 'Clientes com fio', valor: n('clientes')),
+            Indicador(rotulo: 'Alertas', valor: n('alertas')),
+            Indicador(rotulo: 'PoE religado', valor: n('poe')),
+            Indicador(rotulo: 'Mudanças', valor: n('mudancas')),
+          ]),
+          SizedBox(height: t.space4),
+          if (d.eventos.isEmpty) Text('Nenhum evento de switch no período.', style: TradeType.bodyMd.copyWith(color: t.fgMuted)),
+          for (final e in d.eventos) _linhaSwitch(t, e),
+        ],
+      ]),
+    );
+  }
+
+  Widget _linhaSwitch(TradeTokens t, EventoSwitch e) {
+    final l = e.quando.toLocal();
+    String dois(int v) => v.toString().padLeft(2, '0');
+    final hora = '${dois(l.hour)}:${dois(l.minute)}';
+    final agora = DateTime.now();
+    final quando = l.year == agora.year && l.month == agora.month && l.day == agora.day ? hora : '${dois(l.day)}/${dois(l.month)} $hora';
+    final cor = switch (e.severidade) {
+      'high' || 'critical' => t.negative,
+      'medium' => t.warning,
+      _ => t.fgSecondary,
+    };
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: t.space1),
+      child: Wrap(spacing: t.space2, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Text(quando, style: TradeType.ticker.copyWith(color: t.fgMuted)),
+        Text(e.porta == null ? e.switchNome : '${e.switchNome} · Porta ${e.porta}', style: TradeType.label.copyWith(color: t.fgPrimary)),
+        if (e.severidade != null) Selo(e.severidade!, cor),
+        Text(e.mensagem, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+      ]),
+    );
+  }
 }

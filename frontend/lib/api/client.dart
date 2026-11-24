@@ -399,6 +399,27 @@ class PainelEventos {
   final List<MudancaConfig> config;
 }
 
+class EventoSwitch {
+  EventoSwitch.fromJson(Map<String, dynamic> j)
+      : quando = DateTime.parse(j['quando']),
+        switchNome = (j['switch_nome'] ?? '') as String,
+        porta = (j['porta'] as num?)?.toInt(),
+        mensagem = (j['mensagem'] ?? '') as String,
+        severidade = j['severidade'] as String?;
+  final DateTime quando;
+  final String switchNome, mensagem;
+  final int? porta;
+  final String? severidade;
+}
+
+class EventosSwitches {
+  EventosSwitches.fromJson(Map<String, dynamic> j)
+      : contagens = _mapaInt(j['contagens']),
+        eventos = [for (final e in _lista(j['eventos'])) EventoSwitch.fromJson(e)];
+  final Map<String, int> contagens;
+  final List<EventoSwitch> eventos;
+}
+
 class FaixaRede {
   FaixaRede.fromJson(Map<String, dynamic> j)
       : rede = j['rede'],
@@ -696,6 +717,9 @@ class ApiClient {
     final query = 'periodo=${Uri.encodeQueryComponent(periodo)}${mkId == null ? '' : '&mk=${Uri.encodeQueryComponent(mkId)}'}';
     return PainelEventos.fromJson(await _send('GET', '/eventos/painel?$query'));
   }
+
+  Future<EventosSwitches> eventosSwitches(String periodo) async =>
+      EventosSwitches.fromJson(await _send('GET', '/eventos/switches?periodo=${Uri.encodeQueryComponent(periodo)}'));
 
   Future<void> esquecerIp(String id, String ip) => _send('DELETE', '/mks/$id/ips/$ip');
 

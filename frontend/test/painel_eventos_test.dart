@@ -30,8 +30,34 @@ Map<String, dynamic> _zerado() => {
       'config': <Object>[],
     };
 
+Map<String, dynamic> _switches() => {
+      'contagens': {'clientes': 7, 'alertas': 3, 'poe': 2, 'mudancas': 1},
+      'eventos': [
+        {
+          'quando': DateTime.now().toUtc().toIso8601String(),
+          'switch_id': 's1',
+          'switch_nome': 'Switch Teste',
+          'porta': 5,
+          'tipo': 'poe',
+          'grupo': 'alertas',
+          'mensagem': 'PoE religado na porta',
+          'severidade': 'high',
+        },
+        {
+          'quando': '2020-01-02T12:30:00Z',
+          'switch_id': 's1',
+          'switch_nome': 'Switch Teste',
+          'porta': null,
+          'tipo': 'config',
+          'grupo': 'mudancas',
+          'mensagem': 'Configuração alterada',
+          'severidade': 'medium',
+        },
+      ],
+    };
+
 Future<List<Uri>> _show(WidgetTester t,
-    {Map<String, dynamic>? corpo, int status = 200, Brightness b = Brightness.light, double largura = 1100, double altura = 2400}) async {
+    {Map<String, dynamic>? corpo, int status = 200, Map<String, dynamic>? sw, int swStatus = 200, Brightness b = Brightness.light, double largura = 1100, double altura = 2400}) async {
   t.view.physicalSize = Size(largura, altura);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -39,6 +65,7 @@ Future<List<Uri>> _show(WidgetTester t,
   final api = ApiClient(
     client: MockClient((req) async {
       urls.add(req.url);
+      if (req.url.path == '/api/eventos/switches') return _json(sw ?? _switches(), swStatus);
       return req.url.path == '/api/eventos/painel' ? _json(corpo ?? painelJson(), status) : http.Response('', 404);
     }),
   );
@@ -239,4 +266,51 @@ void main() {
     await _show(t, corpo: j, altura: 4200);
     expect(find.textContaining('% dos eventos'), findsNothing);
   });
+
+  for (final b in Brightness.values) {
+    testWidgets('bloco Switches com contadores e linhas (${b.name})', (t) async {
+      final urls = await _show(t, b: b, altura: 6000);
+      expect(urls.any((u) => u.path == '/api/eventos/switches' && u.queryParameters['periodo'] == '24h'), true);
+      expect(find.text('Switches'), findsOneWidget);
+      for (final r in ['Clientes com fio', 'Alertas', 'PoE religado', 'Mudanças']) {
+        expect(find.text(r), findsWidgets, reason: r);
+      }
+      expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+      expect(find.text('Switch Teste'), findsOneWidget); // sem porta: só o nome
+      expect(find.text('PoE religado na porta'), findsOneWidget);
+      expect(find.text('02/01 ${_hora('2020-01-02T12:30:00Z')}'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Switches sem eventos mostra o estado vazio', (t) async {
+    await _show(t, sw: {'contagens': <String, int>{}, 'eventos': <Object>[]}, altura: 6000);
+    expect(find.text('Nenhum evento de switch no período.'), findsOneWidget);
+  });
+
+  testWidgets('erro nos Switches não derruba o conteúdo das MKs', (t) async {
+    await _show(t, swStatus: 500, sw: {'detail': 'x'}, altura: 6000);
+    expect(find.text('Mudanças de configuração'), findsOneWidget);
+    expect(find.text('Switches'), findsOneWidget);
+    expect(find.text('Tentar de novo'), findsNothing);
+  });
+
+  testWidgets('erro nas MKs não derruba o bloco Switches', (t) async {
+    await _show(t, corpo: {'detail': 'x'}, status: 500, altura: 6000);
+    expect(find.text('Tentar de novo'), findsOneWidget);
+    expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+  });
+
+  for (final b in Brightness.values) {
+    testWidgets('bloco Switches em 360 px sem overflow (${b.name})', (t) async {
+      await _show(t, b: b, largura: 360, altura: 7000);
+      expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+}
+
+String _hora(String iso) {
+  final d = DateTime.parse(iso).toLocal();
+  return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }

@@ -222,6 +222,11 @@ async def listar_eventos_periodo(db, desde: datetime, mk_id: str | None = None) 
     return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", 1)]
 
 
+async def listar_eventos_unifi(db, desde: datetime) -> list[dict]:
+    f = {"origem": "unifi", "recebido_em": {"$gte": desde}}
+    return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", -1)]
+
+
 async def ultimo_evento(db, mk_id: str) -> datetime | None:
     d = await db.eventos.find_one({"mk_id": mk_id}, sort=[("recebido_em", -1)])
     return _utc(d)["recebido_em"] if d else None

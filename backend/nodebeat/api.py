@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import re
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -12,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from nodebeat import auth, crypto, eventos, history, inventario, mapa, painel, routeros, store, webhook, worker
+from nodebeat import auth, crypto, eventos, history, inventario, mapa, painel, routeros, store, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
@@ -391,6 +392,21 @@ def create_app(db, r, settings) -> FastAPI:
         _painel_cache[chave] = (t, res)
         return res
 
+    @mks.get("/eventos/switches")
+    async def eventos_switches(periodo: str = Query("24h", pattern="^(1h|24h|7d|30d)$")) -> dict:
+        horas = {"1h": 1, "24h": 24, "7d": 168, "30d": 720}[periodo]
+        desde = datetime.now(UTC) - timedelta(hours=horas)
+        evs = await store.listar_eventos_unifi(db, desde)
+        nomes = {e["id"]: e["nome"] for e in await store.listar_equipamentos(db)}
+        contagens = dict.fromkeys(("clientes", "alertas", "poe", "mudancas"), 0)
+        for e in evs:
+            contagens[unifi.GRUPOS.get(e["tipo"], "alertas")] += 1
+        return {"contagens": contagens, "eventos": [
+            {"quando": e["recebido_em"].isoformat(), "switch_id": e["mk_id"][3:],
+             "switch_nome": nomes.get(e["mk_id"][3:], "Switch removido"), "porta": (e.get("campos") or {}).get("porta"),
+             "tipo": e["tipo"], "grupo": unifi.GRUPOS.get(e["tipo"], "alertas"), "mensagem": e["mensagem"],
+             "severidade": e["severidade"]} for e in evs[:100]]}
+
     @mks.get("/mks/{id}/portas/conferir")
     async def conferir_porta(id: str, porta: int = Query(ge=1, le=65535),
                              protocolo: str = Query("tcp", pattern="^(tcp|udp)$")) -> dict:
@@ -500,11 +516,22 @@ def create_app(db, r, settings) -> FastAPI:
             "tipo": body.tipo, "nome": body.nome, "ip": ip, "local": body.local, "origem": "manual",
             "community_cifrada": crypto.encrypt(community, settings.secret_key)})}
 
+    async def _unifi_eq(id: str, estado: dict | None) -> dict | None:
+        bruto = await r.get(f"unifi:eq:{id}")
+        if not bruto:
+            return None
+        dados = json.loads(bruto)
+        # nome SNMP (ex. "0/12") casa pelo número no fim; sem par: "Porta <idx>"
+        snmp = {m.group(1): n for n in (estado or {}).get("portas") or {} if (m := re.search(r"(\d+)$", n))}
+        return {"lido_em": dados.get("lido_em"), "sistema": dados.get("sistema"),
+                "portas": {snmp.get(idx, f"Porta {idx}"): p for idx, p in (dados.get("portas") or {}).items()}}
+
     @mks.get("/equipamentos/{id}")
     async def obter_eq(id: str) -> dict:
         eq = await _eq(id)
         estado = (await history.load_eq_states(r)).get(id)
-        return await _linha(eq, estado, await _nomes_mks()) | {"uplinks": (estado or {}).get("uplinks") or {}}
+        return await _linha(eq, estado, await _nomes_mks()) | {"uplinks": (estado or {}).get("uplinks") or {},
+                                                               "unifi": await _unifi_eq(id, estado)}
 
     @mks.put("/equipamentos/{id}", status_code=204)
     async def editar_eq(id: str, body: EquipamentoPut) -> Response:

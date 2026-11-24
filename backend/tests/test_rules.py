@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from nodebeat.rules import AlertEngine, MkRef, MkState, Observation
+from nodebeat.rules import AlertEngine, EqObs, EqRef, MkRef, MkState, Observation
 
 t0 = datetime(2026, 11, 11, 14, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 mk = MkRef("1", "Cond. Alfa")
@@ -181,10 +181,11 @@ def test_reference_recovery_restarts_parallel_pending():
 def test_payload_shape():
     e, evs = fired()
     p = evs[0].to_payload()
-    assert set(p) == {"evento", "tipo", "mk", "detalhe", "inicio", "fim", "duracao_s"}
+    assert set(p) == {"evento", "tipo", "mk", "detalhe", "inicio", "fim", "duracao_s", "equipamento"}
     assert p["mk"] == {"id": "1", "nome": "Cond. Alfa"}
     assert p["inicio"] == "2026-11-11T14:00:00-03:00"
     assert p["fim"] is None and p["duracao_s"] is None
+    assert p["equipamento"] is None
 
 
 def test_missing_interface_detalhe():
@@ -225,3 +226,53 @@ def test_type_change_while_recovering():
     a, b = e.observe_mk(mk, OFF, at(180))
     assert (a.evento, a.tipo, a.fim) == ("encerrado", "vpn_caiu", at(180))
     assert (b.evento, b.tipo, b.inicio) == ("queda", "offline", at(0))
+
+
+T0 = t0
+EQ = EqRef("e1", "USW Sede", "switch")
+SEDE = MkRef("sede", "Sede")
+
+
+def test_switch_offline_confirma_e_payload_tem_equipamento():
+    e = AlertEngine()
+    assert e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0, acima_fora=False) == []
+    [ev] = e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0 + timedelta(seconds=120), acima_fora=False)
+    p = ev.to_payload()
+    assert p["evento"] == "queda" and p["tipo"] == "offline"
+    assert p["mk"] == {"id": "sede", "nome": "Sede"}
+    assert p["equipamento"] == {"id": "e1", "nome": "USW Sede", "tipo": "switch"}
+    assert p["detalhe"].startswith("USW Sede")
+
+
+def test_acima_fora_nao_alerta_e_zera_pendente():
+    e = AlertEngine()
+    e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0, acima_fora=False)
+    assert e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0 + timedelta(seconds=200), acima_fora=True) == []
+    assert e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0 + timedelta(seconds=210), acima_fora=False) == []  # recomeça
+
+
+def test_uplink_caido_so_com_equipamento_no_ar():
+    e = AlertEngine()
+    o = EqObs("no_ar", uplinks_caidos={"0/12": "porta 0/12 sem link (4 aparelhos)"})
+    e.observe_equipamento(EQ, SEDE, o, T0, acima_fora=False)
+    [ev] = e.observe_equipamento(EQ, SEDE, o, T0 + timedelta(seconds=120), acima_fora=False)
+    assert ev.tipo == "uplink_caido"
+
+
+def test_mk_ids_ignora_equipamentos():
+    e = AlertEngine(); e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0, acima_fora=False)
+    assert e.mk_ids() == set() and e.eq_ids() == {"e1"}
+    e.forget_mk("e1")
+    assert e.eq_ids() == {"e1"}
+
+
+def test_load_de_engine_antigo_sem_eq():
+    d = AlertEngine().dump()
+    d["trackers"] = {"m1|mk": {"phase": "pending", "tipo": "offline", "detalhe": "", "primeiro": T0.isoformat(),
+                               "voltou": None, "mk": {"id": "m1", "nome": "x"}}}
+    assert AlertEngine.load(d).mk_ids() == {"m1"}
+
+
+def test_dump_load_preserva_eq():
+    e = AlertEngine(); e.observe_equipamento(EQ, SEDE, EqObs("offline"), T0, acima_fora=False)
+    assert AlertEngine.load(e.dump())._t["eq:e1|eq"].eq == EQ

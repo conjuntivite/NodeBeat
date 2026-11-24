@@ -11,7 +11,8 @@ RETENCAO = 90 * DIA
 
 
 async def record(r, ev: Event) -> None:
-    key = f"hist:{ev.mk.id}" if ev.mk else "hist:sede"
+    key = (f"hist:eq:{ev.equipamento.id}" if ev.equipamento
+           else f"hist:{ev.mk.id}" if ev.mk else "hist:sede")
     score = (ev.fim or ev.inicio).timestamp()
     member = json.dumps(ev.to_payload(), sort_keys=True, ensure_ascii=False)
     await r.zadd(key, {member: score})

@@ -25,6 +25,20 @@ class MkRef:
 
 
 @dataclass(frozen=True)
+class EqRef:
+    id: str
+    nome: str
+    tipo: str
+
+
+@dataclass(frozen=True)
+class EqObs:
+    estado: str  # "no_ar" | "offline" | "erro_acesso"
+    detalhe: str = ""
+    uplinks_caidos: dict[str, str] = field(default_factory=dict)  # porta -> detalhe
+
+
+@dataclass(frozen=True)
 class Observation:
     state: MkState
     detalhe: str = ""
@@ -43,6 +57,7 @@ class Event:
     inicio: datetime
     fim: datetime | None
     duracao_s: int | None
+    equipamento: EqRef | None = None
 
     def to_payload(self) -> dict:
         def iso(d):
@@ -56,6 +71,8 @@ class Event:
             "inicio": iso(self.inicio),
             "fim": iso(self.fim),
             "duracao_s": self.duracao_s,
+            "equipamento": ({"id": self.equipamento.id, "nome": self.equipamento.nome,
+                             "tipo": self.equipamento.tipo} if self.equipamento else None),
         }
 
 
@@ -67,6 +84,7 @@ class _Tracker:
     detalhe: str
     mk: MkRef | None
     voltou: datetime | None = None
+    eq: EqRef | None = None
 
 
 def _pct(v: float) -> str:
@@ -82,11 +100,11 @@ class AlertEngine:
         self._t: dict[str, _Tracker] = {}
 
     def _step(self, key: str, bad: bool, now: datetime, tipo: str, detalhe: str,
-              mk: MkRef | None) -> list[Event]:
+              mk: MkRef | None, eq: EqRef | None = None) -> list[Event]:
         t = self._t.get(key)
         if t is None:
             if bad:
-                self._t[key] = _Tracker("pending", tipo, now, detalhe, mk)
+                self._t[key] = _Tracker("pending", tipo, now, detalhe, mk, eq=eq)
             return []
         if t.phase == "pending":
             if not bad:
@@ -95,14 +113,14 @@ class AlertEngine:
             t.tipo, t.detalhe = tipo, detalhe
             if (now - t.primeiro).total_seconds() >= self.confirm_s:
                 t.phase = "alerting"
-                return [Event("queda", tipo, mk, detalhe, t.primeiro, None, None)]
+                return [Event("queda", tipo, mk, detalhe, t.primeiro, None, None, eq)]
             return []
         if bad:
             evs: list[Event] = []
             if tipo != t.tipo:  # só a chave "mk" muda de tipo
                 evs.append(self._encerrado(t, now))
                 t.tipo, t.detalhe = tipo, detalhe
-                evs.append(Event("queda", tipo, mk, detalhe, t.primeiro, None, None))
+                evs.append(Event("queda", tipo, mk, detalhe, t.primeiro, None, None, eq))
             t.phase, t.voltou = "alerting", None
             return evs
         if t.phase == "alerting":
@@ -111,13 +129,13 @@ class AlertEngine:
         if (now - t.voltou).total_seconds() >= self.recover_s:
             del self._t[key]
             return [Event("retorno", t.tipo, t.mk, t.detalhe, t.primeiro, t.voltou,
-                          int((t.voltou - t.primeiro).total_seconds()))]
+                          int((t.voltou - t.primeiro).total_seconds()), t.eq)]
         return []
 
     @staticmethod
     def _encerrado(t: _Tracker, now: datetime) -> Event:
         return Event("encerrado", t.tipo, t.mk, t.detalhe, t.primeiro, now,
-                     int((now - t.primeiro).total_seconds()))
+                     int((now - t.primeiro).total_seconds()), t.eq)
 
     def observe_reference(self, ok: bool, now: datetime) -> list[Event]:
         was_frozen = self.frozen
@@ -164,8 +182,42 @@ class AlertEngine:
             evs += self._step(prefix + key, bad, now, tipo, det, mk)
         return evs
 
+    def observe_equipamento(self, eq: EqRef, local: MkRef, obs: EqObs, now: datetime,
+                            *, acima_fora: bool) -> list[Event]:
+        if self.frozen:
+            return []
+        prefix = f"eq:{eq.id}|"
+        if acima_fora:  # o que está acima caiu: não é culpa deste equipamento
+            for k in [k for k, t in self._t.items() if k.startswith(prefix) and t.phase == "pending"]:
+                del self._t[k]
+            return []
+        ok = obs.estado == "no_ar"
+        evs = self._step(prefix + "eq", not ok, now, obs.estado, f"{eq.nome}: {obs.detalhe}", local, eq)
+        parallel = [k for k in self._t if k.startswith(prefix) and k != prefix + "eq"]
+        if not ok:
+            if any(e.evento == "queda" for e in evs):
+                for k in parallel:
+                    t = self._t.pop(k)
+                    if t.phase != "pending":
+                        evs.append(self._encerrado(t, now))
+            return evs
+        for k in parallel:  # uplink que voltou/deixou de ser vigiado: descarta sem evento
+            if k[len(prefix + "uplink:"):] not in obs.uplinks_caidos:
+                del self._t[k]
+        for porta, det in obs.uplinks_caidos.items():
+            evs += self._step(f"{prefix}uplink:{porta}", True, now, "uplink_caido",
+                              f"{eq.nome}: {det}", local, eq)
+        return evs
+
     def mk_ids(self) -> set[str]:
-        return {k.split("|", 1)[0] for k in self._t if k != "sede"}
+        return {k.split("|", 1)[0] for k in self._t if k != "sede" and not k.startswith("eq:")}
+
+    def eq_ids(self) -> set[str]:
+        return {k.split("|", 1)[0][3:] for k in self._t if k.startswith("eq:")}
+
+    def forget_eq(self, eq_id: str) -> None:
+        for k in [k for k in self._t if k.startswith(f"eq:{eq_id}|")]:
+            del self._t[k]
 
     def forget_mk(self, mk_id: str) -> None:
         for k in [k for k in self._t if k.startswith(f"{mk_id}|")]:
@@ -178,6 +230,7 @@ class AlertEngine:
                 "primeiro": t.primeiro.isoformat(),
                 "voltou": t.voltou.isoformat() if t.voltou else None,
                 "mk": {"id": t.mk.id, "nome": t.mk.nome} if t.mk else None,
+                "eq": {"id": t.eq.id, "nome": t.eq.nome, "tipo": t.eq.tipo} if t.eq else None,
             }
 
         return {"confirm_s": self.confirm_s, "recover_s": self.recover_s,
@@ -191,5 +244,6 @@ class AlertEngine:
             e._t[k] = _Tracker(
                 t["phase"], t["tipo"], datetime.fromisoformat(t["primeiro"]), t["detalhe"],
                 MkRef(**t["mk"]) if t["mk"] else None,
-                datetime.fromisoformat(t["voltou"]) if t["voltou"] else None)
+                datetime.fromisoformat(t["voltou"]) if t["voltou"] else None,
+                EqRef(**t["eq"]) if t.get("eq") else None)
         return e

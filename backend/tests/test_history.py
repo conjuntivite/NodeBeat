@@ -4,7 +4,7 @@ import fakeredis.aioredis
 import pytest
 
 from nodebeat.history import delete_mk, history, load_states, record, save_state
-from nodebeat.rules import SP, Event, MkRef
+from nodebeat.rules import SP, Event, EqRef, MkRef
 
 T0 = datetime(2026, 11, 1, 12, 0, tzinfo=SP)
 MK = MkRef("1", "Alfa")
@@ -74,3 +74,10 @@ async def test_aparelhos_salvos_e_apagados_com_a_mk(r):
     assert (await load_aparelhos(r, "1"))["10.0.0.5"]["online"] is True
     await delete_mk(r, "1")
     assert await load_aparelhos(r, "1") == {}
+
+
+async def test_record_de_equipamento_vai_para_hist_eq(r):
+    EQ = EqRef("e1", "USW Sede", "switch")
+    e = Event("queda", "offline", MkRef("sede", "Sede"), "x", T0, None, None, EQ)
+    await record(r, e)
+    assert await r.zcard("hist:eq:e1") == 1 and await r.zcard("hist:sede") == 0

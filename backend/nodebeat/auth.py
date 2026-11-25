@@ -51,9 +51,11 @@ async def login(db, r, usuario: str, senha: str) -> str:
         raise LoginFailed
     await r.delete(chave)
     token = secrets.token_urlsafe(32)
-    await r.set(f"sess:{token}", usuario, ex=SESSAO_TTL)
-    await r.sadd(f"sess_u:{usuario}", token)
-    await r.expire(f"sess_u:{usuario}", SESSAO_TTL)
+    async with r.pipeline(transaction=True) as pipe:
+        pipe.set(f"sess:{token}", usuario, ex=SESSAO_TTL)
+        pipe.sadd(f"sess_u:{usuario}", token)
+        pipe.expire(f"sess_u:{usuario}", SESSAO_TTL)
+        await pipe.execute()
     return token
 
 

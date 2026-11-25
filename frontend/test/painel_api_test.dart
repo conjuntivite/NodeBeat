@@ -131,4 +131,76 @@ void main() {
     expect(urls[0].queryParameters, {'periodo': '7d', 'mk': 'x'});
     expect(urls[1].queryParameters, {'periodo': '24h'});
   });
+
+  test('EventosSwitches.fromJson completo e sem campos novos', () {
+    final antigo = EventosSwitches.fromJson({'contagens': {'clientes': 2}, 'eventos': []});
+    expect(antigo.contagens['clientes'], 2);
+    expect(antigo.totais.eventos, isNull);
+    expect(antigo.serie, isEmpty);
+    expect(antigo.portasTop, isEmpty);
+    expect(antigo.clientesTop, isEmpty);
+    expect(antigo.capacidade, isEmpty);
+
+    final e = EventosSwitches.fromJson({
+      'contagens': {},
+      'eventos': [],
+      'totais': {'eventos': 10, 'eventos_anterior': 5, 'quedas_cliente': 3, 'quedas_cliente_anterior': 1, 'portas_instaveis': 2, 'projecao_30d': null},
+      'serie': [
+        {'hora': '2026-03-05T14:00:00Z', 'clientes': 2, 'alertas': 0, 'poe': 1, 'mudancas': 0}
+      ],
+      'portas_top': [
+        {'switch_id': 's1', 'switch_nome': 'SW1', 'porta': 7, 'eventos': 9, 'projecao_mes': 12, 'instavel': true}
+      ],
+      'clientes_top': [
+        {'cliente': 'cam', 'switch_nome': 'SW1', 'quedas': 4}
+      ],
+      'capacidade': [
+        {
+          'switch_id': 's1',
+          'switch_nome': 'SW1',
+          'atual': {
+            'poe_usado_w': 100,
+            'poe_max_w': 240.5,
+            'clientes': 12,
+            'temperatura': 41,
+            'portas_total': 24,
+            'portas_em_uso': 10,
+            'poe_por_porta': [
+              {'porta': 3, 'w': 7.5}
+            ]
+          },
+          'historico': [
+            {'em': '2026-03-05T14:00:00Z', 'poe_usado_w': 90, 'clientes': null, 'temperatura': 40.5}
+          ],
+          'projecoes': {
+            'dias_historico': 6,
+            'poe': {'dias_ate_80': 12, 'tendencia_w_dia': 1.5},
+            'temperatura': null,
+            'portas': {'dias_ate_cheio': 30}
+          }
+        },
+        {'switch_id': 's2', 'switch_nome': 'SW2', 'atual': null, 'historico': [], 'projecoes': {'dias_historico': 0}}
+      ],
+    });
+    expect(e.totais.eventos, 10);
+    expect(e.totais.projecao30d, isNull);
+    expect(e.totais.portasInstaveis, 2);
+    expect(e.serie.single.valores['poe'], 1);
+    expect(e.portasTop.single.projecaoMes, 12.0);
+    expect(e.portasTop.single.instavel, isTrue);
+    expect(e.clientesTop.single.quedas, 4);
+    final c = e.capacidade.first;
+    expect(c.atual!.poeMaxW, 240.5);
+    expect(c.atual!.poePorPorta.single, ('3', 7.5));
+    expect(c.historico.single.clientes, isNull);
+    expect(c.historico.single.temperatura, 40.5);
+    expect(c.projecoes.poeDiasAte80, 12);
+    expect(c.projecoes.poeTendenciaWDia, 1.5);
+    expect(c.projecoes.temperaturaTendenciaCSemana, isNull);
+    expect(c.projecoes.portasDiasAteCheio, 30);
+    expect(c.projecoes.temPoe, isTrue);
+    final v = e.capacidade.last;
+    expect(v.atual, isNull);
+    expect(v.projecoes.temPoe, isFalse);
+  });
 }

@@ -413,12 +413,112 @@ class EventoSwitch {
   final String? severidade;
 }
 
+class TotaisSwitches {
+  TotaisSwitches.fromJson(Map<String, dynamic> j)
+      : eventos = _i(j['eventos']),
+        eventosAnterior = _i(j['eventos_anterior']),
+        quedasCliente = _i(j['quedas_cliente']),
+        quedasClienteAnterior = _i(j['quedas_cliente_anterior']),
+        portasInstaveis = _i(j['portas_instaveis']),
+        projecao30d = _i(j['projecao_30d']);
+  final int? eventos, eventosAnterior, quedasCliente, quedasClienteAnterior, portasInstaveis, projecao30d;
+}
+
+class PortaTop {
+  PortaTop.fromJson(Map<String, dynamic> j)
+      : switchNome = (j['switch_nome'] ?? '') as String,
+        porta = _i(j['porta']),
+        eventos = _i(j['eventos']) ?? 0,
+        projecaoMes = _d(j['projecao_mes']),
+        instavel = j['instavel'] == true;
+  final String switchNome;
+  final int? porta;
+  final int eventos;
+  final double? projecaoMes;
+  final bool instavel;
+}
+
+class ClienteTop {
+  ClienteTop.fromJson(Map<String, dynamic> j)
+      : cliente = (j['cliente'] ?? '') as String,
+        switchNome = (j['switch_nome'] ?? '') as String,
+        quedas = _i(j['quedas']) ?? 0;
+  final String cliente, switchNome;
+  final int quedas;
+}
+
+class AtualSwitch {
+  AtualSwitch.fromJson(Map<String, dynamic> j)
+      : poeUsadoW = _d(j['poe_usado_w']),
+        poeMaxW = _d(j['poe_max_w']),
+        clientes = _i(j['clientes']),
+        temperatura = _d(j['temperatura']),
+        portasTotal = _i(j['portas_total']),
+        portasEmUso = _i(j['portas_em_uso']),
+        poePorPorta = [
+          for (final p in _lista(j['poe_por_porta'])) ('${p['porta']}', _d(p['w']) ?? 0),
+        ];
+  final double? poeUsadoW, poeMaxW, temperatura;
+  final int? clientes, portasTotal, portasEmUso;
+
+  /// (porta, watts) para a pizza de consumo PoE.
+  final List<(String, double)> poePorPorta;
+}
+
+class PontoCapacidade {
+  PontoCapacidade.fromJson(Map<String, dynamic> j)
+      : em = DateTime.parse(j['em']),
+        poeW = _d(j['poe_usado_w']),
+        clientes = _i(j['clientes']),
+        temperatura = _d(j['temperatura']);
+  final DateTime em;
+  final double? poeW, temperatura;
+  final int? clientes;
+}
+
+class ProjecoesSwitch {
+  ProjecoesSwitch.fromJson(Map<String, dynamic> j)
+      : diasHistorico = _i(j['dias_historico']) ?? 0,
+        poeDiasAte80 = _i((j['poe'] as Map?)?['dias_ate_80']),
+        poeTendenciaWDia = _d((j['poe'] as Map?)?['tendencia_w_dia']),
+        temperaturaTendenciaCSemana = _d((j['temperatura'] as Map?)?['tendencia_c_semana']),
+        portasDiasAteCheio = _i((j['portas'] as Map?)?['dias_ate_cheio']),
+        temPoe = j['poe'] != null;
+  final int diasHistorico;
+  final int? poeDiasAte80, portasDiasAteCheio;
+  final double? poeTendenciaWDia, temperaturaTendenciaCSemana;
+  final bool temPoe;
+}
+
+class CapacidadeSwitch {
+  CapacidadeSwitch.fromJson(Map<String, dynamic> j)
+      : switchNome = (j['switch_nome'] ?? '') as String,
+        atual = j['atual'] is Map ? AtualSwitch.fromJson(Map<String, dynamic>.from(j['atual'])) : null,
+        historico = [for (final e in _lista(j['historico'])) PontoCapacidade.fromJson(e)],
+        projecoes = ProjecoesSwitch.fromJson(Map<String, dynamic>.from((j['projecoes'] as Map?) ?? const {}));
+  final String switchNome;
+  final AtualSwitch? atual;
+  final List<PontoCapacidade> historico;
+  final ProjecoesSwitch projecoes;
+  bool get temPoe => atual?.poeMaxW != null || projecoes.temPoe;
+}
+
 class EventosSwitches {
   EventosSwitches.fromJson(Map<String, dynamic> j)
       : contagens = _mapaInt(j['contagens']),
-        eventos = [for (final e in _lista(j['eventos'])) EventoSwitch.fromJson(e)];
+        eventos = [for (final e in _lista(j['eventos'])) EventoSwitch.fromJson(e)],
+        totais = TotaisSwitches.fromJson(Map<String, dynamic>.from((j['totais'] as Map?) ?? const {})),
+        serie = [for (final e in _lista(j['serie'])) PontoSerie.fromJson(e)],
+        portasTop = [for (final e in _lista(j['portas_top'])) PortaTop.fromJson(e)],
+        clientesTop = [for (final e in _lista(j['clientes_top'])) ClienteTop.fromJson(e)],
+        capacidade = [for (final e in _lista(j['capacidade'])) CapacidadeSwitch.fromJson(e)];
   final Map<String, int> contagens;
   final List<EventoSwitch> eventos;
+  final TotaisSwitches totais;
+  final List<PontoSerie> serie;
+  final List<PortaTop> portasTop;
+  final List<ClienteTop> clientesTop;
+  final List<CapacidadeSwitch> capacidade;
 }
 
 class FaixaRede {

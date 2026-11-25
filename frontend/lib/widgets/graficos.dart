@@ -167,3 +167,151 @@ class GraficoLinha extends StatelessWidget {
     ]);
   }
 }
+
+/// Rosca com legenda (valor e %) e alternância para tabela, para quem não distingue as cores.
+class GraficoPizza extends StatefulWidget {
+  const GraficoPizza({super.key, required this.fatias, this.centro});
+  final List<(String, num)> fatias;
+  final String? centro;
+
+  @override
+  State<GraficoPizza> createState() => _GraficoPizzaState();
+}
+
+class _GraficoPizzaState extends State<GraficoPizza> {
+  bool _tabela = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    final total = widget.fatias.fold<num>(0, (a, f) => a + f.$2);
+    if (total <= 0) return const _Vazio();
+    final cores = [t.chart1, t.chart2, t.chart3, t.chart4, t.chart5, t.chart6];
+    String pct(num v) => '${(v / total * 100).round()}%';
+    String valor(num v) => v == v.roundToDouble() ? '${v.toInt()}' : v.toStringAsFixed(1);
+    final cell = TradeType.bodyMd.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton(
+          onPressed: () => setState(() => _tabela = !_tabela),
+          child: Text(_tabela ? 'Ver como gráfico' : 'Ver como tabela'),
+        ),
+      ),
+      if (_tabela)
+        for (final (nome, v) in widget.fatias)
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: t.space1),
+            child: Row(children: [
+              Expanded(child: Text(nome, overflow: TextOverflow.ellipsis, style: cell)),
+              Text(valor(v), style: cell),
+              SizedBox(width: t.space4),
+              SizedBox(width: 48, child: Text(pct(v), textAlign: TextAlign.end, style: cell)),
+            ]),
+          )
+      else ...[
+        SizedBox(
+          height: 160,
+          child: Stack(alignment: Alignment.center, children: [
+            PieChart(PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 48,
+              pieTouchData: PieTouchData(enabled: false),
+              sections: [
+                for (var i = 0; i < widget.fatias.length; i++)
+                  PieChartSectionData(
+                    value: widget.fatias[i].$2.toDouble(),
+                    color: cores[i % cores.length],
+                    radius: 24,
+                    showTitle: false,
+                  ),
+              ],
+            )),
+            if (widget.centro != null) Text(widget.centro!, style: TradeType.dataSm.copyWith(color: t.fgPrimary)),
+          ]),
+        ),
+        SizedBox(height: t.space3),
+        _Legenda([
+          for (var i = 0; i < widget.fatias.length; i++)
+            (cores[i % cores.length], '${widget.fatias[i].$1} · ${valor(widget.fatias[i].$2)} (${pct(widget.fatias[i].$2)})'),
+        ]),
+      ],
+    ]);
+  }
+}
+
+/// Linha de uso ao longo do tempo, com linha de limite e projeção tracejada de 30 dias.
+class GraficoCapacidade extends StatelessWidget {
+  const GraficoCapacidade({super.key, required this.pontos, this.limite, this.tendenciaDia, this.unidade = ''});
+  final List<(DateTime, double)> pontos;
+  final double? limite, tendenciaDia;
+  final String unidade;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    if (pontos.isEmpty) return const _Vazio();
+    final ini = pontos.first.$1;
+    double dias(DateTime d) => d.difference(ini).inMinutes / 1440;
+    final spots = [for (final p in pontos) FlSpot(dias(p.$1), p.$2)];
+    final ultimo = spots.last;
+    final proj = tendenciaDia == null ? null : [ultimo, FlSpot(ultimo.x + 30, ultimo.y + tendenciaDia! * 30)];
+    String data(double x) {
+      final d = ini.add(Duration(minutes: (x * 1440).round())).toLocal();
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    }
+
+    final xMax = proj?.last.x ?? ultimo.x;
+    return SizedBox(
+      height: 180,
+      child: LineChart(LineChartData(
+        minY: 0,
+        minX: 0,
+        maxX: xMax <= 0 ? 1 : xMax,
+        gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.chartGrid, strokeWidth: 1)),
+        borderData: FlBorderData(show: false),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => t.bgInverse,
+            getTooltipItems: (ss) => [
+              for (final s in ss) LineTooltipItem('${data(s.x)}: ${s.y.toStringAsFixed(1)} $unidade', TradeType.label.copyWith(color: t.fgInverse)),
+            ],
+          ),
+        ),
+        extraLinesData: ExtraLinesData(horizontalLines: [
+          if (limite != null) HorizontalLine(y: limite!, color: t.negative, strokeWidth: 1, dashArray: [4, 4]),
+        ]),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(),
+          rightTitles: const AxisTitles(),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36, getTitlesWidget: (v, meta) {
+            if (v == meta.max) return const SizedBox.shrink();
+            return Text(v.toStringAsFixed(0), style: TradeType.bodySm.copyWith(color: t.fgMuted));
+          })),
+          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, getTitlesWidget: (v, meta) {
+            if (v == meta.max || v == meta.min && v != 0) return const SizedBox.shrink();
+            return Padding(padding: EdgeInsets.only(top: t.space2), child: Text(data(v), style: TradeType.bodySm.copyWith(color: t.fgMuted)));
+          })),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            color: t.chart1,
+            barWidth: 2,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          if (proj != null)
+            LineChartBarData(
+              spots: proj,
+              color: t.chart1,
+              barWidth: 2,
+              dashArray: [6, 4],
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(show: false),
+            ),
+        ],
+      )),
+    );
+  }
+}

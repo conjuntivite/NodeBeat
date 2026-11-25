@@ -103,6 +103,13 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
+  testWidgets('contagem fica colada na margem direita do topo', (t) async {
+    await _show(t, _status());
+    final r = t.getRect(find.byType(ContagemAtualizacao));
+    expect(r.right, greaterThan(1400 - 48)); // 1400 de largura; só a margem do topo à direita
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('contagem no topo cabe em 360 px', (t) async {
     await _show(t, _status());
     t.view.physicalSize = const Size(360, 800);

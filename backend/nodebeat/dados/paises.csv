@@ -1,0 +1,246 @@
+cc,nome,lat,lon
+AD,Andorra,42.5,1.5
+AE,Emirados Árabes Unidos,24,54
+AF,Afeganistão,33,65
+AG,Antígua e Barbuda,17.05,-61.8
+AI,Anguila,18.25,-63.17
+AL,Albânia,41,20
+AM,Armênia,40,45
+AO,Angola,-12.5,18.5
+AQ,Antártida,-90,0
+AR,Argentina,-34,-64
+AS,Samoa Americana,-14.33,-170
+AT,Áustria,47.33,13.33
+AU,Austrália,-27,133
+AW,Aruba,12.5,-69.97
+AX,Ilhas Aland,60.2,20.0
+AZ,Azerbaijão,40.5,47.5
+BA,Bósnia e Herzegovina,44,18
+BB,Barbados,13.17,-59.53
+BD,Bangladesh,24,90
+BE,Bélgica,50.83,4
+BF,Burquina Faso,13,-2
+BG,Bulgária,43,25
+BH,Barein,26,50.55
+BI,Burundi,-3.5,30
+BJ,Benin,9.5,2.25
+BL,São Bartolomeu,17.9,-62.8
+BM,Bermudas,32.33,-64.75
+BN,Brunei,4.5,114.67
+BO,Bolívia,-17,-65
+BQ,Países Baixos Caribenhos,12.2,-68.3
+BR,Brasil,-10,-55
+BS,Bahamas,24.25,-76
+BT,Butão,27.5,90.5
+BV,Ilha Bouvet,-54.43,3.4
+BW,Botsuana,-22,24
+BY,Bielorrússia,53,28
+BZ,Belize,17.25,-88.75
+CA,Canadá,60,-95
+CD,Congo - Kinshasa,0,25
+CF,República Centro-Africana,7,21
+CG,República do Congo,-1,15
+CH,Suíça,47,8
+CI,Costa do Marfim,8,-5
+CK,Ilhas Cook,-21.23,-159.77
+CL,Chile,-30,-71
+CM,Camarões,6,12
+CN,China,35,105
+CO,Colômbia,4,-72
+CR,Costa Rica,10,-84
+CU,Cuba,21.5,-80
+CV,Cabo Verde,16,-24
+CW,Curaçao,12.2,-69.0
+CY,Chipre,35,33
+CZ,Tchéquia,49.75,15.5
+DE,Alemanha,51,9
+DJ,Djibuti,11.5,43
+DK,Dinamarca,56,10
+DM,Dominica,15.42,-61.33
+DO,República Dominicana,19,-70.67
+DZ,Argélia,28,3
+EC,Equador,-2,-77.5
+EE,Estônia,59,26
+EG,Egito,27,30
+ER,Eritreia,15,39
+ES,Espanha,40,-4
+ET,Etiópia,8,38
+FI,Finlândia,64,26
+FJ,Fiji,-18,175
+FK,Ilhas Malvinas,-51.75,-59
+FM,Micronésia,6.92,158.25
+FO,Ilhas Faroé,62,-7
+FR,França,46,2
+GA,Gabão,-1,11.75
+GB,Reino Unido,54,-2
+GD,Granada,12.12,-61.67
+GE,Geórgia,42,43.5
+GF,Guiana Francesa,4,-53
+GG,Guernsey,49.5,-2.6
+GH,Gana,8,-2
+GI,Gibraltar,36.18,-5.37
+GL,Groenlândia,72,-40
+GM,Gâmbia,13.47,-16.57
+GN,Guiné,11,-10
+GP,Guadalupe,16.25,-61.58
+GQ,Guiné Equatorial,2,10
+GR,Grécia,39,22
+GS,Ilhas Geórgia do Sul e Sandwich do Sul,-54.5,-37
+GT,Guatemala,15.5,-90.25
+GU,Guam,13.47,144.78
+GW,Guiné-Bissau,12,-15
+GY,Guiana,5,-59
+HK,"Hong Kong, RAE da China",22.25,114.17
+HM,Ilhas Heard e McDonald,-53.1,72.52
+HN,Honduras,15,-86.5
+HR,Croácia,45.17,15.5
+HT,Haiti,19,-72.42
+HU,Hungria,47,20
+ID,Indonésia,-5,120
+IE,Irlanda,53,-8
+IL,Israel,31.5,34.75
+IM,Ilha de Man,54.2,-4.5
+IN,Índia,20,77
+IO,Território Britânico do Oceano Índico,-6,71.5
+IQ,Iraque,33,44
+IR,Irã,32,53
+IS,Islândia,65,-18
+IT,Itália,42.83,12.83
+JE,Jersey,49.2,-2.1
+JM,Jamaica,18.25,-77.5
+JO,Jordânia,31,36
+JP,Japão,36,138
+KE,Quênia,1,38
+KG,Quirguistão,41,75
+KH,Camboja,13,105
+KI,Quiribati,1.42,173
+KM,Comores,-12.17,44.25
+KN,São Cristóvão e Névis,17.33,-62.75
+KP,Coreia do Norte,40,127
+KR,Coreia do Sul,37,127.5
+KW,Kuwait,29.34,47.66
+KY,Ilhas Cayman,19.5,-80.5
+KZ,Cazaquistão,48,68
+LA,Laos,18,105
+LB,Líbano,33.83,35.83
+LC,Santa Lúcia,13.88,-61.13
+LI,Liechtenstein,47.17,9.53
+LK,Sri Lanka,7,81
+LR,Libéria,6.5,-9.5
+LS,Lesoto,-29.5,28.5
+LT,Lituânia,56,24
+LU,Luxemburgo,49.75,6.17
+LV,Letônia,57,25
+LY,Líbia,25,17
+MA,Marrocos,32,-5
+MC,Mônaco,43.73,7.4
+MD,Moldávia,47,29
+ME,Montenegro,42,19
+MF,São Martinho,18.1,-63.1
+MG,Madagascar,-20,47
+MH,Ilhas Marshall,9,168
+MK,Macedônia do Norte,41.83,22
+ML,Mali,17,-4
+MM,Mianmar (Birmânia),22,98
+MN,Mongólia,46,105
+MO,"Macau, RAE da China",22.17,113.55
+MP,Ilhas Marianas do Norte,15.2,145.75
+MQ,Martinica,14.67,-61
+MR,Mauritânia,20,-12
+MS,Montserrat,16.75,-62.2
+MT,Malta,35.83,14.58
+MU,Maurício,-20.28,57.55
+MV,Maldivas,3.25,73
+MW,Malaui,-13.5,34
+MX,México,23,-102
+MY,Malásia,2.5,112.5
+MZ,Moçambique,-18.25,35
+NA,Namíbia,-22,17
+NC,Nova Caledônia,-21.5,165.5
+NE,Níger,16,8
+NG,Nigéria,10,8
+NI,Nicarágua,13,-85
+NL,Países Baixos,52.5,5.75
+NO,Noruega,62,10
+NP,Nepal,28,84
+NR,Nauru,-0.53,166.92
+NU,Niue,-19.03,-169.87
+NZ,Nova Zelândia,-41,174
+OM,Omã,21,57
+PA,Panamá,9,-80
+PE,Peru,-10,-76
+PF,Polinésia Francesa,-15,-140
+PG,Papua-Nova Guiné,-6,147
+PH,Filipinas,13,122
+PK,Paquistão,30,70
+PL,Polônia,52,20
+PM,São Pedro e Miquelão,46.83,-56.33
+PN,Ilhas Pitcairn,-25.1,-130.1
+PR,Porto Rico,18.25,-66.5
+PS,Territórios palestinos,32,35.25
+PT,Portugal,39.5,-8
+PW,Palau,7.5,134.5
+PY,Paraguai,-23,-58
+QA,Catar,25.5,51.25
+RE,Reunião,-21.1,55.6
+RO,Romênia,46,25
+RS,Sérvia,44,21
+RU,Rússia,60,100
+RW,Ruanda,-2,30
+SA,Arábia Saudita,25,45
+SB,Ilhas Salomão,-8,159
+SC,Seicheles,-4.58,55.67
+SD,Sudão,15,30
+SE,Suécia,62,15
+SG,Singapura,1.37,103.8
+SH,Santa Helena,-15.93,-5.7
+SI,Eslovênia,46,15
+SJ,Svalbard e Jan Mayen,78,20
+SK,Eslováquia,48.67,19.5
+SL,Serra Leoa,8.5,-11.5
+SM,San Marino,43.77,12.42
+SN,Senegal,14,-14
+SO,Somália,10,49
+SR,Suriname,4,-56
+SS,Sudão do Sul,7.0,30.0
+ST,São Tomé e Príncipe,1,7
+SV,El Salvador,13.83,-88.92
+SX,Sint Maarten,18.0,-63.1
+SY,Síria,35,38
+SZ,Essuatíni,-26.5,31.5
+TC,Ilhas Turcas e Caicos,21.75,-71.58
+TD,Chade,15,19
+TG,Togo,8,1.17
+TH,Tailândia,15,100
+TJ,Tadjiquistão,39,71
+TK,Tokelau,-9,-172
+TL,Timor-Leste,-8.8,125.7
+TM,Turcomenistão,40,60
+TN,Tunísia,34,9
+TO,Tonga,-20,-175
+TR,Turquia,39,35
+TT,Trinidad e Tobago,11,-61
+TV,Tuvalu,-8,178
+TW,Taiwan,23.5,121
+TZ,Tanzânia,-6,35
+UA,Ucrânia,49,32
+UG,Uganda,1,32
+UM,Ilhas Menores Distantes dos EUA,19.28,166.6
+US,Estados Unidos,38,-97
+UY,Uruguai,-33,-56
+UZ,Uzbequistão,41,64
+VA,Cidade do Vaticano,41.9,12.45
+VC,São Vicente e Granadinas,13.25,-61.2
+VE,Venezuela,8,-66
+VG,Ilhas Virgens Britânicas,18.5,-64.5
+VI,Ilhas Virgens Americanas,18.33,-64.83
+VN,Vietnã,16,106
+VU,Vanuatu,-16,167
+WF,Wallis e Futuna,-13.3,-176.2
+WS,Samoa,-13.58,-172.33
+XK,Kosovo,42.6,20.9
+YE,Iêmen,15,48
+YT,Mayotte,-12.83,45.17
+ZA,África do Sul,-29,24
+ZM,Zâmbia,-15,30
+ZW,Zimbábue,-20,30

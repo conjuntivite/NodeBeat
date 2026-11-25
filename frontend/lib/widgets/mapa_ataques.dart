@@ -1,0 +1,334 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
+
+import '../api/client.dart';
+import '../ataques/fila.dart';
+import '../ataques/geo.dart';
+import '../theme/theme.dart';
+import '../theme/tokens.g.dart';
+import 'common.dart';
+import 'graficos.dart';
+
+const _vias = ['ssh', 'telnet', 'ftp', 'api', 'winbox'];
+
+Color corVia(TradeTokens t, String via) =>
+    switch (_vias.indexOf(via)) { 0 => t.chart1, 1 => t.chart2, 2 => t.chart3, 3 => t.chart4, 4 => t.chart5, _ => t.chart6 };
+
+// Contorno dos continentes, lido uma vez por página.
+// rootBundle.load + utf8 (loadString usaria compute(), que trava no teste).
+final Future<List<List<Offset>>> _terra = rootBundle.load('assets/ataques/terra.json').then((d) => [
+      for (final p in jsonDecode(utf8.decode(d.buffer.asUint8List())) as List)
+        [for (final c in p as List) Offset((c[0] as num).toDouble(), (c[1] as num).toDouble())],
+    ]);
+
+typedef _Aviso = ({String mk, String? usuario, String ip, String via, String quando, String? pais});
+
+String _chave(_Aviso a) => '${a.mk}|${a.ip}|${a.usuario}|${a.quando}';
+String _utc(String iso) => DateTime.parse(iso).toUtc().toIso8601String();
+
+class MapaAtaques extends StatefulWidget {
+  const MapaAtaques({
+    super.key,
+    required this.api,
+    this.tv = false,
+    this.aoExpirarSessao,
+    this.intervalo = const Duration(seconds: 5),
+    this.intervaloRodape = const Duration(seconds: 60),
+  });
+  final ApiClient api;
+  final bool tv;
+  final VoidCallback? aoExpirarSessao;
+  final Duration intervalo, intervaloRodape;
+
+  @override
+  State<MapaAtaques> createState() => MapaAtaquesState();
+}
+
+class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderStateMixin {
+  final _fila = FilaAtaques();
+  final _quadro = ValueNotifier(0);
+  final _t0 = DateTime.now();
+  late final Ticker _ticker;
+  Duration _decorrido = Duration.zero, _ultimoOk = Duration.zero;
+  Timer? _timerFeed, _timerPainel;
+  String? _cursor;
+  bool _buscando = false, _expirou = false;
+  int _ultimasLinhas = 0;
+  List<List<Offset>> _poligonos = const [];
+  BlocoPainel? _acesso;
+  List<_Aviso> _avisosPainel = const [];
+  final _avisosFeed = <String, _Aviso>{};
+  final _cientes = <String>{};
+
+  // Relógio do ticker: avança com os quadros (e com o pump nos testes).
+  DateTime get _agora => _t0.add(_decorrido);
+
+  @visibleForTesting
+  int get linhasAtivas => _fila.ativas(_agora).length;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker((d) {
+      _decorrido = d;
+      final n = linhasAtivas;
+      if (n > 0 || _ultimasLinhas > 0) _quadro.value++;
+      _ultimasLinhas = n;
+    })..start();
+    _terra.then((p) {
+      if (mounted) setState(() => _poligonos = p);
+    }, onError: (_) {}); // sem contorno, o mapa segue só com as linhas
+    _feed();
+    _painel();
+    _timerFeed = Timer.periodic(widget.intervalo, (_) {
+      setState(() {}); // atualiza o indicador mesmo com a consulta presa
+      _feed();
+    });
+    _timerPainel = Timer.periodic(widget.intervaloRodape, (_) => _painel());
+  }
+
+  @override
+  void dispose() {
+    _timerFeed?.cancel();
+    _timerPainel?.cancel();
+    _ticker.dispose();
+    _quadro.dispose();
+    super.dispose();
+  }
+
+  // 401 avisa uma vez e para as consultas; o resto só deixa o indicador velho.
+  bool _sessao(Object e) {
+    if (e is! ApiError || e.status != 401) return false;
+    if (!_expirou) {
+      _expirou = true;
+      _timerFeed?.cancel();
+      _timerPainel?.cancel();
+      widget.aoExpirarSessao?.call();
+    }
+    return true;
+  }
+
+  Future<void> _feed() async {
+    if (_buscando || _expirou) return;
+    _buscando = true;
+    try {
+      final r = await widget.api.ataques(desde: _cursor); // 1ª sem cursor: começa do agora
+      if (!mounted) return;
+      _cursor = r.cursor;
+      _fila.receber(r.ataques, _agora, janela: widget.intervalo);
+      final limite = DateTime.now().toUtc().subtract(const Duration(hours: 24));
+      _avisosFeed.removeWhere((_, a) => DateTime.parse(a.quando).isBefore(limite));
+      for (final a in r.ataques.where((a) => a.sucesso)) {
+        final v = (mk: a.mkNome, usuario: a.usuario, ip: a.ip, via: a.via, quando: a.quando.toUtc().toIso8601String(), pais: a.paisNome);
+        _avisosFeed[_chave(v)] = v;
+      }
+      setState(() => _ultimoOk = _decorrido);
+    } catch (e) {
+      _sessao(e);
+    } finally {
+      _buscando = false;
+    }
+  }
+
+  Future<void> _painel() async {
+    if (_expirou) return;
+    try {
+      final b = (await widget.api.painelEventos('24h')).blocos['acesso'];
+      if (!mounted) return;
+      setState(() {
+        _acesso = b;
+        _avisosPainel = [
+          for (final l in b?.loginsExternos ?? const <Map<String, dynamic>>[])
+            (mk: '${l['nome']}', usuario: l['usuario'], ip: '${l['ip']}', via: '${l['via']}', quando: _utc(l['quando']), pais: l['pais_nome']),
+        ];
+      });
+    } catch (e) {
+      _sessao(e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    final avisos = <String, _Aviso>{for (final a in [..._avisosPainel, ..._avisosFeed.values]) _chave(a): a}
+      ..removeWhere((k, _) => _cientes.contains(k));
+    final parado = _decorrido - _ultimoOk;
+    final mapa = Stack(children: [
+      Positioned.fill(
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: 360 / 142,
+            child: Stack(fit: StackFit.expand, children: [
+              RepaintBoundary(child: CustomPaint(painter: _Terra(_poligonos, t.bgHover, t.borderSubtle))),
+              RepaintBoundary(child: CustomPaint(painter: _Linhas(_fila, () => _agora, t, _quadro))),
+            ]),
+          ),
+        ),
+      ),
+      Positioned(
+        left: t.space4,
+        top: t.space4,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          eyebrow('Todas as MKs, ao vivo', cor: t.fgSecondary),
+          SizedBox(height: t.space2),
+          Wrap(spacing: t.space3, children: [
+            for (final v in _vias)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, v), shape: BoxShape.circle)),
+                SizedBox(width: t.space1),
+                Text(v.toUpperCase(), style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+              ]),
+          ]),
+        ]),
+      ),
+      Positioned(
+        right: t.space4,
+        top: t.space4,
+        child: parado > const Duration(seconds: 30)
+            ? Pilula('sem dados há ${formatDuration(parado.inSeconds)}', cor: t.warning, ponto: true)
+            : Text('● ao vivo', style: TradeType.bodySm.copyWith(color: t.positive, fontWeight: FontWeight.w500)),
+      ),
+      Positioned(
+        right: t.space4,
+        bottom: t.space2,
+        child: Text('IP data by DB-IP', style: TradeType.bodySm.copyWith(color: t.fgMuted)),
+      ),
+    ]);
+    return ColoredBox(
+      color: t.bgSurface,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // os 3 mais recentes (ISO em UTC ordena como texto)
+        for (final e in (avisos.entries.toList()..sort((x, y) => y.value.quando.compareTo(x.value.quando))).take(3))
+          _faixa(t, e.key, e.value),
+        Expanded(child: mapa),
+        if (widget.tv && _acesso != null) _rodape(t, _acesso!),
+      ]),
+    );
+  }
+
+  Widget _faixa(TradeTokens t, String chave, _Aviso a) => Container(
+        margin: EdgeInsets.fromLTRB(t.space4, t.space2, t.space4, 0),
+        padding: EdgeInsets.symmetric(horizontal: t.space4, vertical: t.space2),
+        decoration: BoxDecoration(
+          color: t.negativeBg,
+          border: Border.all(color: t.negative),
+          borderRadius: BorderRadius.circular(t.radiusMd),
+        ),
+        child: Row(children: [
+          Icon(Icons.warning_amber_outlined, size: 20, color: t.negative),
+          SizedBox(width: t.space3),
+          Expanded(
+            child: Text(
+              'Login de fora aceito: ${a.mk} · ${a.usuario ?? '?'} · ${a.ip}'
+              '${a.pais == null ? '' : ' · ${a.pais}'} · ${a.via.toUpperCase()} · ${formatDateTime(a.quando)}',
+              style: TradeType.bodyMd.copyWith(color: t.negative, fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(onPressed: () => setState(() => _cientes.add(chave)), child: const Text('Ciente')),
+        ]),
+      );
+
+  Widget _lista(TradeTokens t, String titulo, List<(String, int)> itens) => Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          eyebrow(titulo, cor: t.fgMuted),
+          SizedBox(height: t.space2),
+          for (final (nome, n) in itens.take(5))
+            Row(children: [
+              Expanded(child: Text(nome, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
+              Text('$n', style: dataStyle(context, TradeType.dataSm)),
+            ]),
+        ]),
+      );
+
+  Widget _rodape(TradeTokens t, BlocoPainel b) => Container(
+        padding: EdgeInsets.all(t.space4),
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: t.borderSubtle))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _lista(t, 'Top países', [for (final p in b.topPaises) ('${p['pais_nome'] ?? p['pais'] ?? '?'}', (p['n'] as num).toInt())]),
+          SizedBox(width: t.space6),
+          _lista(t, 'Top IPs', [for (final c in b.topIps) (c.paisNome == null ? c.ip : '${c.ip} · ${c.paisNome}', c.n)]),
+          SizedBox(width: t.space6),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              eyebrow('Serviço atacado (24 h)', cor: t.fgMuted),
+              SizedBox(height: t.space2),
+              GraficoBarras(dados: [for (final e in b.porVia.entries) (e.key.toUpperCase(), e.value)]),
+            ]),
+          ),
+        ]),
+      );
+}
+
+// Camada estática: só repinta quando muda o contorno ou o tema.
+class _Terra extends CustomPainter {
+  _Terra(this.poligonos, this.preenche, this.borda);
+  final List<List<Offset>> poligonos;
+  final Color preenche, borda;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path();
+    for (final p in poligonos) {
+      path.addPolygon([for (final c in p) projetar(c.dy, c.dx, size)], true);
+    }
+    canvas.drawPath(path, Paint()..color = preenche);
+    canvas.drawPath(path, Paint()
+      ..color = borda
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1);
+  }
+
+  @override
+  bool shouldRepaint(_Terra o) => o.poligonos != poligonos || o.preenche != preenche || o.borda != borda;
+}
+
+// Camada das linhas: repinta a cada quadro do ticker (via [repaint]).
+class _Linhas extends CustomPainter {
+  _Linhas(this.fila, this.agora, this.t, Listenable repaint) : super(repaint: repaint);
+  final FilaAtaques fila;
+  final DateTime Function() agora;
+  final TradeTokens t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final agora = this.agora();
+    final b = projetar(destinoLat, destinoLon, size);
+    for (final l in fila.ativas(agora)) {
+      final f = fase(agora.difference(l.inicio));
+      final a = projetar(l.ataque.lat!, l.ataque.lon!, size);
+      final c = controleArco(a, b);
+      final cor = (l.ataque.sucesso ? t.negative : corVia(t, l.ataque.via)).withValues(alpha: f.opacidade);
+      final passos = (24 * f.cabeca).ceil();
+      final path = Path()..moveTo(a.dx, a.dy);
+      for (var i = 1; i <= passos; i++) {
+        final p = pontoNoArco(a, c, b, f.cabeca * i / passos);
+        path.lineTo(p.dx, p.dy);
+      }
+      canvas.drawPath(path, Paint()
+        ..color = cor
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = l.ataque.sucesso ? 3 : 1.5);
+      canvas.drawCircle(a, 2, Paint()..color = cor);
+      if (f.cabeca < 1) {
+        canvas.drawCircle(pontoNoArco(a, c, b, f.cabeca), 3, Paint()..color = cor);
+      } else {
+        // pulso no destino enquanto a linha está cheia
+        final idade = agora.difference(l.inicio) - viagem;
+        final k = (idade.inMicroseconds / cheia.inMicroseconds).clamp(0.0, 1.0);
+        canvas.drawCircle(b, 4 + 12 * k, Paint()
+          ..color = cor.withValues(alpha: f.opacidade * (1 - k))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+      }
+    }
+    canvas.drawCircle(b, 4, Paint()..color = t.actionPrimary);
+  }
+
+  @override
+  bool shouldRepaint(_Linhas o) => o.t != t;
+}

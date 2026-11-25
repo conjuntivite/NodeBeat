@@ -29,6 +29,7 @@ class FilaAtaques {
 
   // Espalha o lote na janela; o que passa do teto é descartado da cauda.
   void receber(List<Ataque> lote, DateTime agora, {Duration janela = const Duration(seconds: 5)}) {
+    _limpar(agora);
     final com = [for (final a in lote) if (a.lat != null && a.lon != null) a];
     for (var i = 0; i < com.length; i++) {
       if (_linhas.length >= teto) {
@@ -39,8 +40,10 @@ class FilaAtaques {
     }
   }
 
+  void _limpar(DateTime agora) => _linhas.removeWhere((l) => agora.difference(l.inicio) >= _total);
+
   List<LinhaAtiva> ativas(DateTime agora) {
-    _linhas.removeWhere((l) => agora.difference(l.inicio) >= _total);
+    _limpar(agora);
     return [for (final l in _linhas) if (!agora.isBefore(l.inicio)) l];
   }
 }

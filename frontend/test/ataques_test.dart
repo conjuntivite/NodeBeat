@@ -78,6 +78,14 @@ void main() {
     expect(f.descartados, 40);
   });
 
+  test('filaReceberLimpaExpiradas', () {
+    // sem chamar ativas() (ticker parado), as expiradas não podem ocupar o teto
+    final f = FilaAtaques(teto: 2)..receber([_a(), _a()], t0);
+    f.receber([_a()], t0.add(const Duration(seconds: 20)));
+    expect(f.descartados, 0);
+    expect(f.ativas(t0.add(const Duration(seconds: 20))).length, 1);
+  });
+
   test('filaRemoveTerminadas', () {
     final f = FilaAtaques()..receber([_a(), _a()], t0);
     final fim = t0.add(const Duration(seconds: 5, milliseconds: 4501));

@@ -584,6 +584,28 @@ class MapaMk {
   final List<MapaPorta> portas;
 }
 
+class Eu {
+  Eu.fromJson(Map<String, dynamic> j)
+      : usuario = j['usuario'],
+        admin = j['admin'] == true,
+        tema = j['tema'];
+  final String usuario;
+  final bool admin;
+
+  /// 'claro' | 'escuro' | null (nunca escolheu).
+  final String? tema;
+}
+
+class Usuario {
+  Usuario.fromJson(Map<String, dynamic> j)
+      : usuario = j['usuario'],
+        admin = j['admin'] == true,
+        criadoEm = DateTime.tryParse('${j['criado_em'] ?? ''}');
+  final String usuario;
+  final bool admin;
+  final DateTime? criadoEm;
+}
+
 class ApiClient {
   ApiClient({http.Client? client, this.base = '/api'}) : _http = client ?? http.Client();
   final http.Client _http;
@@ -628,6 +650,22 @@ class ApiClient {
       erros: {401: 'Usuário ou senha inválidos', 429: 'Muitas tentativas. Aguarde 15 minutos.'});
 
   Future<void> logout() => _send('POST', '/auth/logout');
+
+  Future<Eu> me() async => Eu.fromJson(await _send('GET', '/auth/me'));
+
+  Future<void> salvarTema(String tema) => _send('PUT', '/auth/tema', body: {'tema': tema});
+
+  Future<void> trocarSenha(String atual, String nova) => _send('PUT', '/auth/senha', body: {'atual': atual, 'nova': nova});
+
+  Future<List<Usuario>> usuarios() async => [for (final j in await _send('GET', '/usuarios')) Usuario.fromJson(j)];
+
+  Future<void> criarUsuario(String usuario, String senha, {bool admin = false}) =>
+      _send('POST', '/usuarios', body: {'usuario': usuario, 'senha': senha, 'admin': admin});
+
+  Future<void> atualizarUsuario(String u, {String? senha, bool? admin}) =>
+      _send('PUT', '/usuarios/${Uri.encodeComponent(u)}', body: {'senha': ?senha, 'admin': ?admin});
+
+  Future<void> removerUsuario(String u) => _send('DELETE', '/usuarios/${Uri.encodeComponent(u)}');
 
   Future<StatusData> status() async => StatusData.fromJson(await _send('GET', '/status'));
 

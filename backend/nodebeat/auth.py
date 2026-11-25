@@ -6,7 +6,7 @@ import secrets
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from nodebeat import store
 
@@ -51,13 +51,37 @@ async def login(db, r, usuario: str, senha: str) -> str:
         raise LoginFailed
     await r.delete(chave)
     token = secrets.token_urlsafe(32)
-    await r.set(f"sess:{token}", usuario, ex=SESSAO_TTL)
+    async with r.pipeline(transaction=True) as pipe:
+        pipe.set(f"sess:{token}", usuario, ex=SESSAO_TTL)
+        pipe.sadd(f"sess_u:{usuario}", token)
+        pipe.expire(f"sess_u:{usuario}", SESSAO_TTL)
+        await pipe.execute()
     return token
+
+
+async def encerrar_sessoes(r, usuario: str, manter: str | None = None) -> None:
+    """Apaga as sessões do usuário, menos `manter`."""
+    chave = f"sess_u:{usuario}"
+    for t in await r.smembers(chave):
+        if t != manter:
+            await r.delete(f"sess:{t}")
+            await r.srem(chave, t)
 
 
 async def current_user(request: Request) -> dict:
     token = request.cookies.get(COOKIE)
     usuario = await request.app.state.r.get(f"sess:{token}") if token else None
-    if not usuario:
+    r = request.app.state.r
+    # sessão antiga (fora de sess_u) não pode ser encerrada em massa: força novo login
+    if usuario and not await r.sismember(f"sess_u:{usuario}", token):
+        usuario = None
+    u = await store.get_user(request.app.state.db, usuario) if usuario else None
+    if not u:
         raise HTTPException(401, "Não autenticado")
-    return {"usuario": usuario}
+    return {"usuario": usuario, "admin": u.get("admin", True), "tema": u.get("tema"), "token": token}
+
+
+async def admin_user(user: dict = Depends(current_user)) -> dict:
+    if not user["admin"]:
+        raise HTTPException(403, "Acesso restrito ao admin")
+    return user

@@ -7,13 +7,15 @@ import json
 import re
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from pymongo.errors import DuplicateKeyError
 
-from nodebeat import auth, crypto, eventos, history, inventario, mapa, painel, routeros, store, unifi, webhook, worker
+from nodebeat import auth, cli, crypto, eventos, history, inventario, mapa, painel, routeros, store, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
@@ -23,6 +25,34 @@ _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict
 class LoginIn(BaseModel):
     usuario: str
     senha: str
+
+
+class TemaIn(BaseModel):
+    tema: Literal["claro", "escuro"]
+
+
+class SenhaIn(BaseModel):
+    atual: str
+    nova: str = Field(min_length=cli.MIN_SENHA)
+
+
+class UsuarioIn(BaseModel):
+    usuario: str = Field(min_length=1)
+    senha: str = Field(min_length=cli.MIN_SENHA)
+    admin: bool = False
+
+    @field_validator("usuario")
+    @classmethod
+    def _norm(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("vazio")
+        return v
+
+
+class UsuarioPatch(BaseModel):
+    senha: str | None = Field(default=None, min_length=cli.MIN_SENHA)
+    admin: bool | None = None
 
 
 class MkIn(BaseModel):
@@ -109,6 +139,7 @@ def _alertas(mk: dict, st: dict) -> list[str]:
 
 
 _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
+            "nova": "Mínimo de 12 caracteres",
             "ip_tunel": "Use o IP privado do túnel",
             "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo"}
 
@@ -120,7 +151,9 @@ def create_app(db, r, settings) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def _invalida(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Só loc + texto fixo: nunca "input"/"ctx" (eco do corpo vazaria a senha).
-        detail = [{"loc": list(e["loc"]), "msg": _MSG_422.get(str(e["loc"][-1]), "Valor inválido")} for e in exc.errors()]
+        detail = [{"loc": list(e["loc"]),
+                   "msg": _MSG_422["nova"] if e["type"] == "string_too_short" and e["loc"][-1] == "senha"
+                   else _MSG_422.get(str(e["loc"][-1]), "Valor inválido")} for e in exc.errors()]
         return JSONResponse({"detail": detail}, status_code=422)
 
     @app.post("/api/auth/login", status_code=204)
@@ -139,14 +172,80 @@ def create_app(db, r, settings) -> FastAPI:
     async def logout(request: Request) -> Response:
         token = request.cookies.get(auth.COOKIE)
         if token:
+            usuario = await r.get(f"sess:{token}")
             await r.delete(f"sess:{token}")
+            if usuario:
+                await r.srem(f"sess_u:{usuario}", token)
         resp = Response(status_code=204)
         resp.delete_cookie(auth.COOKIE, **_COOKIE)
         return resp
 
     @app.get("/api/auth/me")
     async def me(user: dict = Depends(auth.current_user)) -> dict:
-        return user
+        return {k: user[k] for k in ("usuario", "admin", "tema")}
+
+    @app.put("/api/auth/tema", status_code=204)
+    async def tema(body: TemaIn, user: dict = Depends(auth.current_user)) -> Response:
+        await store.atualizar_user(db, user["usuario"], {"tema": body.tema})
+        return Response(status_code=204)
+
+    @app.put("/api/auth/senha", status_code=204)
+    async def trocar_senha(body: SenhaIn, user: dict = Depends(auth.current_user)) -> Response:
+        u = await store.get_user(db, user["usuario"])
+        if not u:
+            raise HTTPException(401, "Não autenticado")
+        if not await asyncio.to_thread(auth.verify_password, u["senha_hash"], body.atual):
+            raise HTTPException(400, "Senha atual incorreta")
+        h = await asyncio.to_thread(auth.hash_password, body.nova)
+        await store.atualizar_user(db, user["usuario"], {"senha_hash": h})
+        await auth.encerrar_sessoes(r, user["usuario"], manter=user["token"])
+        return Response(status_code=204)
+
+    @app.get("/api/usuarios")
+    async def listar_usuarios(_: dict = Depends(auth.admin_user)) -> list[dict]:
+        return await store.listar_users(db)
+
+    @app.post("/api/usuarios", status_code=201)
+    async def criar_usuario(body: UsuarioIn, _: dict = Depends(auth.admin_user)) -> dict:
+        h = await asyncio.to_thread(auth.hash_password, body.senha)
+        try:
+            await store.insert_user(db, body.usuario, h, admin=body.admin)
+        except DuplicateKeyError:
+            raise HTTPException(409, "Usuário já existe")
+        return {"usuario": body.usuario}
+
+    async def _alvo_com_travas(u: str, eu: str, perde_admin: bool) -> dict:
+        alvo = await store.get_user(db, u)
+        if not alvo:
+            raise HTTPException(404, "Usuário não encontrado")
+        if perde_admin and u == eu:
+            raise HTTPException(409, "Você não pode remover nem rebaixar a si mesmo")
+        if perde_admin and alvo.get("admin", True) and await store.contar_admins(db) <= 1:
+            raise HTTPException(409, "Precisa haver ao menos um admin")
+        return alvo
+
+    @app.put("/api/usuarios/{u}", status_code=204)
+    async def editar_usuario(u: str, body: UsuarioPatch, me: dict = Depends(auth.admin_user)) -> Response:
+        u = u.strip().lower()
+        await _alvo_com_travas(u, me["usuario"], body.admin is False)
+        campos = {}
+        if body.admin is not None:
+            campos["admin"] = body.admin
+        if body.senha is not None:
+            campos["senha_hash"] = await asyncio.to_thread(auth.hash_password, body.senha)
+        if campos:
+            await store.atualizar_user(db, u, campos)
+        if body.senha is not None:
+            await auth.encerrar_sessoes(r, u, manter=me["token"] if u == me["usuario"] else None)
+        return Response(status_code=204)
+
+    @app.delete("/api/usuarios/{u}", status_code=204)
+    async def apagar_usuario(u: str, me: dict = Depends(auth.admin_user)) -> Response:
+        u = u.strip().lower()
+        await _alvo_com_travas(u, me["usuario"], True)
+        await store.apagar_user(db, u)
+        await auth.encerrar_sessoes(r, u)
+        return Response(status_code=204)
 
     mks = APIRouter(prefix="/api", dependencies=[Depends(auth.current_user)])
 

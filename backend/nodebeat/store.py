@@ -56,11 +56,31 @@ async def get_user(db, usuario: str) -> dict | None:
     return await db.users.find_one({"usuario": usuario})
 
 
-async def insert_user(db, usuario: str, senha_hash: str) -> str:
+async def insert_user(db, usuario: str, senha_hash: str, admin: bool = False) -> str:
     """Usuário duplicado -> DuplicateKeyError (índice único)."""
     await db.users.create_index("usuario", unique=True)
-    doc = {"usuario": usuario, "senha_hash": senha_hash, "criado_em": datetime.now(UTC)}
+    doc = {"usuario": usuario, "senha_hash": senha_hash, "admin": admin,
+           "criado_em": datetime.now(UTC)}
     return str((await db.users.insert_one(doc)).inserted_id)
+
+
+async def listar_users(db) -> list[dict]:
+    """Sem hash; usuário sem o campo admin conta como admin."""
+    docs = await db.users.find({}).sort("usuario", 1).to_list(None)
+    return [{"usuario": u["usuario"], "admin": u.get("admin", True), "criado_em": _utc(u).get("criado_em")}
+            for u in docs]
+
+
+async def atualizar_user(db, usuario: str, campos: dict) -> bool:
+    return (await db.users.update_one({"usuario": usuario}, {"$set": campos})).matched_count == 1
+
+
+async def apagar_user(db, usuario: str) -> bool:
+    return (await db.users.delete_one({"usuario": usuario})).deleted_count == 1
+
+
+async def contar_admins(db) -> int:
+    return await db.users.count_documents({"admin": {"$ne": False}})
 
 
 def _utc(d: dict) -> dict:

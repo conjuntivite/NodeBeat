@@ -323,7 +323,7 @@ class _GraficoPizzaState extends State<GraficoPizza> {
 }
 
 
-/// Linha de uso ao longo do tempo, com linha de limite e (só em 7d/30d) projeção tracejada de 30 dias.
+/// Linha de uso ao longo do tempo, com linha de limite e (só em 7d/30d) projeção tracejada (25% do período à frente).
 /// O eixo X tem ticks em intervalos fixos de tempo; o formato vem do [periodo]: 1h HH:mm, 24h HHh, 7d/30d dd/mm.
 class GraficoCapacidade extends StatelessWidget {
   const GraficoCapacidade({super.key, required this.pontos, this.limite, this.tendenciaDia, this.unidade = '', this.periodo = '30d'});
@@ -337,9 +337,20 @@ class GraficoCapacidade extends StatelessWidget {
   static int _passoBase(String periodo) => switch (periodo) {
         '1h' => 15,
         '24h' => 240,
-        '7d' => 1440,
-        _ => 7200,
+        _ => 1440,
       };
+
+  /// Passo do eixo, em minutos, e horizonte da projeção (25% do período, em dias).
+  static int passoEixo(String periodo, double spanMin) {
+    final base = _passoBase(periodo);
+    if (periodo != '7d' && periodo != '30d') return base * (spanMin / base / _maxRotulos).ceil().clamp(1, 1 << 20);
+    for (final d in const [1, 2, 5, 7]) {
+      if (spanMin / 1440 / d <= 9) return d * 1440;
+    }
+    return 14 * 1440;
+  }
+
+  static double horizonteDias(String periodo) => periodo == '7d' ? 1.75 : 7.5;
 
   @override
   Widget build(BuildContext context) {
@@ -354,7 +365,7 @@ class GraficoCapacidade extends StatelessWidget {
     final spots = [for (final p in pontos) FlSpot(minutos(p.$1), p.$2)];
     final ultimo = spots.last;
     final comProjecao = tendenciaDia != null && (periodo == '7d' || periodo == '30d');
-    final proj = comProjecao ? [ultimo, FlSpot(ultimo.x + 30 * 1440, ultimo.y + tendenciaDia! * 30)] : null;
+    final proj = comProjecao ? [ultimo, FlSpot(ultimo.x + horizonteDias(periodo) * 1440, ultimo.y + tendenciaDia! * horizonteDias(periodo))] : null;
     String two(int n) => n.toString().padLeft(2, '0');
     String rotulo(double x, {bool completo = false}) {
       final d = origem.add(Duration(minutes: x.round()));
@@ -367,7 +378,7 @@ class GraficoCapacidade extends StatelessWidget {
     var maxX = proj?.last.x ?? ultimo.x;
     if (maxX <= minX) maxX = minX + base;
     // alarga o passo (em múltiplos do base) até caber no máximo de rótulos
-    final passo = base * ((maxX - minX) / base / _maxRotulos).ceil().clamp(1, 1 << 20);
+    final passo = passoEixo(periodo, maxX - minX);
     final topo = [...spots.map((s) => s.y), ?proj?.last.y, ?limite].reduce((a, b) => a > b ? a : b);
     return SizedBox(
       height: 180,

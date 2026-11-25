@@ -124,7 +124,9 @@ class PainelSwitches extends StatelessWidget {
     final ps = dados.portasTop;
     final curto = periodo == '1h'; // 1 h é curto demais para projetar
     String nome(PortaTop p) => p.porta == null ? p.switchNome : '${p.switchNome} · Porta ${p.porta}';
-    final switches = {for (final p in ps) p.switchNome}.toList();
+    String chave(PortaTop p) => p.switchId ?? p.switchNome;
+    final ids = {for (final p in ps) chave(p)}.toList();
+    final switches = [for (final i in ids) ps.firstWhere((p) => chave(p) == i).switchNome];
     final cab = TradeType.label.copyWith(color: t.fgMuted);
     final cel = TradeType.bodyMd.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]);
     return _cartao(t, 'Portas', 'Portas que mais oscilam', 'Portas com mais quedas e voltas de link no período.', [
@@ -135,7 +137,7 @@ class PainelSwitches extends StatelessWidget {
             ColunaDado(
               rotulo: 'P${p.porta ?? '?'}',
               valor: p.eventos,
-              serie: switches.indexOf(p.switchNome),
+              serie: ids.indexOf(chave(p)),
               destaque: p.instavel,
               dica: '${nome(p)}: ${p.eventos} eventos${p.projecaoMes == null ? '' : ' · ~${p.projecaoMes!.round()}/mês'}',
             ),

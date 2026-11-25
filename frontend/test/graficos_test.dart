@@ -153,12 +153,16 @@ void main() {
     expect(r.toSet().length, r.length);
   });
 
-  for (final p in ['7d', '30d']) {
-    testWidgets('GraficoCapacidade $p: dias dd/mm distintos e com tracejado', (t) async {
-      await _mostra(t, GraficoCapacidade(pontos: serieEm(const Duration(hours: 12), p == '7d' ? 14 : 60), tendenciaDia: 1, periodo: p), Brightness.light);
+  for (final (p, dias, passoDias) in [('7d', 7, 1), ('30d', 30, 5)]) {
+    testWidgets('GraficoCapacidade $p: dias dd/mm distintos no histórico, passo de $passoDias dia(s), com tracejado', (t) async {
+      final pts = serieEm(const Duration(hours: 12), dias * 2);
+      await _mostra(t, GraficoCapacidade(pontos: pts, tendenciaDia: 1, periodo: p), Brightness.light);
       final r = rotulosEixo(t, RegExp(r'^\d{2}/\d{2}$'));
-      expect(r.length, greaterThan(2));
       expect(r.toSet().length, r.length);
+      String dm(DateTime d) => '${d.toLocal().day.toString().padLeft(2, '0')}/${d.toLocal().month.toString().padLeft(2, '0')}';
+      final noHistorico = {for (final x in pts) dm(x.$1)};
+      expect(r.where(noHistorico.contains).length, greaterThanOrEqualTo(p == '7d' ? 6 : 5));
+      expect(GraficoCapacidade.passoEixo(p, (dias + GraficoCapacidade.horizonteDias(p)) * 1440), passoDias * 1440);
       expect(t.widget<LineChart>(find.byType(LineChart)).data.lineBarsData.length, 2);
     });
   }

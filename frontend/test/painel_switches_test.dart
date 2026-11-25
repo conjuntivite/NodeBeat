@@ -63,8 +63,8 @@ EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10, int 
           {'hora': DateTime.utc(2026, 11, 24, i).toIso8601String(), 'clientes': i, 'alertas': 1, 'poe': 0, 'mudancas': 0},
       ],
       'portas_top': [
-        {'switch_nome': 'SW Sede', 'porta': 5, 'eventos': 9, 'projecao_mes': 270.0, 'instavel': true},
-        {'switch_nome': 'SW Sede', 'porta': 7, 'eventos': 2, 'projecao_mes': 60.0, 'instavel': false},
+        {'switch_id': 's1', 'switch_nome': 'SW Sede', 'porta': 5, 'eventos': 9, 'projecao_mes': 270.0, 'instavel': true},
+        {'switch_id': 's1', 'switch_nome': 'SW Sede', 'porta': 7, 'eventos': 2, 'projecao_mes': 60.0, 'instavel': false},
       ],
       'clientes_top': [
         {'cliente': 'Cliente A', 'switch_nome': 'SW Sede', 'quedas': 4, 'ip': '192.0.2.50', 'mac': '02:00:00:00:00:09', 'porta': 7},

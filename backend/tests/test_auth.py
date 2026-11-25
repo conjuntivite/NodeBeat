@@ -2,6 +2,7 @@ import asyncio
 
 import fakeredis
 import pytest
+from fastapi import Depends
 from httpx import ASGITransport, AsyncClient
 from mongomock_motor import AsyncMongoMockClient
 
@@ -25,7 +26,8 @@ def r():
 
 @pytest.fixture
 async def client(db, r):
-    await store.insert_user(db, "ana", auth.hash_password(SENHA))
+    # usuário legado: sem o campo admin (conta como admin)
+    await db.users.insert_one({"usuario": "ana", "senha_hash": auth.hash_password(SENHA)})
     app = create_app(db, r, SET)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
         yield c
@@ -42,7 +44,7 @@ async def test_login_sets_secure_cookie(client):
     assert ck.startswith("nodebeat_sess=")
     for attr in ("httponly", "secure", "samesite=strict", "path=/api", "max-age=28800"):
         assert attr in ck
-    assert (await client.get("/api/auth/me")).json() == {"usuario": "ana"}
+    assert (await client.get("/api/auth/me")).status_code == 200
 
 
 async def test_wrong_password_401(client):
@@ -114,3 +116,51 @@ async def test_422_does_not_echo_password(client):
 
 def test_verify_password_corrupted_hash():
     assert auth.verify_password("lixo", "x") is False
+
+
+async def test_me_traz_admin_e_tema(client):
+    await entrar(client)
+    j = (await client.get("/api/auth/me")).json()
+    assert j == {"usuario": "ana", "admin": True, "tema": None}
+
+
+async def test_usuario_removido_perde_sessao(client, db):
+    await entrar(client)
+    await store.apagar_user(db, "ana")
+    assert (await client.get("/api/auth/me")).status_code == 401
+
+
+async def test_login_indexa_sessao(client, r):
+    await entrar(client)
+    toks = await r.smembers("sess_u:ana")
+    assert len(toks) == 1
+    assert await r.exists(f"sess:{next(iter(toks))}")
+
+
+async def test_encerrar_sessoes_mantem_uma(client, r):
+    await entrar(client)
+    t1 = next(iter(await r.smembers("sess_u:ana")))
+    await entrar(client)
+    assert len(await r.keys("sess:*")) == 2
+    await auth.encerrar_sessoes(r, "ana", manter=t1)
+    assert await r.keys("sess:*") == [f"sess:{t1}"]
+    assert await r.smembers("sess_u:ana") == {t1}
+
+
+async def test_admin_user_403(db, r):
+    await store.insert_user(db, "bia", auth.hash_password(SENHA), admin=False)
+    app = create_app(db, r, SET)
+    app.get("/api/t")(lambda u=Depends(auth.admin_user): u["usuario"])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        await entrar(c, "bia")
+        resp = await c.get("/api/t")
+    assert resp.status_code == 403
+    assert resp.json() == {"detail": "Acesso restrito ao admin"}
+
+
+def test_cli_admin(db):
+    senha = lambda _: SENHA
+    assert cli.main(["create-user", "Zé", "--admin"], getpass=senha, db=db) == 0
+    assert cli.main(["create-user", "Bia"], getpass=senha, db=db) == 0
+    assert asyncio.run(store.get_user(db, "zé"))["admin"] is True
+    assert asyncio.run(store.get_user(db, "bia"))["admin"] is False

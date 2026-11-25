@@ -6,7 +6,7 @@ import secrets
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from nodebeat import store
 
@@ -52,12 +52,30 @@ async def login(db, r, usuario: str, senha: str) -> str:
     await r.delete(chave)
     token = secrets.token_urlsafe(32)
     await r.set(f"sess:{token}", usuario, ex=SESSAO_TTL)
+    await r.sadd(f"sess_u:{usuario}", token)
+    await r.expire(f"sess_u:{usuario}", SESSAO_TTL)
     return token
+
+
+async def encerrar_sessoes(r, usuario: str, manter: str | None = None) -> None:
+    """Apaga as sessões do usuário, menos `manter`."""
+    chave = f"sess_u:{usuario}"
+    for t in await r.smembers(chave):
+        if t != manter:
+            await r.delete(f"sess:{t}")
+            await r.srem(chave, t)
 
 
 async def current_user(request: Request) -> dict:
     token = request.cookies.get(COOKIE)
     usuario = await request.app.state.r.get(f"sess:{token}") if token else None
-    if not usuario:
+    u = await store.get_user(request.app.state.db, usuario) if usuario else None
+    if not u:
         raise HTTPException(401, "Não autenticado")
-    return {"usuario": usuario}
+    return {"usuario": usuario, "admin": u.get("admin", True), "tema": u.get("tema"), "token": token}
+
+
+async def admin_user(user: dict = Depends(current_user)) -> dict:
+    if not user["admin"]:
+        raise HTTPException(403, "Acesso restrito ao admin")
+    return user

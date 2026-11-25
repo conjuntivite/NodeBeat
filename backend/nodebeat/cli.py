@@ -17,6 +17,7 @@ def main(argv=None, *, getpass=_getpass.getpass, db=None) -> int:
     p = argparse.ArgumentParser(prog="nodebeat.cli")
     p.add_argument("comando", choices=["create-user"])
     p.add_argument("usuario")
+    p.add_argument("--admin", action="store_true")
     a = p.parse_args(argv)
     usuario = a.usuario.strip().lower()
     senha = getpass("Senha: ")
@@ -36,7 +37,7 @@ def main(argv=None, *, getpass=_getpass.getpass, db=None) -> int:
         if await store.get_user(db, usuario):
             return False
         try:
-            await store.insert_user(db, usuario, auth.hash_password(senha))
+            await store.insert_user(db, usuario, auth.hash_password(senha), admin=a.admin)
         except DuplicateKeyError:
             return False
         return True

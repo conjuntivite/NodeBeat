@@ -146,7 +146,7 @@ def create_app(db, r, settings) -> FastAPI:
 
     @app.get("/api/auth/me")
     async def me(user: dict = Depends(auth.current_user)) -> dict:
-        return user
+        return {k: user[k] for k in ("usuario", "admin", "tema")}
 
     mks = APIRouter(prefix="/api", dependencies=[Depends(auth.current_user)])
 

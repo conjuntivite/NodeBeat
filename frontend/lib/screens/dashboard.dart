@@ -8,6 +8,7 @@ import '../sessao.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
+import '../widgets/contagem.dart';
 import '../widgets/heartbeat.dart';
 import '../widgets/shell.dart';
 import 'switches.dart';
@@ -77,6 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<Equipamento> _switches = [];
   String? _erroSwitches;
   Timer? _timer;
+  int _ciclo = 0; // muda a cada recarga agendada: a contagem do topo recomeça
   StatusData? _data;
   String? _error;
   bool _loading = false;
@@ -99,8 +101,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _beat.addListener(_onBeat);
     _tabs.index = painelAba.value;
     painelAba.addListener(_irParaAba);
-    _load();
-    _timer = Timer.periodic(_refresh, (_) => _load());
+    _agendar(inicial: true);
     final id = widget.abrir;
     if (id != null) WidgetsBinding.instance.addPostFrameCallback((_) => _abrir(id));
   }
@@ -152,6 +153,21 @@ class _DashboardScreenState extends State<DashboardScreen>
     } else {
       _engine.stop();
     }
+  }
+
+  /// Recarrega agora e reinicia o relógio da recarga automática (o topo mostra quanto falta).
+  void _agendar({bool inicial = false}) {
+    _timer?.cancel();
+    _load();
+    if (inicial) {
+      _ciclo++; // dentro do initState não pode setState
+    } else if (mounted) {
+      setState(() => _ciclo++);
+    }
+    _timer = Timer.periodic(_refresh, (_) {
+      _load();
+      if (mounted) setState(() => _ciclo++);
+    });
   }
 
   Future<void> _load() async {
@@ -290,6 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           _ => Navigator.of(context).pushNamed('/preparar-mk'),
         },
         topo: [
+          ContagemAtualizacao(intervalo: _refresh, ciclo: _ciclo, aoAtualizar: _agendar),
           if (_soundOn && _engine.isSuspended)
             Padding(
               padding: EdgeInsets.only(right: t.space2),

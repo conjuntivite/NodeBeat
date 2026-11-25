@@ -296,9 +296,48 @@ class ContaMk {
 class ContaIp {
   ContaIp.fromJson(Map<String, dynamic> j)
       : ip = j['ip'],
-        n = (j['n'] as num).toInt();
+        n = (j['n'] as num).toInt(),
+        pais = j['pais'],
+        paisNome = j['pais_nome'];
   final String ip;
   final int n;
+  final String? pais, paisNome;
+}
+
+class Ataque {
+  Ataque({
+    required this.ip, this.pais, this.paisNome, this.lat, this.lon,
+    required this.mkNome, required this.via, required this.n, required this.sucesso,
+    required this.quando, this.usuario,
+  });
+  Ataque.fromJson(Map<String, dynamic> j)
+      : ip = j['ip'],
+        pais = j['pais'],
+        paisNome = j['pais_nome'],
+        lat = (j['lat'] as num?)?.toDouble(),
+        lon = (j['lon'] as num?)?.toDouble(),
+        mkNome = j['mk_nome'],
+        via = j['via'],
+        n = (j['n'] as num).toInt(),
+        sucesso = j['sucesso'] == true,
+        quando = DateTime.parse(j['quando']),
+        usuario = j['usuario'];
+  final String ip, mkNome, via;
+  final String? pais, paisNome, usuario;
+  final double? lat, lon;
+  final int n;
+  final bool sucesso;
+  final DateTime quando;
+}
+
+class FeedAtaques {
+  FeedAtaques.fromJson(Map<String, dynamic> j)
+      : cursor = j['cursor'],
+        ataques = [for (final e in _lista(j['ataques'])) Ataque.fromJson(e)],
+        descartados = (j['descartados'] as num?)?.toInt() ?? 0;
+  final String cursor;
+  final List<Ataque> ataques;
+  final int descartados;
 }
 
 class BlocoPainel {
@@ -308,6 +347,7 @@ class BlocoPainel {
         topIps = [for (final e in _lista(j['top_ips'])) ContaIp.fromJson(e)],
         porVia = _mapaInt(j['por_via']),
         porSubtipo = _mapaInt(j['por_subtipo']),
+        topPaises = _lista(j['top_paises']),
         loginsExternos = _lista(j['logins_externos']),
         ultimos = _lista(j['ultimos']),
         interfaces = _lista(j['interfaces']);
@@ -315,7 +355,7 @@ class BlocoPainel {
   final List<ContaMk> porMk;
   final List<ContaIp> topIps;
   final Map<String, int> porVia, porSubtipo;
-  final List<Map<String, dynamic>> loginsExternos, ultimos, interfaces;
+  final List<Map<String, dynamic>> topPaises, loginsExternos, ultimos, interfaces;
 }
 
 class MkPainel {
@@ -862,6 +902,9 @@ class ApiClient {
     final query = 'periodo=${Uri.encodeQueryComponent(periodo)}${mkId == null ? '' : '&mk=${Uri.encodeQueryComponent(mkId)}'}';
     return PainelEventos.fromJson(await _send('GET', '/eventos/painel?$query'));
   }
+
+  Future<FeedAtaques> ataques({String? desde}) async => FeedAtaques.fromJson(await _send(
+      'GET', '/eventos/ataques${desde == null ? '' : '?desde=${Uri.encodeQueryComponent(desde)}'}'));
 
   Future<EventosSwitches> eventosSwitches(String periodo) async =>
       EventosSwitches.fromJson(await _send('GET', '/eventos/switches?periodo=${Uri.encodeQueryComponent(periodo)}'));

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/audio/monitor_sound.dart';
 import 'package:nodebeat/screens/dashboard.dart';
+import 'package:nodebeat/widgets/contagem.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/widgets/common.dart';
 
@@ -85,6 +86,32 @@ Map<String, dynamic> _status({int fila = 0, bool sede = true, bool dados = true}
 Finder _rows() => find.byWidgetPredicate((w) => w.key is ValueKey && '${(w.key! as ValueKey).value}'.startsWith('row-'));
 
 void main() {
+  testWidgets('topo mostra a contagem até a próxima atualização e recomeça a cada recarga', (t) async {
+    await _show(t, _status());
+    expect(find.text('Atualiza em 15 s'), findsOneWidget);
+    await t.pump(const Duration(seconds: 6));
+    expect(find.text('Atualiza em 9 s'), findsOneWidget);
+    await t.pump(const Duration(seconds: 9)); // recarga automática: recomeça
+    await t.pump();
+    expect(find.text('Atualiza em 15 s'), findsOneWidget);
+    await t.pump(const Duration(seconds: 2));
+    expect(find.text('Atualiza em 13 s'), findsOneWidget);
+    await t.tap(find.byType(ContagemAtualizacao)); // toque: recarrega na hora e recomeça
+    await t.pump();
+    await t.pump(const Duration(seconds: 4));
+    expect(find.text('Atualiza em 11 s'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('contagem no topo cabe em 360 px', (t) async {
+    await _show(t, _status());
+    t.view.physicalSize = const Size(360, 800);
+    await t.pump();
+    expect(find.text('Atualiza em 15 s'), findsOneWidget);
+    expect(t.takeException(), isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('cards 1/1/1, primeira linha é a que está fora, banner da fila', (t) async {
     await _show(t, _status(fila: 3));
     for (final k in ['resumo-no_ar', 'resumo-alerta', 'resumo-fora']) {

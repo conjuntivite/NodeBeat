@@ -28,7 +28,7 @@ class PainelSwitches extends StatelessWidget {
     final t = tokensOf(context);
     final d = dados;
     final cards = [
-      _cartao(t, 'Série', 'Eventos ao longo do tempo', 'Cada linha é um grupo de evento por hora.',
+      _cartao(t, 'Série', 'Eventos ao longo do tempo', 'Cada linha é um grupo de evento ao longo do período.',
           [GraficoLinha(pontos: d.serie, series: _grupos)]),
       _cartao(t, 'Grupos', 'Eventos por grupo', 'Como os eventos do período se dividem.', [
         GraficoPizza(

@@ -141,3 +141,15 @@ async def test_listar_retratos_sem_portas(db):
     out = await store.listar_retratos(db, ["a"], T0 + timedelta(seconds=30))
     assert [d["clientes"] for d in out] == [1, 2]
     assert all("portas" not in d and "_id" not in d and d["em"].tzinfo for d in out)
+
+
+async def test_falha_no_retrato_nao_quebra_run_unifi(db, r, monkeypatch):
+    eq = await com_switch(db)
+    await store.garantir_indice_unifi(db)
+
+    async def quebra(*a, **k):
+        raise RuntimeError("mongo fora")
+    monkeypatch.setattr(store, "inserir_retrato", quebra)
+    await run_unifi(db, r, CFG, T0, ler=falso(all_=[ev("a", 1000)]))
+    assert json.loads(await r.get(f"unifi:eq:{eq}"))["portas"]["3"]["up"] is True
+    assert [d["unifi_id"] async for d in db.eventos.find({"origem": "unifi"})] == ["a"]

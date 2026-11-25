@@ -526,8 +526,9 @@ def create_app(db, r, settings) -> FastAPI:
         atual = await store.listar_eventos_unifi_periodo(db, desde, agora + timedelta(seconds=1))
         sws = await store.listar_equipamentos(db, tipo="switch")
         nomes_eq = {f"eq:{e['id']}": e["nome"] for e in sws}
-        ptop = [p | {"switch_id": p["switch_id"][3:]} for p in switch_painel.portas_top(atual, nomes_eq, horas)]
-        return {"contagens": contagens, "totais": switch_painel.totais(atual, ant, horas, ptop),
+        todas = [p | {"switch_id": p["switch_id"][3:]} for p in switch_painel.portas_top(atual, nomes_eq, horas, n=None)]
+        ptop = todas[:10]
+        return {"contagens": contagens, "totais": switch_painel.totais(atual, ant, horas, todas),
                 "serie": switch_painel.serie(atual, desde, periodo), "portas_top": ptop,
                 "clientes_top": switch_painel.clientes_top(atual, nomes_eq),
                 "capacidade": await _capacidade(sws, agora), "eventos": [

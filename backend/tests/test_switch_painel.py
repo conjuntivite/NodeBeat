@@ -94,3 +94,43 @@ def test_reduzir_200():
     out = sp.reduzir(r)
     assert len(out) <= 200
     assert all(o["poe_usado_w"] == 10 and o["clientes"] == 5 and o["temperatura"] is None for o in out)
+
+
+def test_serie_alinha_ao_balde():
+    desde = T0 + timedelta(hours=-24, minutes=17)  # agora = T0 + 17 min
+    s = sp.serie([ev("cliente_conectou", T0 + timedelta(minutes=10))], desde, "24h")
+    assert len(s) == 24
+    assert s[0]["hora"] == (T0 - timedelta(hours=23)).isoformat() and s[-1]["hora"] == T0.isoformat()
+    assert s[-1]["clientes"] == 1
+
+
+def test_projecoes_6_6_dias_floor_e_sem_projecao():
+    r = [ret(0, poe_usado_w=100, poe_max_w=195), ret(6.6, poe_usado_w=110, poe_max_w=195)]
+    assert sp.projecoes(r, T0) == {"dias_historico": 6, "poe": None, "temperatura": None, "portas": None}
+
+
+def test_projecoes_inteiras():
+    r = [ret(d, poe_usado_w=100 + d, poe_max_w=195, portas_total=24, portas_em_uso=10 + d) for d in range(11)]
+    p = sp.projecoes(r, T0)
+    assert p["poe"]["dias_ate_80"] == 46 and isinstance(p["poe"]["dias_ate_80"], int)
+    assert p["portas"]["dias_ate_cheio"] == 4 and isinstance(p["portas"]["dias_ate_cheio"], int)
+
+
+def test_projecao_30d_e_mes_inteiros():
+    t = sp.totais([ev("outro", T0)] * 7, [], 7 * 24, [])
+    assert t["projecao_30d"] == 30 and isinstance(t["projecao_30d"], int)
+    r = sp.portas_top([ev("cliente_conectou", T0, porta="1")] * 3, {}, 7 * 24)
+    assert r[0]["projecao_mes"] == 13 and isinstance(r[0]["projecao_mes"], int)
+
+
+def test_portas_instaveis_conta_todas_as_portas():
+    evs = [ev("cliente_conectou", T0, porta=str(i)) for i in range(1, 13) for _ in range(3)]
+    t = sp.totais(evs, [], 24, sp.portas_top(evs, {}, 24, n=None))
+    assert t["portas_instaveis"] == 12
+    assert len(sp.portas_top(evs, {}, 24)) == 10
+
+
+def test_switch_removido():
+    evs = [ev("cliente_desconectou", T0, porta="1", cliente="a", mk="eq:9")]
+    assert sp.portas_top(evs, {}, 24)[0]["switch_nome"] == "Switch removido"
+    assert sp.clientes_top(evs, {})[0]["switch_nome"] == "Switch removido"

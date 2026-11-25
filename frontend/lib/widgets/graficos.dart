@@ -96,10 +96,14 @@ class GraficoBarras extends StatelessWidget {
   }
 }
 
-String _rotuloHora(DateTime utc, int total) {
+/// Formato pelo intervalo coberto: > 48 h → dd/mm; ≤ 2 h → HH:mm; senão HHh.
+String _rotuloHora(DateTime utc, List<PontoSerie> pontos) {
   final d = utc.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
-  return total > 48 ? '${two(d.day)}/${two(d.month)}' : '${two(d.hour)}h';
+  final span = pontos.last.hora.difference(pontos.first.hora);
+  if (span > const Duration(hours: 48)) return '${two(d.day)}/${two(d.month)}';
+  if (span <= const Duration(hours: 2)) return '${two(d.hour)}:${two(d.minute)}';
+  return '${two(d.hour)}h';
 }
 
 int _somaPonto(PontoSerie p, List<String> series) => series.fold(0, (a, s) => a + (p.valores[s] ?? 0));
@@ -114,7 +118,7 @@ class GraficoLinha extends StatelessWidget {
     if (pontos.isEmpty) return null;
     final p = pontos.reduce((a, b) => _somaPonto(b, series) > _somaPonto(a, series) ? b : a);
     final n = _somaPonto(p, series);
-    return n == 0 ? null : '${_rotuloHora(p.hora, pontos.length)} · $n';
+    return n == 0 ? null : '${_rotuloHora(p.hora, pontos)} · $n';
   }
 
   @override
@@ -154,7 +158,7 @@ class GraficoLinha extends StatelessWidget {
               if (i < 0 || i >= pontos.length) return const SizedBox.shrink();
               return Padding(
                 padding: EdgeInsets.only(top: t.space2),
-                child: Text(_rotuloHora(pontos[i].hora, pontos.length), style: TradeType.bodySm.copyWith(color: t.fgMuted)),
+                child: Text(_rotuloHora(pontos[i].hora, pontos), style: TradeType.bodySm.copyWith(color: t.fgMuted)),
               );
             })),
           ),

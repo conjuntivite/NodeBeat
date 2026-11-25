@@ -11,9 +11,8 @@ import '../widgets/painel_cards.dart';
 import '../widgets/painel_textos.dart';
 import 'painel_switches.dart';
 
-const _periodos = [('24 h', '24h'), ('7 dias', '7d'), ('30 dias', '30d')];
-// '1h' só existe para os switches: o painel das MKs rejeita (422).
-const _periodo1h = ('1 h', '1h');
+// '1h' vale só para os switches (aparece sempre, desabilitada nas MKs): o painel das MKs rejeita (422).
+const _periodos = [('1 h', '1h'), ('24 h', '24h'), ('7 dias', '7d'), ('30 dias', '30d')];
 const _rotuloPeriodo = {'24h': 'últimas 24 h', '7d': 'últimos 7 dias', '30d': 'últimos 30 dias'};
 const _categorias = ['acesso', 'autenticacao', 'vpn', 'erros'];
 
@@ -87,6 +86,7 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       _swErro = null;
     });
     _carregarSwitches(meu);
+    if (_periodo == '1h') return; // só os switches têm 1h: não pede ao painel das MKs
     try {
       final d = await widget.api.painelEventos(_periodo, mkId: _mk);
       if (!mounted || meu != _pedido) return;
@@ -107,8 +107,10 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     return AppShell(
       ativo: 'eventos',
       titulo: 'Eventos',
-      subtitulo: 'O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
-      acoes: [_abas(), _pilulasPeriodo(t), if (_aba == 0) _filtroMk(t)],
+      subtitulo: _aba == 1
+          ? 'O que os ${_sw == null ? '' : '${_sw!.capacidade.length} '}switches registraram e o que merece sua atenção.'
+          : 'O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
+      acoes: [_abas(), _pilulasPeriodo(t)],
       body: ListView(padding: margemPagina(context), children: [
         if (_aba == 1)
           _abaSwitches(t)
@@ -134,16 +136,18 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
   // Carga dos switches é independente: uma falha aqui não esconde a aba das MKs.
   Widget _abaSwitches(TradeTokens t) {
     final d = _sw;
-    if (d != null) return PainelSwitches(dados: d);
+    if (d != null) return PainelSwitches(dados: d, periodo: _periodo);
     if (_swErro != null) return TradeCard(child: Text(_swErro!, style: TradeType.bodyMd.copyWith(color: t.negative)));
     return const Center(child: CircularProgressIndicator());
   }
 
   Widget _pilulasPeriodo(TradeTokens t) {
-    final ps = [if (_aba == 1) _periodo1h, ..._periodos];
+    const ps = _periodos;
     return AbasPilula(
       itens: [for (final (rotulo, _) in ps) rotulo],
       valor: ps.indexWhere((p) => p.$2 == _periodo),
+      desabilitados: _aba == 0 ? const {0} : const {},
+      dicaDesabilitado: 'Só para switches',
       aoMudar: (i) {
         _periodo = ps[i].$2;
         _carregar();
@@ -216,6 +220,8 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     ]);
 
     return [
+      Align(alignment: Alignment.centerRight, child: _filtroMk(t)),
+      SizedBox(height: t.space4),
       _topo(context, t, d),
       SizedBox(height: t.space4),
       _grade(t, cards, [1000, 560]),

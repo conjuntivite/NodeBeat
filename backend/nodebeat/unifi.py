@@ -131,6 +131,9 @@ GRUPOS = {"cliente_conectou": "clientes", "cliente_desconectou": "clientes", "in
           "poe_religado": "poe", "mudanca_admin": "mudancas", "outro": "alertas"}
 
 
+_MAC = re.compile(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")
+
+
 def _params(ev: dict) -> dict[str, dict]:
     p = ev.get("parameters")
     return {k: v for k, v in p.items() if isinstance(v, dict)} if isinstance(p, dict) else {}
@@ -189,6 +192,7 @@ def evento_unifi(ev: dict, eq_id: str) -> dict:
         porta = None
     cid = p.get("CLIENT", {}).get("id")
     campos = {"porta": porta, "cliente": _pn(p, "CLIENT") or (cid if isinstance(cid, str) and cid else None),
+              "mac": cid.lower() if isinstance(cid, str) and _MAC.fullmatch(cid) else None,
               "ip": _pn(p, "IP"), "duracao": _pn(p, "DURATION"),
               "dados_up": _pn(p, "DATA_UP"), "dados_down": _pn(p, "DATA_DOWN")}
     return {"mk_id": f"eq:{eq_id}", "origem": "unifi", "unifi_id": ev["id"],

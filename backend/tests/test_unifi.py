@@ -135,9 +135,14 @@ def test_evento_unifi_documento():
     assert d["mk_id"] == "eq:e1" and d["origem"] == "unifi" and d["unifi_id"] == "6b05e5819cbd5854b16ecf52"
     assert d["tipo"] == "cliente_desconectou" and d["severidade"] == "low"
     assert d["recebido_em"].tzinfo is timezone.utc and d["recebido_em"].year == 2026
-    assert d["campos"] == {"porta": 21, "cliente": "pc-teste 00:10", "ip": "192.0.2.29", "duracao": "2h 44m",
+    assert d["campos"] == {"porta": 21, "cliente": "pc-teste 00:10", "mac": "02:00:00:00:00:10", "ip": "192.0.2.29", "duracao": "2h 44m",
                            "dados_up": "687.03 MB", "dados_down": "3.56 GB"}
     assert d["mensagem"] == "pc-teste 00:10 desconectou da porta 21 · 2h 44m · ↓ 3.56 GB ↑ 687.03 MB"
+
+
+def test_evento_unifi_mac_so_quando_parece_mac():
+    assert evento_unifi(_ev("CLIENT_DISCONNECTED_WIRED", CLIENT={"id": "02:00:00:AA:00:10", "name": "x"}), "e1")["campos"]["mac"] == "02:00:00:aa:00:10"
+    assert evento_unifi(_ev("CLIENT_DISCONNECTED_WIRED", CLIENT={"id": "abc", "name": "x"}), "e1")["campos"]["mac"] is None
 
 
 def test_mensagens():

@@ -180,6 +180,76 @@ class GraficoLinha extends StatelessWidget {
   }
 }
 
+class ColunaDado {
+  const ColunaDado({required this.rotulo, required this.valor, required this.serie, required this.dica, this.destaque = false});
+  final String rotulo, dica;
+  final int valor, serie;
+  final bool destaque;
+}
+
+/// Colunas verticais: cor por série (índice em [legenda]), tooltip com [ColunaDado.dica] e borda `warning` no destaque.
+class GraficoColunas extends StatelessWidget {
+  const GraficoColunas({super.key, required this.dados, required this.legenda});
+  final List<ColunaDado> dados;
+  final List<String> legenda;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    if (dados.isEmpty) return const _Vazio();
+    final cores = [t.chart1, t.chart2, t.chart3, t.chart4, t.chart5, t.chart6];
+    Color cor(int i) => cores[i % cores.length];
+    final topo = dados.map((d) => d.valor).reduce((a, b) => a > b ? a : b);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        height: 180,
+        child: BarChart(BarChartData(
+          minY: 0,
+          maxY: topo <= 0 ? 1 : topo * 1.15,
+          gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.chartGrid, strokeWidth: 1)),
+          borderData: FlBorderData(show: false),
+          barTouchData: BarTouchData(
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (_) => t.bgInverse,
+              getTooltipItem: (g, gi, rod, ri) => BarTooltipItem(dados[gi].dica, TradeType.label.copyWith(color: t.fgInverse)),
+            ),
+          ),
+          titlesData: FlTitlesData(
+            topTitles: const AxisTitles(),
+            rightTitles: const AxisTitles(),
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 32, getTitlesWidget: (v, meta) {
+              if (v == meta.max || v != v.roundToDouble()) return const SizedBox.shrink();
+              return Text(v.toInt().toString(), style: TradeType.bodySm.copyWith(color: t.fgMuted));
+            })),
+            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, getTitlesWidget: (v, meta) {
+              final i = v.toInt();
+              if (i < 0 || i >= dados.length) return const SizedBox.shrink();
+              return Padding(
+                padding: EdgeInsets.only(top: t.space2),
+                child: Text(dados[i].rotulo, style: TradeType.bodySm.copyWith(color: dados[i].destaque ? t.warning : t.fgMuted)),
+              );
+            })),
+          ),
+          barGroups: [
+            for (var i = 0; i < dados.length; i++)
+              BarChartGroupData(x: i, barRods: [
+                BarChartRodData(
+                  toY: dados[i].valor.toDouble(),
+                  color: cor(dados[i].serie),
+                  width: 16,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(t.radiusSm)),
+                  borderSide: dados[i].destaque ? BorderSide(color: t.warning, width: 2) : BorderSide.none,
+                ),
+              ]),
+          ],
+        )),
+      ),
+      SizedBox(height: t.space3),
+      _Legenda([for (var i = 0; i < legenda.length; i++) (cor(i), legenda[i])]),
+    ]);
+  }
+}
+
 /// Rosca com legenda (valor e %) e alternância para tabela, para quem não distingue as cores.
 class GraficoPizza extends StatefulWidget {
   const GraficoPizza({super.key, required this.fatias, this.centro});
@@ -252,43 +322,78 @@ class _GraficoPizzaState extends State<GraficoPizza> {
   }
 }
 
-/// Linha de uso ao longo do tempo, com linha de limite e projeção tracejada de 30 dias.
+
+/// Linha de uso ao longo do tempo, com linha de limite e (só em 7d/30d) projeção tracejada (25% do período à frente).
+/// O eixo X tem ticks em intervalos fixos de tempo; o formato vem do [periodo]: 1h HH:mm, 24h HHh, 7d/30d dd/mm.
 class GraficoCapacidade extends StatelessWidget {
-  const GraficoCapacidade({super.key, required this.pontos, this.limite, this.tendenciaDia, this.unidade = ''});
+  const GraficoCapacidade({super.key, required this.pontos, this.limite, this.tendenciaDia, this.unidade = '', this.periodo = '30d'});
   final List<(DateTime, double)> pontos;
   final double? limite, tendenciaDia;
-  final String unidade;
+  final String unidade, periodo;
+
+  static const _maxRotulos = 7;
+
+  /// Passo base do tick, em minutos.
+  static int _passoBase(String periodo) => switch (periodo) {
+        '1h' => 15,
+        '24h' => 240,
+        _ => 1440,
+      };
+
+  /// Passo do eixo, em minutos, e horizonte da projeção (25% do período, em dias).
+  static int passoEixo(String periodo, double spanMin) {
+    final base = _passoBase(periodo);
+    if (periodo != '7d' && periodo != '30d') return base * (spanMin / base / _maxRotulos).ceil().clamp(1, 1 << 20);
+    for (final d in const [1, 2, 5, 7]) {
+      if (spanMin / 1440 / d <= 9) return d * 1440;
+    }
+    return 14 * 1440;
+  }
+
+  static double horizonteDias(String periodo) => periodo == '7d' ? 1.75 : 7.5;
 
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     if (pontos.isEmpty) return const _Vazio('Sem dados ainda');
-    final ini = pontos.first.$1;
-    double dias(DateTime d) => d.difference(ini).inMinutes / 1440;
-    final spots = [for (final p in pontos) FlSpot(dias(p.$1), p.$2)];
+    final base = _passoBase(periodo);
+    // origem alinhada ao passo, no relógio local (x = minutos desde a origem)
+    final ini = pontos.first.$1.toLocal();
+    final meia = DateTime(ini.year, ini.month, ini.day);
+    final origem = meia.add(Duration(minutes: base >= 1440 ? 0 : (ini.difference(meia).inMinutes ~/ base) * base));
+    double minutos(DateTime d) => d.toLocal().difference(origem).inSeconds / 60;
+    final spots = [for (final p in pontos) FlSpot(minutos(p.$1), p.$2)];
     final ultimo = spots.last;
-    final proj = tendenciaDia == null ? null : [ultimo, FlSpot(ultimo.x + 30, ultimo.y + tendenciaDia! * 30)];
-    String data(double x) {
-      final d = ini.add(Duration(minutes: (x * 1440).round())).toLocal();
-      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    final comProjecao = tendenciaDia != null && (periodo == '7d' || periodo == '30d');
+    final proj = comProjecao ? [ultimo, FlSpot(ultimo.x + horizonteDias(periodo) * 1440, ultimo.y + tendenciaDia! * horizonteDias(periodo))] : null;
+    String two(int n) => n.toString().padLeft(2, '0');
+    String rotulo(double x, {bool completo = false}) {
+      final d = origem.add(Duration(minutes: x.round()));
+      if (periodo == '1h' || (periodo == '24h' && completo)) return '${two(d.hour)}:${two(d.minute)}';
+      if (periodo == '24h') return '${two(d.hour)}h';
+      return '${two(d.day)}/${two(d.month)}';
     }
 
-    final xMax = proj?.last.x ?? ultimo.x;
+    final minX = spots.first.x;
+    var maxX = proj?.last.x ?? ultimo.x;
+    if (maxX <= minX) maxX = minX + base;
+    // alarga o passo (em múltiplos do base) até caber no máximo de rótulos
+    final passo = passoEixo(periodo, maxX - minX);
     final topo = [...spots.map((s) => s.y), ?proj?.last.y, ?limite].reduce((a, b) => a > b ? a : b);
     return SizedBox(
       height: 180,
       child: LineChart(LineChartData(
         minY: 0,
         maxY: topo <= 0 ? 1 : topo * 1.1,
-        minX: 0,
-        maxX: xMax <= 0 ? 1 : xMax,
+        minX: minX,
+        maxX: maxX,
         gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.chartGrid, strokeWidth: 1)),
         borderData: FlBorderData(show: false),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => t.bgInverse,
             getTooltipItems: (ss) => [
-              for (final s in ss) LineTooltipItem('${data(s.x)}: ${s.y.toStringAsFixed(1)} $unidade', TradeType.label.copyWith(color: t.fgInverse)),
+              for (final s in ss) LineTooltipItem('${rotulo(s.x, completo: true)}: ${s.y.toStringAsFixed(1)} $unidade', TradeType.label.copyWith(color: t.fgInverse)),
             ],
           ),
         ),
@@ -302,9 +407,10 @@ class GraficoCapacidade extends StatelessWidget {
             if (v == meta.max) return const SizedBox.shrink();
             return Text(v.toStringAsFixed(0), style: TradeType.bodySm.copyWith(color: t.fgMuted));
           })),
-          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, getTitlesWidget: (v, meta) {
-            if (v == meta.max || (v == meta.min && v != 0)) return const SizedBox.shrink();
-            return Padding(padding: EdgeInsets.only(top: t.space2), child: Text(data(v), style: TradeType.bodySm.copyWith(color: t.fgMuted)));
+          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, interval: passo.toDouble(), getTitlesWidget: (v, meta) {
+            // só nos múltiplos do passo (o fl_chart também chama no mínimo e no máximo do eixo)
+            if ((v / passo - (v / passo).roundToDouble()).abs() > 1e-6) return const SizedBox.shrink();
+            return Padding(padding: EdgeInsets.only(top: t.space2), child: Text(rotulo(v), style: TradeType.bodySm.copyWith(color: t.fgMuted)));
           })),
         ),
         lineBarsData: [

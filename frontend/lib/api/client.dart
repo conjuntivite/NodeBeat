@@ -427,11 +427,13 @@ class TotaisSwitches {
 class PortaTop {
   PortaTop.fromJson(Map<String, dynamic> j)
       : switchNome = (j['switch_nome'] ?? '') as String,
+        switchId = j['switch_id']?.toString(),
         porta = _i(j['porta']),
         eventos = _i(j['eventos']) ?? 0,
         projecaoMes = _d(j['projecao_mes']),
         instavel = j['instavel'] == true;
   final String switchNome;
+  final String? switchId;
   final int? porta;
   final int eventos;
   final double? projecaoMes;
@@ -442,9 +444,13 @@ class ClienteTop {
   ClienteTop.fromJson(Map<String, dynamic> j)
       : cliente = (j['cliente'] ?? '') as String,
         switchNome = (j['switch_nome'] ?? '') as String,
-        quedas = _i(j['quedas']) ?? 0;
+        quedas = _i(j['quedas']) ?? 0,
+        ip = j['ip'] as String?,
+        mac = j['mac'] as String?,
+        porta = j['porta']?.toString();
   final String cliente, switchNome;
   final int quedas;
+  final String? ip, mac, porta;
 }
 
 class AtualSwitch {

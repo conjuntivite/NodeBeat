@@ -132,4 +132,60 @@ void main() {
     expect(find.text('Sem dados ainda'), findsOneWidget);
     expect(find.byType(LineChart), findsNothing);
   });
+
+  List<String> rotulosEixo(WidgetTester t, RegExp re) =>
+      [for (final w in t.widgetList<Text>(find.byType(Text))) if (re.hasMatch(w.data ?? '')) w.data!];
+
+  List<(DateTime, double)> serieEm(Duration passo, int n) => [for (var i = 0; i < n; i++) (DateTime.now().toUtc().subtract(passo * (n - 1 - i)), 10.0 + i)];
+
+  testWidgets('GraficoCapacidade 24h: rótulos em horas sem repetir e sem tracejado', (t) async {
+    await _mostra(t, GraficoCapacidade(pontos: serieEm(const Duration(minutes: 30), 48), tendenciaDia: 2, periodo: '24h'), Brightness.light);
+    final r = rotulosEixo(t, RegExp(r'^\d{2}h$'));
+    expect(r.length, greaterThan(2));
+    expect(r.toSet().length, r.length);
+    expect(t.widget<LineChart>(find.byType(LineChart)).data.lineBarsData.length, 1);
+  });
+
+  testWidgets('GraficoCapacidade 1h: rótulos HH:mm distintos', (t) async {
+    await _mostra(t, GraficoCapacidade(pontos: serieEm(const Duration(minutes: 5), 12), periodo: '1h'), Brightness.light);
+    final r = rotulosEixo(t, RegExp(r'^\d{2}:\d{2}$'));
+    expect(r.length, greaterThan(2));
+    expect(r.toSet().length, r.length);
+  });
+
+  for (final (p, dias, passoDias) in [('7d', 7, 1), ('30d', 30, 5)]) {
+    testWidgets('GraficoCapacidade $p: dias dd/mm distintos no histórico, passo de $passoDias dia(s), com tracejado', (t) async {
+      final pts = serieEm(const Duration(hours: 12), dias * 2);
+      await _mostra(t, GraficoCapacidade(pontos: pts, tendenciaDia: 1, periodo: p), Brightness.light);
+      final r = rotulosEixo(t, RegExp(r'^\d{2}/\d{2}$'));
+      expect(r.toSet().length, r.length);
+      String dm(DateTime d) => '${d.toLocal().day.toString().padLeft(2, '0')}/${d.toLocal().month.toString().padLeft(2, '0')}';
+      final noHistorico = {for (final x in pts) dm(x.$1)};
+      expect(r.where(noHistorico.contains).length, greaterThanOrEqualTo(p == '7d' ? 6 : 5));
+      expect(GraficoCapacidade.passoEixo(p, (dias + GraficoCapacidade.horizonteDias(p)) * 1440), passoDias * 1440);
+      expect(t.widget<LineChart>(find.byType(LineChart)).data.lineBarsData.length, 2);
+    });
+  }
+
+  testWidgets('GraficoColunas: uma coluna por dado, legenda dos switches e destaque instável', (t) async {
+    await _mostra(
+      t,
+      const GraficoColunas(
+        legenda: ['SW A', 'SW B'],
+        dados: [
+          ColunaDado(rotulo: 'P5', valor: 9, serie: 0, dica: 'SW A · Porta 5: 9 eventos · ~270/mês', destaque: true),
+          ColunaDado(rotulo: 'P7', valor: 2, serie: 1, dica: 'SW B · Porta 7: 2 eventos · ~60/mês'),
+        ],
+      ),
+      Brightness.dark,
+    );
+    final d = t.widget<BarChart>(find.byType(BarChart)).data;
+    expect(d.barGroups.length, 2);
+    expect(d.barGroups[0].barRods.single.toY, 9);
+    expect(d.barGroups[0].barRods.single.borderSide.width, greaterThan(0));
+    expect(d.barGroups[1].barRods.single.borderSide.width, 0);
+    expect(find.text('SW A'), findsOneWidget);
+    expect(find.text('SW B'), findsOneWidget);
+    expect(find.text('P5'), findsOneWidget);
+  });
 }

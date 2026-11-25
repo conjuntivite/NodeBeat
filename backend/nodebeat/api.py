@@ -491,7 +491,7 @@ def create_app(db, r, settings) -> FastAPI:
         _painel_cache[chave] = (t, res)
         return res
 
-    async def _capacidade(sws: list[dict], agora: datetime) -> list[dict]:
+    async def _capacidade(sws: list[dict], agora: datetime, desde: datetime) -> list[dict]:
         retratos = await store.listar_retratos(db, [e["id"] for e in sws], agora - timedelta(days=30))
         out = []
         for e in sws:
@@ -509,7 +509,14 @@ def create_app(db, r, settings) -> FastAPI:
                          "portas_total": len(portas), "portas_em_uso": sum(bool(p.get("up")) for p in portas.values()),
                          "poe_por_porta": poe}
             out.append({"switch_id": e["id"], "switch_nome": e["nome"], "atual": atual,
-                        "historico": switch_painel.reduzir(rets), "projecoes": switch_painel.projecoes(rets, agora)})
+                        "historico": switch_painel.reduzir([x for x in rets if x["em"] >= desde]), "projecoes": switch_painel.projecoes(rets, agora)})
+        return out
+
+    async def _estados(sws: list[dict]) -> dict:
+        out = {}
+        for e in sws:
+            if bruto := await r.get(f"unifi:eq:{e['id']}"):
+                out[f"eq:{e['id']}"] = json.loads(bruto).get("portas") or {}
         return out
 
     @mks.get("/eventos/switches")
@@ -530,8 +537,8 @@ def create_app(db, r, settings) -> FastAPI:
         ptop = todas[:10]
         return {"contagens": contagens, "totais": switch_painel.totais(atual, ant, horas, todas),
                 "serie": switch_painel.serie(atual, desde, periodo), "portas_top": ptop,
-                "clientes_top": switch_painel.clientes_top(atual, nomes_eq),
-                "capacidade": await _capacidade(sws, agora), "eventos": [
+                "clientes_top": switch_painel.clientes_top(atual, nomes_eq, estados=await _estados(sws)),
+                "capacidade": await _capacidade(sws, agora, desde), "eventos": [
             {"quando": e["recebido_em"].isoformat(), "switch_id": e["mk_id"][3:],
              "switch_nome": nomes.get(e["mk_id"][3:], "Switch removido"), "porta": (e.get("campos") or {}).get("porta"),
              "tipo": e["tipo"], "grupo": unifi.GRUPOS.get(e["tipo"], "alertas"), "mensagem": e["mensagem"],

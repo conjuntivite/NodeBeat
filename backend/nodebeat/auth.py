@@ -71,6 +71,10 @@ async def encerrar_sessoes(r, usuario: str, manter: str | None = None) -> None:
 async def current_user(request: Request) -> dict:
     token = request.cookies.get(COOKIE)
     usuario = await request.app.state.r.get(f"sess:{token}") if token else None
+    r = request.app.state.r
+    # sessão antiga (fora de sess_u) não pode ser encerrada em massa: força novo login
+    if usuario and not await r.sismember(f"sess_u:{usuario}", token):
+        usuario = None
     u = await store.get_user(request.app.state.db, usuario) if usuario else None
     if not u:
         raise HTTPException(401, "Não autenticado")

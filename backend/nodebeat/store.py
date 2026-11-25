@@ -67,7 +67,7 @@ async def insert_user(db, usuario: str, senha_hash: str, admin: bool = False) ->
 async def listar_users(db) -> list[dict]:
     """Sem hash; usuário sem o campo admin conta como admin."""
     docs = await db.users.find({}).sort("usuario", 1).to_list(None)
-    return [{"usuario": u["usuario"], "admin": u.get("admin", True), "criado_em": u.get("criado_em")}
+    return [{"usuario": u["usuario"], "admin": u.get("admin", True), "criado_em": _utc(u).get("criado_em")}
             for u in docs]
 
 

@@ -6,8 +6,8 @@ import ipaddress
 import json
 import re
 import time
-from typing import Literal
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -151,7 +151,9 @@ def create_app(db, r, settings) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def _invalida(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Só loc + texto fixo: nunca "input"/"ctx" (eco do corpo vazaria a senha).
-        detail = [{"loc": list(e["loc"]), "msg": _MSG_422.get(str(e["loc"][-1]), "Valor inválido")} for e in exc.errors()]
+        detail = [{"loc": list(e["loc"]),
+                   "msg": _MSG_422["nova"] if e["type"] == "string_too_short" and e["loc"][-1] == "senha"
+                   else _MSG_422.get(str(e["loc"][-1]), "Valor inválido")} for e in exc.errors()]
         return JSONResponse({"detail": detail}, status_code=422)
 
     @app.post("/api/auth/login", status_code=204)
@@ -190,6 +192,8 @@ def create_app(db, r, settings) -> FastAPI:
     @app.put("/api/auth/senha", status_code=204)
     async def trocar_senha(body: SenhaIn, user: dict = Depends(auth.current_user)) -> Response:
         u = await store.get_user(db, user["usuario"])
+        if not u:
+            raise HTTPException(401, "Não autenticado")
         if not await asyncio.to_thread(auth.verify_password, u["senha_hash"], body.atual):
             raise HTTPException(400, "Senha atual incorreta")
         h = await asyncio.to_thread(auth.hash_password, body.nova)
@@ -232,7 +236,7 @@ def create_app(db, r, settings) -> FastAPI:
         if campos:
             await store.atualizar_user(db, u, campos)
         if body.senha is not None:
-            await auth.encerrar_sessoes(r, u)
+            await auth.encerrar_sessoes(r, u, manter=me["token"] if u == me["usuario"] else None)
         return Response(status_code=204)
 
     @app.delete("/api/usuarios/{u}", status_code=204)

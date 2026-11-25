@@ -161,3 +161,50 @@ async def test_logout_limpa_indice_de_sessoes(client, r):
     await entrar(client)
     await client.post("/api/auth/logout")
     assert await r.smembers("sess_u:ana") == set()
+
+
+async def test_sessao_antiga_fora_do_indice_da_401(client, r):
+    await r.set("sess:legado", "ana")
+    client.cookies.set(auth.COOKIE, "legado")
+    assert (await client.get("/api/auth/me")).status_code == 401
+
+
+async def test_criado_em_sai_com_fuso(client):
+    await entrar(client)
+    await client.post("/api/usuarios", json={"usuario": "bia", "senha": SENHA})
+    criado = (await client.get("/api/usuarios")).json()[1]["criado_em"]
+    assert criado.endswith("Z") or criado.endswith("+00:00")
+
+
+async def test_senha_curta_ao_criar_ou_editar_diz_minimo(client):
+    await entrar(client)
+    r1 = await client.post("/api/usuarios", json={"usuario": "bia", "senha": "curta"})
+    r2 = await client.put("/api/usuarios/ana", json={"senha": "curta"})
+    for resp in (r1, r2):
+        assert resp.status_code == 422
+        assert resp.json()["detail"][0]["msg"] == "Mínimo de 12 caracteres"
+
+
+async def test_admin_trocando_propria_senha_mantem_sessao(client):
+    await entrar(client)
+    assert (await client.put("/api/usuarios/ana", json={"senha": NOVA})).status_code == 204
+    assert (await client.get("/api/auth/me")).status_code == 200
+
+
+async def test_troca_senha_com_usuario_removido_da_401(client, db):
+    await entrar(client)
+    real = store.get_user
+    chamadas = 0
+
+    async def some(db_, u):
+        nonlocal chamadas
+        chamadas += 1
+        return await real(db_, u) if chamadas == 1 else None  # 1ª: current_user; 2ª: o handler
+
+    import nodebeat.store as s
+    s.get_user = some
+    try:
+        resp = await client.put("/api/auth/senha", json={"atual": SENHA, "nova": NOVA})
+    finally:
+        s.get_user = real
+    assert resp.status_code == 401

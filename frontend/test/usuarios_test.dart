@@ -175,4 +175,21 @@ void main() {
     expect(find.text('maria'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('Minha conta na barra larga não fecha a página de baixo', (t) async {
+    t.view.physicalSize = const Size(1000, 1600);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final api = ApiClient(client: MockClient((req) async => _json([])));
+    apiSessao = api;
+    usuarioAtual.value = Eu.fromJson({'usuario': 'admin', 'admin': true, 'tema': null});
+    final nav = GlobalKey<NavigatorState>();
+    await t.pumpWidget(MaterialApp(navigatorKey: nav, theme: tradeTheme(Brightness.light), home: const SizedBox()));
+    nav.currentState!.push(MaterialPageRoute(builder: (_) => UsuariosScreen(api: api)));
+    await t.pumpAndSettle();
+    await t.tap(find.byTooltip('Minha conta'));
+    await t.pumpAndSettle();
+    expect(find.byType(UsuariosScreen), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Senha atual'), findsOneWidget);
+  });
 }

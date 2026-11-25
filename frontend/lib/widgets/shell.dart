@@ -121,7 +121,7 @@ class AppShell extends StatelessWidget {
           mainAxisAlignment: comRotulo ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...conta(c, true), ...fim]],
         ),
-        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...conta(c, true), ...fim],
+        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...conta(c, false), ...fim],
       ],
     ));
     final lateral = Container(

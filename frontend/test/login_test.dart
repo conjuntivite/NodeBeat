@@ -10,6 +10,7 @@ import 'package:nodebeat/screens/dashboard.dart';
 
 Future<void> _enter(WidgetTester t, int status) async {
   final mock = MockClient((req) async {
+    if (req.url.path == '/api/auth/me') return http.Response('{"detail":"Não autenticado"}', 401);
     expect(req.method, 'POST');
     expect(req.url.path, '/api/auth/login');
     expect(jsonDecode(req.body), {'usuario': 'admin', 'senha': 'senha'});

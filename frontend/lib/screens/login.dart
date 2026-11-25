@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
+import '../sessao.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 
@@ -33,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       await widget.api.login(_user.text.trim(), _pass.text);
+      await carregarSessao(widget.api);
       if (mounted) Navigator.of(context).pushReplacementNamed('/painel');
     } on ApiError catch (e) {
       if (mounted) setState(() => _error = e.message);

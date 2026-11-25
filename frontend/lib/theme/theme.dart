@@ -1,9 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../sessao.dart';
 import 'tokens.g.dart';
 
 /// Tema escolhido pelo usuário; o app raiz escuta e a barra/login alternam.
-final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+final themeMode = ValueNotifier<ThemeMode>(ThemeMode.light);
 
 TradeTokens tokensOf(BuildContext c) =>
     Theme.of(c).brightness == Brightness.dark ? TradeTokens.dark : TradeTokens.light;
@@ -203,7 +204,11 @@ class ThemeToggle extends StatelessWidget {
     return IconButton(
       tooltip: dark ? 'Tema claro' : 'Tema escuro',
       icon: Icon(dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, size: 20),
-      onPressed: () => themeMode.value = dark ? ThemeMode.light : ThemeMode.dark,
+      onPressed: () {
+        themeMode.value = dark ? ThemeMode.light : ThemeMode.dark;
+        // Grava a escolha no servidor sem esperar; falha não atrapalha.
+        apiSessao?.salvarTema(dark ? 'claro' : 'escuro').catchError((_) {});
+      },
     );
   }
 }

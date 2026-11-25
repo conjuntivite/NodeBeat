@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
 import '../audio/monitor_sound.dart';
+import '../sessao.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
@@ -95,6 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
+    carregarSessao(widget.api); // quem recarrega a página já logado
     _beat.addListener(_onBeat);
     _tabs.index = painelAba.value;
     painelAba.addListener(_irParaAba);
@@ -226,6 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     try {
       await widget.api.logout();
     } catch (_) {}
+    usuarioAtual.value = null;
     if (mounted) {
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
     }

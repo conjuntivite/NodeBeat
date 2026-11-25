@@ -11,6 +11,11 @@ const rotuloCategoria = {
   'autenticacao': 'Autenticação',
   'vpn': 'VPN',
   'erros': 'Erros',
+  // grupos de evento dos switches
+  'clientes': 'Clientes com fio',
+  'alertas': 'Alertas',
+  'poe': 'PoE religado',
+  'mudancas': 'Mudanças',
 };
 
 /// Cor de cada categoria; o gráfico sempre traz o rótulo ao lado (cor nunca é a única pista).
@@ -18,7 +23,9 @@ const rotuloCategoria = {
 Color corCategoria(TradeTokens t, String cat) => switch (cat) {
       'autenticacao' => t.chart1,
       'acesso' => t.chart2,
-      'vpn' => t.chart3,
+      'vpn' || 'poe' => t.chart3,
+      'alertas' => t.chart2,
+      'clientes' => t.chart1,
       _ => t.chart4,
     };
 

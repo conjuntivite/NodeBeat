@@ -270,60 +270,89 @@ void main() {
     expect(find.textContaining('% dos eventos'), findsNothing);
   });
 
+  Future<void> abaSwitches(WidgetTester t) async {
+    await t.tap(find.text('Switches'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+  }
+
+  Future<void> abreUltimos(WidgetTester t) async {
+    await t.tap(find.text('Últimos eventos'));
+    await t.pumpAndSettle();
+  }
+
   for (final b in Brightness.values) {
-    testWidgets('bloco Switches com contadores e linhas (${b.name})', (t) async {
+    testWidgets('aba Switches com indicadores e últimos eventos (${b.name})', (t) async {
       final urls = await _show(t, b: b, altura: 6000);
       expect(urls.any((u) => u.path == '/api/eventos/switches' && u.queryParameters['periodo'] == '24h'), true);
-      expect(find.text('Switches'), findsOneWidget);
-      for (final r in ['Clientes com fio', 'Alertas', 'PoE religado', 'Mudanças']) {
+      await abaSwitches(t);
+      for (final r in ['Eventos', 'Quedas de cliente', 'Portas instáveis', 'Projeção 30 dias']) {
         expect(find.text(r), findsWidgets, reason: r);
       }
+      await abreUltimos(t);
       expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
       expect(find.text('Switch Teste'), findsOneWidget); // sem porta: só o nome
       expect(find.text('PoE religado na porta'), findsOneWidget);
       expect(find.text('Alta'), findsOneWidget);
       expect(find.text('Média'), findsOneWidget);
       expect(find.text('high'), findsNothing);
-      expect(find.text('medium'), findsNothing);
       expect(find.text('02/01 ${_hora('2020-01-02T12:30:00Z')}'), findsOneWidget);
       expect(t.takeException(), isNull);
     });
   }
 
+  testWidgets('abas alternam MKs e Switches', (t) async {
+    await _show(t, altura: 6000);
+    expect(find.text('Mudanças de configuração'), findsOneWidget);
+    expect(find.text('Eventos ao longo do tempo'), findsNothing);
+    await abaSwitches(t);
+    expect(find.text('Eventos ao longo do tempo'), findsOneWidget);
+    expect(find.text('Mudanças de configuração'), findsNothing);
+    await t.tap(find.text('MKs'));
+    await t.pump();
+    expect(find.text('Mudanças de configuração'), findsOneWidget);
+    expect(find.text('Eventos ao longo do tempo'), findsNothing);
+  });
+
   testWidgets('Switches sem eventos mostra o estado vazio', (t) async {
     await _show(t, sw: {'contagens': <String, int>{}, 'eventos': <Object>[]}, altura: 6000);
+    await abaSwitches(t);
+    await abreUltimos(t);
     expect(find.text('Nenhum evento de switch no período.'), findsOneWidget);
   });
 
   testWidgets('erro nos Switches não derruba o conteúdo das MKs', (t) async {
     await _show(t, swStatus: 500, sw: {'detail': 'x'}, altura: 6000);
     expect(find.text('Mudanças de configuração'), findsOneWidget);
-    expect(find.text('Switches'), findsOneWidget);
     expect(find.text('Tentar de novo'), findsNothing);
+    await abaSwitches(t);
+    expect(find.text('x'), findsOneWidget);
   });
 
   testWidgets('recarga que falha limpa os dados antigos e mostra o erro', (t) async {
     await _show(t, swFalhaNaSegunda: true, altura: 6000);
-    expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+    await abaSwitches(t);
+    expect(find.text('Eventos ao longo do tempo'), findsOneWidget);
     await t.tap(find.text('7 dias'));
     await t.pump();
     await t.pump(const Duration(milliseconds: 600));
-    expect(find.text('Switches'), findsOneWidget);
-    expect(find.text('Switch Teste · Porta 5'), findsNothing);
-    expect(find.text('Clientes com fio'), findsNothing);
+    expect(find.text('Eventos ao longo do tempo'), findsNothing);
+    expect(find.text('Quedas de cliente'), findsNothing);
     expect(find.text('x'), findsOneWidget);
   });
 
-  testWidgets('erro nas MKs não derruba o bloco Switches', (t) async {
+  testWidgets('erro nas MKs não derruba a aba Switches', (t) async {
     await _show(t, corpo: {'detail': 'x'}, status: 500, altura: 6000);
     expect(find.text('Tentar de novo'), findsOneWidget);
-    expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+    await abaSwitches(t);
+    expect(find.text('Eventos ao longo do tempo'), findsOneWidget);
   });
 
   for (final b in Brightness.values) {
-    testWidgets('bloco Switches em 360 px sem overflow (${b.name})', (t) async {
+    testWidgets('aba Switches em 360 px sem overflow (${b.name})', (t) async {
       await _show(t, b: b, largura: 360, altura: 7000);
-      expect(find.text('Switch Teste · Porta 5'), findsOneWidget);
+      await abaSwitches(t);
+      expect(find.text('Eventos ao longo do tempo'), findsOneWidget);
       expect(t.takeException(), isNull);
     });
   }

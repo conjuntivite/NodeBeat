@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../api/client.dart';
+import '../screens/usuarios.dart';
+import '../sessao.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 
@@ -15,10 +18,11 @@ const itensNav = <ItemNav>[
   (chave: 'eventos', rotulo: 'Eventos', icone: Icons.insights_outlined),
   (chave: 'faixas', rotulo: 'Faixas de IP', icone: Icons.account_tree_outlined),
   (chave: 'preparar', rotulo: 'Preparar MK', icone: Icons.terminal),
+  (chave: 'usuarios', rotulo: 'Usuários', icone: Icons.group_outlined), // só admin
 ];
 
 const _abas = {'mk': 0, 'switch': 1, 'firewall': 2};
-const _rotas = {'eventos': '/eventos', 'faixas': '/faixas', 'preparar': '/preparar-mk'};
+const _rotas = {'eventos': '/eventos', 'faixas': '/faixas', 'preparar': '/preparar-mk', 'usuarios': '/usuarios'};
 
 /// Navega pela barra lateral. O painel fica sempre na base da pilha (ele toca o som);
 /// aberto por link direto, sem painel por baixo, a tela pedida substitui a atual.
@@ -82,10 +86,21 @@ class AppShell extends StatelessWidget {
     final estreita = MediaQuery.sizeOf(context).width < 600; // celular: navegação vira menu
     final margem = margemLateral(context);
     void navegar(BuildContext c, String chave) => (aoNavegar ?? (k) => irPara(context, k))(chave);
-    Widget itens(BuildContext c, {required bool comRotulo}) => Column(
+    final conta = [
+      if (apiSessao != null)
+        IconButton(
+          tooltip: 'Minha conta',
+          icon: const Icon(Icons.person_outline, size: 20),
+          onPressed: () => abrirMinhaConta(context, apiSessao!),
+        ),
+    ];
+    Widget itens(BuildContext c, {required bool comRotulo}) => ValueListenableBuilder<Eu?>(
+      valueListenable: usuarioAtual,
+      builder: (_, eu, _) => Column(
       crossAxisAlignment: comRotulo ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
       children: [
-        for (final i in itensNav) ...[
+        for (final i in itensNav)
+          if (i.chave != 'usuarios' || eu?.admin == true) ...[
           _ItemLateral(
             item: i,
             ativo: i.chave == ativo,
@@ -101,11 +116,11 @@ class AppShell extends StatelessWidget {
         const Spacer(),
         Row(
           mainAxisAlignment: comRotulo ? MainAxisAlignment.start : MainAxisAlignment.center,
-          children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...fim]],
+          children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...conta, ...fim]],
         ),
-        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...fim],
+        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...conta, ...fim],
       ],
-    );
+    ));
     final lateral = Container(
       padding: EdgeInsets.symmetric(vertical: t.space3, horizontal: t.space2),
       decoration: BoxDecoration(

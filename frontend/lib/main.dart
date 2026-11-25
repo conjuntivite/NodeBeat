@@ -9,6 +9,7 @@ import 'screens/mk_form.dart';
 import 'screens/painel_eventos.dart';
 import 'screens/preparar_mk.dart';
 import 'screens/switch_detail.dart';
+import 'screens/usuarios.dart';
 import 'theme/theme.dart';
 
 void main() => runApp(NodeBeatApp(api: ApiClient()));
@@ -23,6 +24,7 @@ class NodeBeatApp extends StatelessWidget {
       ['painel'] => DashboardScreen(api: api),
       ['faixas'] => FaixasScreen(api: api),
       ['eventos'] => PainelEventosScreen(api: api),
+      ['usuarios'] => UsuariosScreen(api: api),
       ['preparar-mk'] => PrepararMkScreen(api: api),
       ['switch', final id] => SwitchDetailScreen(api, id),
       ['mk', 'novo'] => MkFormScreen(api: api),

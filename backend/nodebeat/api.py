@@ -9,16 +9,19 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from nodebeat import auth, cli, crypto, eventos, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
+from nodebeat import ataques, auth, cli, crypto, eventos, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
+LIMITE_LEITURA = 5000  # eventos lidos por chamada do feed de ataques
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
 
@@ -490,6 +493,22 @@ def create_app(db, r, settings) -> FastAPI:
         res = painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
         _painel_cache[chave] = (t, res)
         return res
+
+    @mks.get("/eventos/ataques")
+    async def ataques_ao_vivo(desde: str | None = None) -> dict:
+        if desde is None:
+            u = await store.ultimo_evento_id(db)  # 1ª chamada: só fixa o cursor
+            return {"cursor": str(u) if u else "", "ataques": [], "descartados": 0}
+        try:
+            cur = ObjectId(desde) if desde else None
+        except InvalidId:
+            raise HTTPException(400, "cursor inválido")
+        evs = await store.listar_eventos_apos(db, cur, LIMITE_LEITURA)
+        # cursor = último lido, mesmo que não vire ataque
+        novo = str(evs[-1]["_id"]) if evs else desde
+        nomes = {m["id"]: m["nome"] for m in await store.list_mks(db)}
+        grupos, desc = ataques.agrupar(evs, nomes, painel.Ctx(settings.sede_redes, settings.ips_publicos_sede))
+        return {"cursor": novo, "ataques": grupos, "descartados": desc}
 
     async def _capacidade(sws: list[dict], agora: datetime, desde: datetime) -> list[dict]:
         retratos = await store.listar_retratos(db, [e["id"] for e in sws], agora - timedelta(days=30))

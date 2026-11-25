@@ -20,9 +20,8 @@ String? textoVariacao(int? atual, int? anterior) {
 
 /// Aba Switches da tela Eventos: indicadores, gráficos, capacidade por switch e últimos eventos.
 class PainelSwitches extends StatelessWidget {
-  const PainelSwitches({super.key, required this.dados, required this.periodo});
+  const PainelSwitches({super.key, required this.dados});
   final EventosSwitches dados;
-  final String periodo;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +68,7 @@ class PainelSwitches extends StatelessWidget {
       Indicador(
         rotulo: 'Portas instáveis',
         valor: '$inst',
+        corValor: inst > 0 ? t.warning : null,
         dica: inst > 0 ? 'precisam de atenção' : 'nenhuma',
         corDica: inst > 0 ? t.warning : t.fgMuted,
       ),

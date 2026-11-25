@@ -407,10 +407,10 @@ class Migalhas extends StatelessWidget {
 
 /// Indicador (Stat): rótulo 13, valor 36/200, dica 12.
 class Indicador extends StatelessWidget {
-  const Indicador({super.key, required this.rotulo, required this.valor, this.dica, this.corDica});
+  const Indicador({super.key, required this.rotulo, required this.valor, this.dica, this.corDica, this.corValor});
   final String rotulo, valor;
   final String? dica;
-  final Color? corDica;
+  final Color? corDica, corValor;
 
   @override
   Widget build(BuildContext context) {
@@ -428,7 +428,7 @@ class Indicador extends StatelessWidget {
         children: [
           Text(rotulo, style: TradeType.label.copyWith(color: t.fgSecondary)),
           SizedBox(height: t.space1),
-          Text(valor, style: dataStyle(context, TradeType.dataXl)),
+          Text(valor, style: corValor == null ? dataStyle(context, TradeType.dataXl) : dataStyle(context, TradeType.dataXl).copyWith(color: corValor)),
           if (dica != null) Text(dica!, style: TradeType.bodySm.copyWith(color: corDica ?? t.fgSecondary)),
         ],
       ),

@@ -314,6 +314,24 @@ void main() {
     expect(find.text('Eventos ao longo do tempo'), findsNothing);
   });
 
+  testWidgets('1h só na aba Switches: pede periodo=1h e volta a 24h nas MKs', (t) async {
+    final urls = await _show(t, sw: {'contagens': <String, int>{}, 'eventos': <Object>[]}, altura: 6000);
+    expect(find.text('1 h'), findsNothing);
+    await abaSwitches(t);
+    await t.tap(find.text('1 h'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(urls.any((u) => u.path == '/api/eventos/switches' && u.queryParameters['periodo'] == '1h'), true);
+    expect(find.text('—'), findsOneWidget);
+    urls.clear();
+    await t.tap(find.text('MKs'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.text('1 h'), findsNothing);
+    expect(urls.any((u) => u.path == '/api/eventos/painel' && u.queryParameters['periodo'] == '24h'), true);
+    expect(urls.any((u) => u.queryParameters['periodo'] == '1h'), false);
+  });
+
   testWidgets('Switches sem eventos mostra o estado vazio', (t) async {
     await _show(t, sw: {'contagens': <String, int>{}, 'eventos': <Object>[]}, altura: 6000);
     await abaSwitches(t);

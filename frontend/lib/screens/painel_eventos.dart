@@ -12,6 +12,8 @@ import '../widgets/painel_textos.dart';
 import 'painel_switches.dart';
 
 const _periodos = [('24 h', '24h'), ('7 dias', '7d'), ('30 dias', '30d')];
+// '1h' só existe para os switches: o painel das MKs rejeita (422).
+const _periodo1h = ('1 h', '1h');
 const _rotuloPeriodo = {'24h': 'últimas 24 h', '7d': 'últimos 7 dias', '30d': 'últimos 30 dias'};
 const _categorias = ['acesso', 'autenticacao', 'vpn', 'erros'];
 
@@ -120,24 +122,34 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
     );
   }
 
-  Widget _abas() => AbasPilula(itens: const ['MKs', 'Switches'], valor: _aba, aoMudar: (i) => setState(() => _aba = i));
+  Widget _abas() => AbasPilula(itens: const ['MKs', 'Switches'], valor: _aba, aoMudar: (i) {
+        if (i == _aba) return;
+        setState(() => _aba = i);
+        if (i == 0 && _periodo == '1h') {
+          _periodo = '24h';
+          _carregar();
+        }
+      });
 
   // Carga dos switches é independente: uma falha aqui não esconde a aba das MKs.
   Widget _abaSwitches(TradeTokens t) {
     final d = _sw;
-    if (d != null) return PainelSwitches(dados: d, periodo: _periodo);
+    if (d != null) return PainelSwitches(dados: d);
     if (_swErro != null) return TradeCard(child: Text(_swErro!, style: TradeType.bodyMd.copyWith(color: t.negative)));
     return const Center(child: CircularProgressIndicator());
   }
 
-  Widget _pilulasPeriodo(TradeTokens t) => AbasPilula(
-        itens: [for (final (rotulo, _) in _periodos) rotulo],
-        valor: _periodos.indexWhere((p) => p.$2 == _periodo),
-        aoMudar: (i) {
-          _periodo = _periodos[i].$2;
-          _carregar();
-        },
-      );
+  Widget _pilulasPeriodo(TradeTokens t) {
+    final ps = [if (_aba == 1) _periodo1h, ..._periodos];
+    return AbasPilula(
+      itens: [for (final (rotulo, _) in ps) rotulo],
+      valor: ps.indexWhere((p) => p.$2 == _periodo),
+      aoMudar: (i) {
+        _periodo = ps[i].$2;
+        _carregar();
+      },
+    );
+  }
 
   Widget _filtroMk(TradeTokens t) => Container(
         padding: EdgeInsets.symmetric(horizontal: t.space3),

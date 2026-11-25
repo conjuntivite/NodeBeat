@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/painel_switches.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/widgets/shell.dart' show Indicador;
 import 'package:nodebeat/widgets/graficos.dart';
 
 Map<String, dynamic> _cap(String nome, {bool poe = true, int dias = 10}) => {
@@ -37,7 +38,7 @@ Map<String, dynamic> _cap(String nome, {bool poe = true, int dias = 10}) => {
       },
     };
 
-EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10}) => EventosSwitches.fromJson({
+EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10, int anterior = 10, int instaveis = 1}) => EventosSwitches.fromJson({
       'contagens': {'clientes': 7, 'alertas': 3, 'poe': 2, 'mudancas': 1},
       'eventos': [
         {
@@ -50,10 +51,10 @@ EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10}) => 
       ],
       'totais': {
         'eventos': 14,
-        'eventos_anterior': 10,
+        'eventos_anterior': anterior,
         'quedas_cliente': 22,
         'quedas_cliente_anterior': 25,
-        'portas_instaveis': 1,
+        'portas_instaveis': instaveis,
         'projecao_30d': projecao,
       },
       'serie': [
@@ -70,13 +71,13 @@ EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10}) => 
       'capacidade': [_cap('SW Sede', poe: poe, dias: dias)],
     });
 
-Future<void> _show(WidgetTester t, EventosSwitches d, {String periodo = '24h', Brightness b = Brightness.light, double w = 1100}) async {
+Future<void> _show(WidgetTester t, EventosSwitches d, {Brightness b = Brightness.light, double w = 1100}) async {
   t.view.physicalSize = Size(w, 6000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   await t.pumpWidget(MaterialApp(
     theme: tradeTheme(b),
-    home: Scaffold(body: SingleChildScrollView(child: PainelSwitches(dados: d, periodo: periodo))),
+    home: Scaffold(body: SingleChildScrollView(child: PainelSwitches(dados: d))),
   ));
   await t.pump(const Duration(milliseconds: 600));
 }
@@ -93,16 +94,30 @@ void main() {
     expect(find.text('30'), findsOneWidget);
   });
 
-  testWidgets('sem base anterior (0) não mostra %', (t) async {
-    final j = _dados();
+  test('textoVariacao sem base não mostra %', () {
     expect(textoVariacao(5, 0), isNull);
     expect(textoVariacao(5, null), isNull);
     expect(textoVariacao(10, 10), '0% →');
-    expect(j.totais.eventos, 14);
+  });
+
+  testWidgets('período anterior 0 não mostra % nos eventos', (t) async {
+    await _show(t, _dados(anterior: 0));
+    expect(find.text('+40% ↗'), findsNothing);
+    expect(find.textContaining('↗'), findsNothing);
+    expect(find.text('−12% ↘'), findsOneWidget); // quedas seguem com base
+  });
+
+  testWidgets('valor de Portas instáveis em warning só quando > 0', (t) async {
+    Color? cor() => t.widget<Text>(find.descendant(of: find.ancestor(of: find.text('Portas instáveis'), matching: find.byType(Indicador)), matching: find.byType(Text)).at(1)).style?.color;
+    await _show(t, _dados());
+    final tk = tokensOf(t.element(find.byType(PainelSwitches)));
+    expect(cor(), tk.warning);
+    await _show(t, _dados(instaveis: 0));
+    expect(cor(), isNot(tk.warning));
   });
 
   testWidgets('1h mostra — na projeção', (t) async {
-    await _show(t, _dados(projecao: null), periodo: '1h');
+    await _show(t, _dados(projecao: null));
     expect(find.text('—'), findsOneWidget);
   });
 

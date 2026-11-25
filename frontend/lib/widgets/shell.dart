@@ -177,7 +177,8 @@ class AppShell extends StatelessWidget {
                         excludeFromSemantics: true, // o nome vem logo ao lado
                       ),
                       SizedBox(width: t.space3),
-                      Flexible(
+                      // Expanded (e não Flexible + Spacer): o espaço livre fica todo aqui e o `topo` encosta na margem direita.
+                      Expanded(
                         child: Text(
                           'NodeBeat',
                           overflow: TextOverflow.ellipsis,
@@ -189,7 +190,6 @@ class AppShell extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Spacer(),
                       ...topo,
                     ],
                   ),

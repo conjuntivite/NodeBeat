@@ -123,3 +123,33 @@ async def test_cursor_do_log(db, r):
     ch.clear()
     await run_unifi(db, r, CFG, T0, ler=falso(chamadas=ch))
     assert [c for p, c in ch if p.startswith(EP)][0]["timestampFrom"] == 5_000_000 - 60_000
+
+
+async def test_run_unifi_grava_retrato_uma_vez_por_5min(db, r):
+    eq = await com_switch(db)
+    await run_unifi(db, r, CFG, T0, ler=falso())
+    await run_unifi(db, r, CFG, T0 + timedelta(minutes=1), ler=falso())
+    docs = [d async for d in db.unifi_hist.find()]
+    assert len(docs) == 1 and docs[0]["eq_id"] == eq and docs[0]["portas_total"] == 1
+    assert 0 < await r.ttl(f"unifi:hist:{eq}") <= 300
+
+
+async def test_listar_retratos_sem_portas(db):
+    for i in (2, 1, 0):
+        await store.inserir_retrato(db, {"eq_id": "a", "em": T0 + timedelta(minutes=i), "clientes": i, "portas": {"1": {}}})
+    await store.inserir_retrato(db, {"eq_id": "b", "em": T0, "portas": {}})
+    out = await store.listar_retratos(db, ["a"], T0 + timedelta(seconds=30))
+    assert [d["clientes"] for d in out] == [1, 2]
+    assert all("portas" not in d and "_id" not in d and d["em"].tzinfo for d in out)
+
+
+async def test_falha_no_retrato_nao_quebra_run_unifi(db, r, monkeypatch):
+    eq = await com_switch(db)
+    await store.garantir_indice_unifi(db)
+
+    async def quebra(*a, **k):
+        raise RuntimeError("mongo fora")
+    monkeypatch.setattr(store, "inserir_retrato", quebra)
+    await run_unifi(db, r, CFG, T0, ler=falso(all_=[ev("a", 1000)]))
+    assert json.loads(await r.get(f"unifi:eq:{eq}"))["portas"]["3"]["up"] is True
+    assert [d["unifi_id"] async for d in db.eventos.find({"origem": "unifi"})] == ["a"]

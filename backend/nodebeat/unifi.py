@@ -43,7 +43,7 @@ def _mbps(v: Any) -> float | None:
 
 def _porta(p: dict, uplink_idx: int | None) -> dict:
     return {
-        "poe_w": _arred(p.get("poe_power")), "poe_classe": p.get("poe_class"),
+        "up": bool(p.get("up")), "poe_w": _arred(p.get("poe_power")), "poe_classe": p.get("poe_class"),
         "rx_mbps": _mbps(p.get("rx_bytes-r")), "tx_mbps": _mbps(p.get("tx_bytes-r")),
         "erros": int((_num(p.get("rx_errors")) or 0) + (_num(p.get("tx_errors")) or 0)),
         "descartes": int((_num(p.get("rx_dropped")) or 0) + (_num(p.get("tx_dropped")) or 0)),
@@ -75,6 +75,19 @@ def parse_switch(dev: dict) -> dict:
             if up and up_idx is not None else None,
         },
         "portas": {str(p["port_idx"]): _porta(p, up_idx) for p in portas},
+    }
+
+
+def retrato(eq_id: str, sw: dict, em: datetime) -> dict:
+    """Foto enxuta do switch para o histórico; `sw` é a saída de parse_switch."""
+    sis, portas = sw["sistema"], sw["portas"]
+    soma = lambda c: round(sum(p[c] or 0 for p in portas.values()), 1)  # noqa: E731  (None conta como 0)
+    return {
+        "eq_id": eq_id, "em": em, "poe_usado_w": sis["poe_usado_w"], "poe_max_w": sis["poe_max_w"],
+        "clientes": sis["clientes"], "temperatura": sis["temperatura"], "cpu": sis["cpu"], "mem": sis["mem"],
+        "portas_total": len(portas), "portas_em_uso": sum(1 for p in portas.values() if p["up"]),
+        "rx_mbps": soma("rx_mbps"), "tx_mbps": soma("tx_mbps"),
+        "portas": {i: {k: p[k] for k in ("up", "rx_mbps", "tx_mbps", "poe_w")} for i, p in portas.items()},
     }
 
 

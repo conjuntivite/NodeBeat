@@ -9,8 +9,11 @@ import '../widgets/eventos.dart' show formatEventoHora;
 import '../widgets/graficos.dart';
 import '../widgets/painel_cards.dart';
 import '../widgets/painel_textos.dart';
+import 'painel_switches.dart';
 
 const _periodos = [('24 h', '24h'), ('7 dias', '7d'), ('30 dias', '30d')];
+// '1h' só existe para os switches: o painel das MKs rejeita (422).
+const _periodo1h = ('1 h', '1h');
 const _rotuloPeriodo = {'24h': 'últimas 24 h', '7d': 'últimos 7 dias', '30d': 'últimos 30 dias'};
 const _categorias = ['acesso', 'autenticacao', 'vpn', 'erros'];
 
@@ -45,6 +48,7 @@ class PainelEventosScreen extends StatefulWidget {
 
 class _PainelEventosScreenState extends State<PainelEventosScreen> {
   String _periodo = '24h';
+  int _aba = 0; // 0 = MKs, 1 = Switches
   String? _mk;
   PainelEventos? _d;
   List<MkPainel> _mks = []; // lista completa, vinda da carga sem filtro
@@ -104,22 +108,48 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       ativo: 'eventos',
       titulo: 'Eventos',
       subtitulo: 'O que as ${_mks.isEmpty ? '' : '${_mks.length} '}MKs registraram e o que merece sua atenção.',
-      acoes: [_pilulasPeriodo(t), _filtroMk(t)],
+      acoes: [_abas(), _pilulasPeriodo(t), if (_aba == 0) _filtroMk(t)],
       body: ListView(padding: margemPagina(context), children: [
-        if (_erro != null) _falha(t) else if (d == null) const Center(child: CircularProgressIndicator()) else ..._conteudo(context, t, d),
-        if (_sw != null || _swErro != null) ...[SizedBox(height: t.space4), _switches(t)],
+        if (_aba == 1)
+          _abaSwitches(t)
+        else if (_erro != null)
+          _falha(t)
+        else if (d == null)
+          const Center(child: CircularProgressIndicator())
+        else
+          ..._conteudo(context, t, d),
       ]),
     );
   }
 
-  Widget _pilulasPeriodo(TradeTokens t) => AbasPilula(
-        itens: [for (final (rotulo, _) in _periodos) rotulo],
-        valor: _periodos.indexWhere((p) => p.$2 == _periodo),
-        aoMudar: (i) {
-          _periodo = _periodos[i].$2;
+  Widget _abas() => AbasPilula(itens: const ['MKs', 'Switches'], valor: _aba, aoMudar: (i) {
+        if (i == _aba) return;
+        setState(() => _aba = i);
+        if (i == 0 && _periodo == '1h') {
+          _periodo = '24h';
           _carregar();
-        },
-      );
+        }
+      });
+
+  // Carga dos switches é independente: uma falha aqui não esconde a aba das MKs.
+  Widget _abaSwitches(TradeTokens t) {
+    final d = _sw;
+    if (d != null) return PainelSwitches(dados: d);
+    if (_swErro != null) return TradeCard(child: Text(_swErro!, style: TradeType.bodyMd.copyWith(color: t.negative)));
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  Widget _pilulasPeriodo(TradeTokens t) {
+    final ps = [if (_aba == 1) _periodo1h, ..._periodos];
+    return AbasPilula(
+      itens: [for (final (rotulo, _) in ps) rotulo],
+      valor: ps.indexWhere((p) => p.$2 == _periodo),
+      aoMudar: (i) {
+        _periodo = ps[i].$2;
+        _carregar();
+      },
+    );
+  }
 
   Widget _filtroMk(TradeTokens t) => Container(
         padding: EdgeInsets.symmetric(horizontal: t.space3),
@@ -437,52 +467,4 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
             ),
         ],
       );
-
-  Widget _switches(TradeTokens t) {
-    final d = _sw;
-    final c = d?.contagens ?? const <String, int>{};
-    String n(String k) => '${c[k] ?? 0}';
-    return TradeCard(
-      titulo: 'Switches',
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (d == null)
-          Text(_swErro!, style: TradeType.bodyMd.copyWith(color: t.negative))
-        else ...[
-          Wrap(spacing: t.space4, runSpacing: t.space4, children: [
-            Indicador(rotulo: 'Clientes com fio', valor: n('clientes')),
-            Indicador(rotulo: 'Alertas', valor: n('alertas')),
-            Indicador(rotulo: 'PoE religado', valor: n('poe')),
-            Indicador(rotulo: 'Mudanças', valor: n('mudancas')),
-          ]),
-          SizedBox(height: t.space4),
-          if (d.eventos.isEmpty) Text('Nenhum evento de switch no período.', style: TradeType.bodyMd.copyWith(color: t.fgMuted)),
-          for (final e in d.eventos) _linhaSwitch(t, e),
-        ],
-      ]),
-    );
-  }
-
-  Widget _linhaSwitch(TradeTokens t, EventoSwitch e) {
-    final l = e.quando.toLocal();
-    String dois(int v) => v.toString().padLeft(2, '0');
-    final hora = '${dois(l.hour)}:${dois(l.minute)}';
-    final agora = DateTime.now();
-    final quando = l.year == agora.year && l.month == agora.month && l.day == agora.day ? hora : '${dois(l.day)}/${dois(l.month)} $hora';
-    final (rotuloSev, cor) = switch (e.severidade) {
-      'critical' => ('Crítico', t.negative),
-      'high' => ('Alta', t.negative),
-      'medium' => ('Média', t.warning),
-      'low' => ('Baixa', t.fgSecondary),
-      _ => (null, t.fgSecondary),
-    };
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: t.space1),
-      child: Wrap(spacing: t.space2, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        Text(quando, style: TradeType.ticker.copyWith(color: t.fgMuted)),
-        Text(e.porta == null ? e.switchNome : '${e.switchNome} · Porta ${e.porta}', style: TradeType.label.copyWith(color: t.fgPrimary)),
-        if (rotuloSev != null) Selo(rotuloSev, cor),
-        Text(e.mensagem, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-      ]),
-    );
-  }
 }

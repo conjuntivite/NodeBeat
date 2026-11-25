@@ -103,6 +103,12 @@ void main() {
     });
   }
 
+  testWidgets('GraficoCapacidade: limite acima dos dados, sem projeção, cabe no gráfico', (t) async {
+    final pontos = [for (var i = 0; i < 5; i++) (DateTime.utc(2026, 3, 1 + i), 100.0 + i * 10)];
+    await _mostra(t, GraficoCapacidade(pontos: pontos, limite: 400, unidade: 'W'), Brightness.light);
+    expect(t.widget<LineChart>(find.byType(LineChart)).data.maxY, greaterThanOrEqualTo(400));
+  });
+
   testWidgets('GraficoCapacidade vazio', (t) async {
     await _mostra(t, const GraficoCapacidade(pontos: [], unidade: 'W'), Brightness.light);
     expect(find.text('Sem dados ainda'), findsOneWidget);

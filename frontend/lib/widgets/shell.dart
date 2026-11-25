@@ -438,10 +438,17 @@ class Indicador extends StatelessWidget {
 
 /// Abas em pílula (Tabs do design system): fundo surface-200, ativa em pink.
 class AbasPilula extends StatelessWidget {
-  const AbasPilula({super.key, required this.itens, required this.valor, required this.aoMudar});
+  const AbasPilula({super.key, required this.itens, required this.valor, required this.aoMudar, this.desabilitados = const {}, this.dicaDesabilitado});
   final List<String> itens;
   final int valor;
   final ValueChanged<int> aoMudar;
+
+  /// Índices sem ação (visual de desabilitado); [dicaDesabilitado] vira tooltip neles.
+  final Set<int> desabilitados;
+  final String? dicaDesabilitado;
+
+  Widget _dica(bool desabilitado, Widget filho) =>
+      desabilitado && dicaDesabilitado != null ? Tooltip(message: dicaDesabilitado!, child: filho) : filho;
 
   @override
   Widget build(BuildContext context) {
@@ -462,8 +469,11 @@ class AbasPilula extends StatelessWidget {
             for (var i = 0; i < itens.length; i++)
               Padding(
                 padding: EdgeInsets.only(left: i == 0 ? 0 : t.space1),
-                child: Semantics(
+                child: _dica(
+                  desabilitados.contains(i),
+                  Semantics(
                   button: true,
+                  enabled: !desabilitados.contains(i),
                   selected: i == valor,
                   child: Material(
                     color: i == valor ? t.actionPrimary : Colors.transparent,
@@ -471,15 +481,16 @@ class AbasPilula extends StatelessWidget {
                     child: InkWell(
                       customBorder: const StadiumBorder(),
                       hoverColor: i == valor ? t.brandHover : t.bgHover,
-                      onTap: () => aoMudar(i),
+                      onTap: desabilitados.contains(i) ? null : () => aoMudar(i),
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: t.space4, vertical: 6),
                         child: Text(
                           itens[i],
-                          style: TradeType.button.copyWith(color: i == valor ? t.actionPrimaryFg : t.fgSecondary),
+                          style: TradeType.button.copyWith(color: desabilitados.contains(i) ? t.fgDisabled : (i == valor ? t.actionPrimaryFg : t.fgSecondary)),
                         ),
                       ),
                     ),
+                  ),
                   ),
                 ),
               ),

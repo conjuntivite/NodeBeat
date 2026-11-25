@@ -442,9 +442,13 @@ class ClienteTop {
   ClienteTop.fromJson(Map<String, dynamic> j)
       : cliente = (j['cliente'] ?? '') as String,
         switchNome = (j['switch_nome'] ?? '') as String,
-        quedas = _i(j['quedas']) ?? 0;
+        quedas = _i(j['quedas']) ?? 0,
+        ip = j['ip'] as String?,
+        mac = j['mac'] as String?,
+        porta = j['porta']?.toString();
   final String cliente, switchNome;
   final int quedas;
+  final String? ip, mac, porta;
 }
 
 class AtualSwitch {

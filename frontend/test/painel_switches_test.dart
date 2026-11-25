@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
@@ -66,18 +67,19 @@ EventosSwitches _dados({int? projecao = 30, bool poe = true, int dias = 10, int 
         {'switch_nome': 'SW Sede', 'porta': 7, 'eventos': 2, 'projecao_mes': 60.0, 'instavel': false},
       ],
       'clientes_top': [
-        {'cliente': 'Cliente A', 'switch_nome': 'SW Sede', 'quedas': 4},
+        {'cliente': 'Cliente A', 'switch_nome': 'SW Sede', 'quedas': 4, 'ip': '192.0.2.50', 'mac': '02:00:00:00:00:09', 'porta': 7},
+        {'cliente': 'Cliente B', 'switch_nome': 'SW Sede', 'quedas': 2, 'ip': null, 'mac': null, 'porta': null},
       ],
       'capacidade': [_cap('SW Sede', poe: poe, dias: dias)],
     });
 
-Future<void> _show(WidgetTester t, EventosSwitches d, {Brightness b = Brightness.light, double w = 1100}) async {
+Future<void> _show(WidgetTester t, EventosSwitches d, {Brightness b = Brightness.light, double w = 1100, String periodo = '24h'}) async {
   t.view.physicalSize = Size(w, 6000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   await t.pumpWidget(MaterialApp(
     theme: tradeTheme(b),
-    home: Scaffold(body: SingleChildScrollView(child: PainelSwitches(dados: d))),
+    home: Scaffold(body: SingleChildScrollView(child: PainelSwitches(dados: d, periodo: periodo))),
   ));
   await t.pump(const Duration(milliseconds: 600));
 }
@@ -86,12 +88,12 @@ void main() {
   testWidgets('indicadores mostram totais e variação', (t) async {
     await _show(t, _dados());
     for (final r in ['Eventos', 'Quedas de cliente', 'Portas instáveis', 'Projeção 30 dias']) {
-      expect(find.text(r), findsOneWidget, reason: r);
+      expect(find.text(r), r == 'Projeção 30 dias' ? findsNWidgets(2) : findsOneWidget, reason: r); // indicador + coluna da tabela
     }
     expect(find.text('+40% ↗'), findsOneWidget);
     expect(find.text('−12% ↘'), findsOneWidget);
     expect(find.text('14'), findsOneWidget);
-    expect(find.text('30'), findsOneWidget);
+    expect(find.descendant(of: find.ancestor(of: find.text('Projeção 30 dias').first, matching: find.byType(Indicador)), matching: find.text('30')), findsOneWidget);
   });
 
   test('textoVariacao sem base não mostra %', () {
@@ -121,13 +123,34 @@ void main() {
     expect(find.text('—'), findsOneWidget);
   });
 
-  testWidgets('porta instável tem Selo e linha ~N/mês', (t) async {
+  testWidgets('porta instável: colunas, explicação, tabela e Selo', (t) async {
     await _show(t, _dados());
+    final bc = t.widget<BarChart>(find.byType(BarChart));
+    expect(bc.data.barGroups.length, 2);
+    expect(find.byType(GraficoColunas), findsOneWidget);
+    expect(find.textContaining('Projeção mensal: quantas vezes a porta deve oscilar em 30 dias'), findsOneWidget);
+    expect(find.textContaining('Instável = 3 ou mais eventos no período e projeção de 30 ou mais por mês.'), findsOneWidget);
+    for (final h in ['Porta', 'Eventos no período', 'Projeção 30 dias']) {
+      expect(find.text(h), findsWidgets, reason: h);
+    }
     expect(find.text('Instável'), findsOneWidget);
-    expect(find.text('SW Sede · Porta 5'), findsWidgets);
-    expect(find.text('~270/mês'), findsOneWidget);
-    expect(find.text('~60/mês'), findsOneWidget);
-    expect(find.byType(GraficoBarras), findsNWidgets(2));
+    expect(find.text('SW Sede · Porta 5'), findsOneWidget);
+    expect(find.text('270'), findsOneWidget);
+    expect(find.text('60'), findsOneWidget);
+    expect(find.text('P5'), findsOneWidget);
+  });
+
+  testWidgets('período 1h: projeção das portas vira — com nota', (t) async {
+    await _show(t, _dados(projecao: null), periodo: '1h');
+    expect(find.text('período curto demais para projetar'), findsOneWidget);
+    expect(find.text('270'), findsNothing);
+    expect(find.text('Instável'), findsOneWidget);
+  });
+
+  testWidgets('clientes que mais caem mostram IP, MAC, switch e porta sem tooltip', (t) async {
+    await _show(t, _dados());
+    expect(find.text('IP 192.0.2.50 · MAC 02:00:00:00:00:09 · SW Sede porta 7'), findsOneWidget);
+    expect(find.text('IP — · MAC — · SW Sede porta —'), findsOneWidget);
   });
 
   testWidgets('cards de gráficos e capacidade aparecem', (t) async {
@@ -137,6 +160,7 @@ void main() {
     }
     expect(find.byType(GraficoLinha), findsOneWidget);
     expect(find.byType(GraficoCapacidade), findsNWidgets(3));
+    expect(find.byType(GraficoColunas), findsOneWidget);
     expect(find.byType(GraficoPizza), findsNWidgets(3)); // grupos + portas + PoE
     expect(find.text('PoE chega a 80% em ~12 dias'), findsOneWidget);
     expect(find.text('Temperatura +0,7 °C/semana'), findsOneWidget);

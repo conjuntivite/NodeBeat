@@ -20,8 +20,9 @@ String? textoVariacao(int? atual, int? anterior) {
 
 /// Aba Switches da tela Eventos: indicadores, gráficos, capacidade por switch e últimos eventos.
 class PainelSwitches extends StatelessWidget {
-  const PainelSwitches({super.key, required this.dados});
+  const PainelSwitches({super.key, required this.dados, this.periodo = '24h'});
   final EventosSwitches dados;
+  final String periodo;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +40,15 @@ class PainelSwitches extends StatelessWidget {
       _portas(t),
       _cartao(t, 'Clientes', 'Clientes que mais caem', 'Quem perdeu o link com mais frequência.', [
         GraficoBarras(dados: [for (final c in d.clientesTop) ('${c.cliente} · ${c.switchNome}', c.quedas)], cor: t.chart1),
+        for (final c in d.clientesTop)
+          Padding(
+            padding: EdgeInsets.only(top: t.space3),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c.cliente, style: TradeType.label.copyWith(color: t.fgPrimary)),
+              Text('IP ${c.ip ?? '—'} · MAC ${c.mac ?? '—'} · ${c.switchNome} porta ${c.porta ?? '—'}',
+                  style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+            ]),
+          ),
       ]),
       for (final c in d.capacidade) _capacidade(t, c),
     ];
@@ -112,21 +122,54 @@ class PainelSwitches extends StatelessWidget {
 
   Widget _portas(TradeTokens t) {
     final ps = dados.portasTop;
+    final curto = periodo == '1h'; // 1 h é curto demais para projetar
     String nome(PortaTop p) => p.porta == null ? p.switchNome : '${p.switchNome} · Porta ${p.porta}';
-    return _cartao(t, 'Portas', 'Portas que mais oscilam', 'Portas com mais quedas e voltas de link. Instável: passou do limite de eventos.', [
-      GraficoBarras(dados: [for (final p in ps) (nome(p), p.eventos)], cor: t.chart2),
-      if (ps.isNotEmpty) SizedBox(height: t.space3),
-      for (final p in ps)
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: t.space1),
-          child: Wrap(spacing: t.space2, runSpacing: t.space1, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text(nome(p), style: TradeType.label.copyWith(color: t.fgPrimary)),
-            if (p.projecaoMes != null)
-              Text('~${p.projecaoMes!.round()}/mês',
-                  style: TradeType.dataSm.copyWith(color: t.fgSecondary, fontFeatures: const [FontFeature.tabularFigures()])),
-            if (p.instavel) Selo('Instável', t.warning),
-          ]),
+    final switches = {for (final p in ps) p.switchNome}.toList();
+    final cab = TradeType.label.copyWith(color: t.fgMuted);
+    final cel = TradeType.bodyMd.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]);
+    return _cartao(t, 'Portas', 'Portas que mais oscilam', 'Portas com mais quedas e voltas de link no período.', [
+      GraficoColunas(
+        legenda: switches,
+        dados: [
+          for (final p in ps)
+            ColunaDado(
+              rotulo: 'P${p.porta ?? '?'}',
+              valor: p.eventos,
+              serie: switches.indexOf(p.switchNome),
+              destaque: p.instavel,
+              dica: '${nome(p)}: ${p.eventos} eventos${p.projecaoMes == null ? '' : ' · ~${p.projecaoMes!.round()}/mês'}',
+            ),
+        ],
+      ),
+      SizedBox(height: t.space3),
+      Text(
+          'Projeção mensal: quantas vezes a porta deve oscilar em 30 dias se o ritmo deste período continuar. '
+          'Instável = 3 ou mais eventos no período e projeção de 30 ou mais por mês.',
+          style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+      if (curto && ps.isNotEmpty)
+        Text('período curto demais para projetar', style: TradeType.bodySm.copyWith(color: t.fgMuted)),
+      if (ps.isNotEmpty) ...[
+        SizedBox(height: t.space3),
+        Table(
+          columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(2), 2: FlexColumnWidth(2), 3: FlexColumnWidth(2)},
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(children: [
+              Text('Porta', style: cab),
+              Text('Eventos no período', style: cab),
+              Text('Projeção 30 dias', style: cab),
+              const SizedBox.shrink(),
+            ]),
+            for (final p in ps)
+              TableRow(children: [
+                Padding(padding: EdgeInsets.symmetric(vertical: t.space1), child: Text(nome(p), style: cel)),
+                Text('${p.eventos}', style: cel),
+                Text(curto || p.projecaoMes == null ? '—' : '${p.projecaoMes!.round()}', style: cel),
+                Align(alignment: Alignment.centerLeft, child: p.instavel ? Selo('Instável', t.warning) : const SizedBox.shrink()),
+              ]),
+          ],
         ),
+      ],
     ]);
   }
 
@@ -148,10 +191,10 @@ class PainelSwitches extends StatelessWidget {
     return _cartao(t, 'Capacidade', 'Capacidade — ${c.switchNome}', 'Uso atual, histórico e para onde a tendência aponta.', [
       if (c.temPoe)
         sub('PoE (W)',
-            GraficoCapacidade(pontos: serie((p) => p.poeW), limite: a?.poeMaxW, tendenciaDia: pr.poeTendenciaWDia, unidade: ' W')),
-      sub('Clientes', GraficoCapacidade(pontos: serie((p) => p.clientes?.toDouble()))),
+            GraficoCapacidade(pontos: serie((p) => p.poeW), limite: a?.poeMaxW, tendenciaDia: pr.poeTendenciaWDia, unidade: ' W', periodo: periodo)),
+      sub('Clientes', GraficoCapacidade(pontos: serie((p) => p.clientes?.toDouble()), periodo: periodo)),
       sub('Temperatura (°C)',
-          GraficoCapacidade(pontos: serie((p) => p.temperatura), tendenciaDia: tempSemana == null ? null : tempSemana / 7, unidade: ' °C')),
+          GraficoCapacidade(pontos: serie((p) => p.temperatura), tendenciaDia: tempSemana == null ? null : tempSemana / 7, unidade: ' °C', periodo: periodo)),
       if (emUso != null && total != null)
         sub('Portas', GraficoPizza(fatias: [('Em uso', emUso), ('Livres', (total - emUso).clamp(0, total))], centro: '$emUso/$total')),
       if (c.temPoe && poePortas.isNotEmpty)

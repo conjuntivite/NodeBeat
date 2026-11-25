@@ -109,7 +109,7 @@ def test_periodo_recorta():
 def test_top_ips_e_por_via():
     evs = [falha("a"), falha("a"), falha("b"), falha("a", ip="203.0.113.10", via="telnet")]
     b = M(evs)["blocos"]["acesso"]
-    assert b["top_ips"][0] == {"ip": "203.0.113.9", "n": 3}
+    assert b["top_ips"][0] == {"ip": "203.0.113.9", "n": 3, "pais": None, "pais_nome": "Desconhecido"}
     assert b["por_via"] == {"ssh": 3, "telnet": 1}
     assert b["total"] == 4
     assert {x["nome"]: x["n"] for x in b["por_mk"]} == {"Alfa": 3, "Beta": 1}
@@ -377,3 +377,34 @@ def test_vpn_rajada_e_por_mk_nao_somada_entre_mks():
     assert montar(espalhadas, mks3, CTX, AGORA, "24h")["resumo_estado"]["vpn"]["estado"] == "normal"
     na_mesma = [f("a", 1.0), f("a", 1.1), f("a", 1.2)]
     assert montar(na_mesma, mks3, CTX, AGORA, "24h")["resumo_estado"]["vpn"]["estado"] == "atencao"
+
+
+def _pais_falso(ip):
+    from nodebeat.geoip import Pais
+    return {"203.0.113.9": Pais("BR", "Brasil", -14.2, -51.9), "203.0.113.10": Pais("NL", "Países Baixos", 52.1, 5.3)}.get(ip)
+
+
+def _acesso(evs, pais_de):
+    return montar(evs, MKS, Ctx(["10.1.0.0/16"], ["198.51.100.7"], pais_de), AGORA, "24h")["blocos"]["acesso"]
+
+
+def test_acesso_top_paises():
+    evs = [falha("a")] * 3 + [falha("a", ip="203.0.113.10")]
+    assert _acesso(evs, _pais_falso)["top_paises"][0] == {"pais": "BR", "pais_nome": "Brasil", "n": 3}
+
+
+def test_acesso_top_ips_com_pais():
+    top = _acesso([falha("a")], _pais_falso)["top_ips"][0]
+    assert top["pais"] == "BR" and top["pais_nome"] == "Brasil"
+
+
+def test_acesso_pais_desconhecido():
+    ac = _acesso([falha("a")], lambda ip: None)
+    assert ac["top_paises"] == [{"pais": None, "pais_nome": "Desconhecido", "n": 1}]
+    assert ac["top_ips"][0]["pais_nome"] == "Desconhecido"
+
+
+def test_acesso_login_externo_com_pais_nome():
+    login = EV("a", "login", "user admin logged in from 203.0.113.9 via ssh",
+               campos={"usuario": "admin", "ip": "203.0.113.9", "via": "ssh"})
+    assert _acesso([login], _pais_falso)["logins_externos"][0]["pais_nome"] == "Brasil"

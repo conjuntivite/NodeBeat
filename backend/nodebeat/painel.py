@@ -5,8 +5,11 @@ import ipaddress
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+
+from nodebeat.geoip import Pais
 
 SILENCIO_H, REBOOTS_24H = 24, 2
 FLAP_N, VPN_FALHAS_N, PPPOE_MASSA_N, INCIDENTE_MKS = 3, 3, 10, 3
@@ -26,6 +29,7 @@ _LINK_FISICO = re.compile(r"collision|duplex mismatch", re.I)
 class Ctx:
     sede_redes: list[str] = field(default_factory=list)
     ips_sede: list[str] = field(default_factory=list)
+    pais_de: Callable[[str], Pais | None] = lambda ip: None  # geolocalização do IP (geoip.pais)
 
 
 _INTERNAS = [ipaddress.ip_network(n) for n in
@@ -82,6 +86,10 @@ def categoria(ev: dict, ctx: Ctx) -> tuple[str, str] | None:
     return None
 
 
+def _nome(p: Pais | None) -> str:
+    return p.nome if p else "Desconhecido"
+
+
 def _por_mk(contagem: Counter, nomes: dict) -> list[dict]:
     return [{"mk_id": k, "nome": nomes[k], "n": n} for k, n in contagem.most_common()]
 
@@ -121,7 +129,7 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
     contagens: dict[str, Counter] = defaultdict(Counter)  # mk -> categoria -> n
     por_mk_cat: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
     sub: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
-    ips, vias = Counter(), Counter()
+    ips, vias, paises = Counter(), Counter(), Counter()
     logins, vpn_falhas, ifaces = [], [], Counter()
 
     base_ini = inicio - timedelta(days=7)
@@ -156,11 +164,12 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
         if st == "falha_externa":
             _, ip, via = falha_login(ev)
             ips[ip] += 1
+            paises[ctx.pais_de(ip)] += 1
             vias[via] += 1
         elif st == "login_externo_ok":
             cp = ev["campos"]
             logins.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]], "usuario": cp.get("usuario"),
-                           "ip": cp.get("ip"), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
+                           "ip": cp.get("ip"), "pais_nome": _nome(ctx.pais_de(cp.get("ip") or "")), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
         elif st == "falha" and c == "vpn":
             vpn_tempos[ev["mk_id"]].append(ev["recebido_em"])
             vpn_falhas.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]],
@@ -207,7 +216,10 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                                        sub["acesso"]["login_externo_ok"], vpn_tempos),
         "serie_hora": [{"hora": h.isoformat(), **v} for h, v in serie.items()],
         "blocos": {
-            "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n} for i, n in ips.most_common(10)],
+            "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n, "pais": (p := ctx.pais_de(i)) and p.cc, "pais_nome": _nome(p)}
+                                     for i, n in ips.most_common(10)],
+                            top_paises=[{"pais": p and p.cc, "pais_nome": _nome(p), "n": n}
+                                        for p, n in paises.most_common(5)],
                             por_via=dict(vias.most_common()), logins_externos=logins[::-1]),
             "autenticacao": bloco("autenticacao", por_subtipo=dict(sub["autenticacao"])),
             "vpn": bloco("vpn", por_subtipo=dict(sub["vpn"]), ultimos=vpn_falhas[::-1][:20]),

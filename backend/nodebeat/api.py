@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from nodebeat import ataques, auth, cli, crypto, eventos, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
+from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
@@ -489,7 +489,7 @@ def create_app(db, r, settings) -> FastAPI:
         agora = datetime.now(UTC)
         # ponytail: lê os 30 dias em memória (~30 mil eventos/dia); pipeline do Mongo se o cache não bastar
         evs = await store.listar_eventos_periodo(db, agora - timedelta(days=30))
-        ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede)
+        ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede, geoip.pais)
         res = painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
         _painel_cache[chave] = (t, res)
         return res

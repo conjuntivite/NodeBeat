@@ -100,7 +100,8 @@ async def test_switches_traz_totais_serie_tops(client, db):
     assert len(body["serie"]) == 24 and sum(b["clientes"] for b in body["serie"]) == 4
     assert body["portas_top"][0]["porta"] == "7" and body["portas_top"][0]["eventos"] == 3
     assert body["portas_top"][0]["switch_id"] == id and body["portas_top"][0]["switch_nome"] == "SW1"
-    assert body["clientes_top"] == [{"cliente": "aa:bb:cc:00:00:01", "switch_nome": "SW1", "quedas": 3}]
+    assert body["clientes_top"] == [{"cliente": "aa:bb:cc:00:00:01", "switch_nome": "SW1", "quedas": 3,
+                                     "ip": None, "mac": None, "porta": "7"}]
     assert len(body["eventos"]) == 4 and body["contagens"]["clientes"] == 4
 
 
@@ -121,6 +122,28 @@ async def test_switches_capacidade_com_redis_e_hist(client, db, r):
                                "portas_total": 3, "portas_em_uso": 2,
                                "poe_por_porta": [{"porta": "2", "w": 12.0}, {"porta": "1", "w": 4.5}]}
     assert len(cap[0]["historico"]) == 3 and cap[0]["projecoes"]["dias_historico"] == 0
+
+
+async def test_clientes_top_completa_ip_mac_pelo_redis(client, db, r):
+    id = await _novo(client)
+    await _unifi(r, id, {"7": PORTA | {"clientes": [{"nome": "aa:bb:cc:00:00:01", "ip": "192.0.2.50",
+                                                      "mac": "02:00:00:00:00:09"}]}})
+    await _ev_porta(db, id, "cliente_desconectou", 5, "7")
+    top = (await client.get("/api/eventos/switches?periodo=24h")).json()["clientes_top"]
+    assert top[0]["ip"] == "192.0.2.50" and top[0]["mac"] == "02:00:00:00:00:09" and top[0]["porta"] == "7"
+
+
+async def test_capacidade_historico_segue_periodo_e_projecao_usa_30d(client, db, r):
+    id = await _novo(client)
+    agora = datetime.now(UTC)
+    for d in range(0, 20):
+        await store.inserir_retrato(db, {"eq_id": id, "em": agora - timedelta(days=d, minutes=1), "poe_usado_w": 10.0 + d,
+                                         "poe_max_w": 100.0, "clientes": 1, "temperatura": 30.0,
+                                         "portas_total": 2, "portas_em_uso": 1})
+    c24 = (await client.get("/api/eventos/switches?periodo=24h")).json()["capacidade"][0]
+    c30 = (await client.get("/api/eventos/switches?periodo=30d")).json()["capacidade"][0]
+    assert len(c24["historico"]) == 1 and len(c30["historico"]) == 20
+    assert c24["projecoes"] == c30["projecoes"] and c24["projecoes"]["dias_historico"] == 19
 
 
 async def test_switches_capacidade_sem_redis_atual_none(client, db):

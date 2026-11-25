@@ -5,8 +5,8 @@ from nodebeat import switch_painel as sp
 T0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
 
 
-def ev(tipo, quando, porta=None, cliente=None, mk="eq:1"):
-    campos = {k: v for k, v in (("porta", porta), ("cliente", cliente)) if v}
+def ev(tipo, quando, porta=None, cliente=None, mk="eq:1", ip=None, mac=None):
+    campos = {k: v for k, v in (("porta", porta), ("cliente", cliente), ("ip", ip), ("mac", mac)) if v}
     return {"tipo": tipo, "recebido_em": quando, "mk_id": mk, "campos": campos}
 
 
@@ -54,7 +54,30 @@ def test_clientes_top():
     evs = [ev("cliente_desconectou", T0, cliente="a")] * 3 + [ev("cliente_desconectou", T0, cliente="b")]
     evs.append(ev("cliente_conectou", T0, cliente="b"))
     assert sp.clientes_top(evs, {"eq:1": "SW"}) == [
-        {"cliente": "a", "switch_nome": "SW", "quedas": 3}, {"cliente": "b", "switch_nome": "SW", "quedas": 1}]
+        {"cliente": "a", "switch_nome": "SW", "quedas": 3, "ip": None, "mac": None, "porta": None},
+        {"cliente": "b", "switch_nome": "SW", "quedas": 1, "ip": None, "mac": None, "porta": None}]
+
+
+def test_clientes_top_ultimo_ip_mac_porta_nao_nulos():
+    m = "02:00:00:00:00:01"
+    evs = [ev("cliente_desconectou", T0 + timedelta(hours=2), cliente="a", porta="5"),  # mais novo, sem ip/mac
+           ev("cliente_desconectou", T0, cliente="a", porta="3", ip="192.0.2.1", mac=m),
+           ev("cliente_desconectou", T0 + timedelta(hours=1), cliente="a", porta="4", ip="192.0.2.9")]
+    r = sp.clientes_top(evs, {"eq:1": "SW"})
+    assert r == [{"cliente": "a", "switch_nome": "SW", "quedas": 3, "ip": "192.0.2.9", "mac": m, "porta": "5"}]
+
+
+def test_clientes_top_completa_pelo_estado_do_redis():
+    m = "02:00:00:00:00:02"
+    estados = {"eq:1": {"7": {"clientes": [{"nome": "pc-a", "ip": "192.0.2.7", "mac": m},
+                                           {"nome": None, "ip": "192.0.2.8", "mac": "02:00:00:00:00:03"}]}}}
+    evs = [ev("cliente_desconectou", T0, cliente="pc-a"), ev("cliente_desconectou", T0, cliente=m.upper(), mk="eq:1"),
+           ev("cliente_desconectou", T0, cliente="02:00:00:00:00:03"), ev("cliente_desconectou", T0, cliente="zz")]
+    r = {x["cliente"]: x for x in sp.clientes_top(evs, {"eq:1": "SW"}, estados=estados)}
+    assert (r["pc-a"]["ip"], r["pc-a"]["mac"], r["pc-a"]["porta"]) == ("192.0.2.7", m, "7")
+    assert (r[m.upper()]["ip"], r[m.upper()]["mac"]) == ("192.0.2.7", m)
+    assert r["02:00:00:00:00:03"]["ip"] == "192.0.2.8"
+    assert (r["zz"]["ip"], r["zz"]["mac"], r["zz"]["porta"]) == (None, None, None)
 
 
 def test_projecoes_poe_subindo():

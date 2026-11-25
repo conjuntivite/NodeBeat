@@ -58,11 +58,23 @@ def portas_top(evs, nomes, horas, n: int | None = 10) -> list[dict]:
     return out
 
 
-def clientes_top(evs, nomes, n=10) -> list[dict]:
+def clientes_top(evs, nomes, n=10, estados=None) -> list[dict]:
+    """estados: {mk_id: portas do Redis}; completa ip/mac/porta que os eventos (antigos) nao trazem."""
     c = Counter((e["campos"]["cliente"], e["mk_id"]) for e in evs
                 if e["tipo"] == _QUEDAS and e["campos"].get("cliente"))
-    return [{"cliente": cli, "switch_nome": nomes.get(mk, "Switch removido"), "quedas": q}
-            for (cli, mk), q in c.most_common(n)]
+    ordem = sorted(evs, key=lambda e: e["recebido_em"])
+    out = []
+    for (cli, mk), q in c.most_common(n):
+        meus = [e["campos"] for e in ordem if e["campos"].get("cliente") == cli and e["mk_id"] == mk]
+        ult = {k: next((x[k] for x in reversed(meus) if x.get(k)), None) for k in ("ip", "mac", "porta")}
+        if not (ult["ip"] and ult["mac"]):
+            for porta, p in ((estados or {}).get(mk) or {}).items():
+                for k in p.get("clientes") or []:
+                    if k.get("nome") == cli or (k.get("mac") or "").lower() == (ult["mac"] or cli).lower():
+                        ult = {"ip": ult["ip"] or k.get("ip"), "mac": ult["mac"] or k.get("mac"),
+                               "porta": ult["porta"] or porta}
+        out.append({"cliente": cli, "switch_nome": nomes.get(mk, "Switch removido"), "quedas": q, **ult})
+    return out
 
 
 def _reta(retratos, campo, t0):

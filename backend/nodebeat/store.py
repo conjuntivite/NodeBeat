@@ -267,6 +267,14 @@ async def listar_eventos_unifi(db, desde: datetime, limite: int = 100) -> list[d
     return [_utc(d) async for d in db.eventos.find(_filtro_unifi(desde)).sort("recebido_em", -1).limit(limite)]
 
 
+async def listar_eventos_unifi_periodo(db, desde: datetime, ate: datetime) -> list[dict]:
+    """Eventos do período [desde, ate) para agregar em Python (o mongomock não tem $dateTrunc).
+    ponytail: sem limite; revisitar se passar de 50 mil eventos por período."""
+    f = _filtro_unifi(desde) | {"recebido_em": {"$gte": desde, "$lt": ate}}
+    proj = {"tipo": 1, "recebido_em": 1, "mk_id": 1, "campos": 1}
+    return [_utc(d) async for d in db.eventos.find(f, proj)]
+
+
 async def contar_eventos_unifi(db, desde: datetime) -> dict[str, int]:
     """Contagem por tipo no período."""
     pipe = [{"$match": _filtro_unifi(desde)}, {"$group": {"_id": "$tipo", "n": {"$sum": 1}}}]

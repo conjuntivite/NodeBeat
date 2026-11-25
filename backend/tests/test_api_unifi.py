@@ -80,3 +80,58 @@ async def test_eventos_switches_contagem_total_e_lista_limitada(client, db):
     await db.eventos.insert_many(docs)
     body = (await client.get("/api/eventos/switches?periodo=24h")).json()
     assert body["contagens"]["clientes"] == 130 and len(body["eventos"]) == 100
+
+
+async def _ev_porta(db, id, tipo, minutos, porta, cliente="aa:bb:cc:00:00:01"):
+    await db.eventos.insert_one({"mk_id": f"eq:{id}", "origem": "unifi", "unifi_id": f"{tipo}{minutos}{porta}",
+                                 "recebido_em": datetime.now(UTC) - timedelta(minutes=minutos), "tipo": tipo,
+                                 "severidade": "info", "campos": {"porta": porta, "cliente": cliente}, "mensagem": "m"})
+
+
+async def test_switches_traz_totais_serie_tops(client, db):
+    id = await _novo(client)
+    for m in (5, 10, 15):
+        await _ev_porta(db, id, "cliente_desconectou", m, "7")
+    await _ev_porta(db, id, "cliente_conectou", 20, "3")
+    await _ev_porta(db, id, "cliente_desconectou", 60 * 25, "7")  # janela anterior
+    body = (await client.get("/api/eventos/switches?periodo=24h")).json()
+    assert body["totais"]["eventos"] == 4 and body["totais"]["eventos_anterior"] == 1
+    assert body["totais"]["quedas_cliente"] == 3 and body["totais"]["quedas_cliente_anterior"] == 1
+    assert len(body["serie"]) == 24 and sum(b["clientes"] for b in body["serie"]) == 4
+    assert body["portas_top"][0]["porta"] == "7" and body["portas_top"][0]["eventos"] == 3
+    assert body["portas_top"][0]["switch_id"] == id and body["portas_top"][0]["switch_nome"] == "SW1"
+    assert body["clientes_top"] == [{"cliente": "aa:bb:cc:00:00:01", "switch_nome": "SW1", "quedas": 3}]
+    assert len(body["eventos"]) == 4 and body["contagens"]["clientes"] == 4
+
+
+async def test_switches_capacidade_com_redis_e_hist(client, db, r):
+    id = await _novo(client)
+    agora = datetime.now(UTC)
+    await r.set(f"unifi:eq:{id}", json.dumps({
+        "lido_em": agora.isoformat(),
+        "sistema": {"poe_usado_w": 30.0, "poe_max_w": 100.0, "clientes": 5, "temperatura": 40.0},
+        "portas": {"1": {"up": True, "poe_w": 4.5}, "2": {"up": True, "poe_w": 12.0}, "3": {"up": False, "poe_w": 0}}}))
+    for i in range(3):
+        await store.inserir_retrato(db, {"eq_id": id, "em": agora - timedelta(hours=i), "poe_usado_w": 20.0 + i,
+                                         "poe_max_w": 100.0, "clientes": 4, "temperatura": 39.0,
+                                         "portas_total": 3, "portas_em_uso": 2})
+    cap = (await client.get("/api/eventos/switches")).json()["capacidade"]
+    assert len(cap) == 1 and cap[0]["switch_id"] == id and cap[0]["switch_nome"] == "SW1"
+    assert cap[0]["atual"] == {"poe_usado_w": 30.0, "poe_max_w": 100.0, "clientes": 5, "temperatura": 40.0,
+                               "portas_total": 3, "portas_em_uso": 2,
+                               "poe_por_porta": [{"porta": "2", "w": 12.0}, {"porta": "1", "w": 4.5}]}
+    assert len(cap[0]["historico"]) == 3 and cap[0]["projecoes"]["dias_historico"] == 0
+
+
+async def test_switches_capacidade_sem_redis_atual_none(client, db):
+    id = await _novo(client)
+    assert (await client.get("/api/eventos/switches")).json()["capacidade"] == []
+    await store.inserir_retrato(db, {"eq_id": id, "em": datetime.now(UTC) - timedelta(hours=1), "poe_usado_w": 1.0,
+                                     "poe_max_w": 10.0, "clientes": 1, "temperatura": 30.0,
+                                     "portas_total": 2, "portas_em_uso": 1})
+    cap = (await client.get("/api/eventos/switches")).json()["capacidade"]
+    assert cap[0]["atual"] is None and len(cap[0]["historico"]) == 1
+
+
+async def test_switches_continua_401_sem_login(anon):
+    assert (await anon.get("/api/eventos/switches")).status_code == 401

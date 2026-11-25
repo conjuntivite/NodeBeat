@@ -23,13 +23,14 @@ Color corCategoria(TradeTokens t, String cat) => switch (cat) {
     };
 
 class _Vazio extends StatelessWidget {
-  const _Vazio();
+  const _Vazio([this.texto = 'Sem eventos no período']);
+  final String texto;
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     return SizedBox(
       height: 96,
-      child: Center(child: Text('Sem eventos no período', style: TradeType.bodyMd.copyWith(color: t.fgMuted))),
+      child: Center(child: Text(texto, style: TradeType.bodyMd.copyWith(color: t.fgMuted))),
     );
   }
 }
@@ -250,7 +251,7 @@ class GraficoCapacidade extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    if (pontos.isEmpty) return const _Vazio();
+    if (pontos.isEmpty) return const _Vazio('Sem dados ainda');
     final ini = pontos.first.$1;
     double dias(DateTime d) => d.difference(ini).inMinutes / 1440;
     final spots = [for (final p in pontos) FlSpot(dias(p.$1), p.$2)];
@@ -262,10 +263,12 @@ class GraficoCapacidade extends StatelessWidget {
     }
 
     final xMax = proj?.last.x ?? ultimo.x;
+    final topo = [...spots.map((s) => s.y), ?proj?.last.y, ?limite].reduce((a, b) => a > b ? a : b);
     return SizedBox(
       height: 180,
       child: LineChart(LineChartData(
         minY: 0,
+        maxY: topo <= 0 ? 1 : topo * 1.1,
         minX: 0,
         maxX: xMax <= 0 ? 1 : xMax,
         gridData: FlGridData(drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: t.chartGrid, strokeWidth: 1)),
@@ -289,7 +292,7 @@ class GraficoCapacidade extends StatelessWidget {
             return Text(v.toStringAsFixed(0), style: TradeType.bodySm.copyWith(color: t.fgMuted));
           })),
           bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 24, getTitlesWidget: (v, meta) {
-            if (v == meta.max || v == meta.min && v != 0) return const SizedBox.shrink();
+            if (v == meta.max || (v == meta.min && v != 0)) return const SizedBox.shrink();
             return Padding(padding: EdgeInsets.only(top: t.space2), child: Text(data(v), style: TradeType.bodySm.copyWith(color: t.fgMuted)));
           })),
         ),

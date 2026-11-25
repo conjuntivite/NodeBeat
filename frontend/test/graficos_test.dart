@@ -99,12 +99,13 @@ void main() {
       expect(d.lineBarsData.length, 2); // série + projeção
       expect(d.lineBarsData.first.barWidth, 2);
       expect(d.extraLinesData.horizontalLines.single.y, 240);
+      expect(d.maxY, greaterThanOrEqualTo(240));
     });
   }
 
   testWidgets('GraficoCapacidade vazio', (t) async {
     await _mostra(t, const GraficoCapacidade(pontos: [], unidade: 'W'), Brightness.light);
-    expect(find.text('Sem eventos no período'), findsOneWidget);
+    expect(find.text('Sem dados ainda'), findsOneWidget);
     expect(find.byType(LineChart), findsNothing);
   });
 }

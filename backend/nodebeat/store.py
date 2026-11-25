@@ -206,6 +206,23 @@ async def garantir_indice_unifi(db) -> None:
                                   partialFilterExpression={"unifi_id": {"$exists": True}})
 
 
+HIST_TTL_S = 400 * 86400
+
+
+async def garantir_indice_hist(db) -> None:
+    await db.unifi_hist.create_index([("eq_id", 1), ("em", 1)])
+    await db.unifi_hist.create_index("em", name="ttl_em", expireAfterSeconds=HIST_TTL_S)
+
+
+async def inserir_retrato(db, doc: dict) -> None:
+    await db.unifi_hist.insert_one(doc)
+
+
+async def listar_retratos(db, eq_ids: list[str], desde: datetime) -> list[dict]:
+    f = {"eq_id": {"$in": eq_ids}, "em": {"$gte": desde}}
+    return [_utc(d) async for d in db.unifi_hist.find(f, {"portas": 0}).sort("em", 1)]
+
+
 async def inserir_eventos_unifi(db, docs: list[dict]) -> int:
     """Insere ignorando os que já existem (o log é relido com sobreposição); devolve quantos entraram."""
     if not docs:

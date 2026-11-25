@@ -189,3 +189,29 @@ def test_nao_finitos_e_nomes_nao_string():
     ev["timestamp"] = "nan"
     with pytest.raises(ValueError):
         evento_unifi(ev, "e1")
+
+
+def test_retrato_soma_portas_e_conta_em_uso():
+    from datetime import datetime
+    from nodebeat.unifi import retrato
+    dev = _dev()
+    dev["port_table"] = [{"port_idx": 1, "up": True, "rx_bytes-r": 1250000, "tx_bytes-r": 125000, "poe_power": "2.5"},
+                         {"port_idx": 2, "up": True, "rx_bytes-r": 1250000},
+                         {"port_idx": 3, "up": False}]
+    em = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    d = retrato("eq1", parse_switch(dev), em)
+    assert d["eq_id"] == "eq1" and d["em"] == em
+    assert d["portas_total"] == 3 and d["portas_em_uso"] == 2
+    assert d["rx_mbps"] == 20.0 and d["tx_mbps"] == 1.0
+    assert d["poe_usado_w"] == 51.0 and d["poe_max_w"] == 95.0 and d["clientes"] == 7
+    assert d["temperatura"] == 51.0 and d["cpu"] == 16.0 and d["mem"] == 40.5
+    assert d["portas"]["1"] == {"up": True, "rx_mbps": 10.0, "tx_mbps": 1.0, "poe_w": 2.5}
+    assert d["portas"]["3"]["up"] is False and d["portas"]["3"]["rx_mbps"] is None
+
+
+def test_retrato_sem_poe():
+    from datetime import datetime
+    from nodebeat.unifi import retrato
+    dev = {"ip": "192.0.2.1", "mac": "02:00:00:00:00:01", "name": "x", "port_table": [{"port_idx": 1, "up": True}]}
+    d = retrato("e", parse_switch(dev), datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert d["poe_max_w"] is None and d["rx_mbps"] == 0 and d["portas_em_uso"] == 1

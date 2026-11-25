@@ -465,6 +465,11 @@ async def run_unifi(db, r, settings: Settings, now: datetime, *, ler=unifi.ler, 
                         sw["portas"][str(idx)]["clientes"] = cli
                 await r.set(f"unifi:eq:{eq['id']}", json.dumps(
                     {"lido_em": now.isoformat(), "sistema": sw["sistema"], "portas": sw["portas"]}), ex=600)  # velho expira se o controlador some
+                try:
+                    if await r.set(f"unifi:hist:{eq['id']}", "1", nx=True, ex=300):  # 1 retrato a cada 5 min
+                        await store.inserir_retrato(db, unifi.retrato(eq["id"], sw, now))
+                except Exception as e:  # histórico não pode tirar o switch do estado nem dos eventos
+                    log.warning("unifi: retrato ignorado: %s", type(e).__name__)
                 sws.append({"id": eq["id"], "nome": sw["nome"] or "", "mac": (sw["mac"] or "").lower()})
             except Exception as e:  # um switch malformado não derruba os outros
                 log.warning("unifi: switch ignorado: %s", type(e).__name__)
@@ -522,6 +527,7 @@ async def main() -> None:
         un_client = httpx.AsyncClient(verify=False, timeout=15) if s.unifi_url and s.unifi_api_key else None
         if un_client:
             await store.garantir_indice_unifi(db)
+            await store.garantir_indice_hist(db)
 
         async def _inv(s):
             nonlocal ultimo_inv

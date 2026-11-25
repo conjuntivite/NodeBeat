@@ -86,12 +86,15 @@ class AppShell extends StatelessWidget {
     final estreita = MediaQuery.sizeOf(context).width < 600; // celular: navegação vira menu
     final margem = margemLateral(context);
     void navegar(BuildContext c, String chave) => (aoNavegar ?? (k) => irPara(context, k))(chave);
-    final conta = [
+    List<Widget> conta(BuildContext c, bool noMenu) => [
       if (apiSessao != null)
         IconButton(
           tooltip: 'Minha conta',
           icon: const Icon(Icons.person_outline, size: 20),
-          onPressed: () => abrirMinhaConta(context, apiSessao!),
+          onPressed: () {
+            if (noMenu) Navigator.of(c).pop(); // fecha o menu antes do diálogo
+            abrirMinhaConta(context, apiSessao!);
+          },
         ),
     ];
     Widget itens(BuildContext c, {required bool comRotulo}) => ValueListenableBuilder<Eu?>(
@@ -116,9 +119,9 @@ class AppShell extends StatelessWidget {
         const Spacer(),
         Row(
           mainAxisAlignment: comRotulo ? MainAxisAlignment.start : MainAxisAlignment.center,
-          children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...conta, ...fim]],
+          children: [if (comRotulo) ...[...rodape, const ThemeToggle(), ...conta(c, true), ...fim]],
         ),
-        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...conta, ...fim],
+        if (!comRotulo) ...[...rodape, const ThemeToggle(), ...conta(c, true), ...fim],
       ],
     ));
     final lateral = Container(

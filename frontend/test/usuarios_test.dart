@@ -138,6 +138,17 @@ void main() {
     expect(jsonDecode(put.body), {'senha': _senhaOk});
   });
 
+  testWidgets('no celular, Minha conta fecha o menu antes do diálogo', (t) async {
+    await _show(t, largura: 360);
+    await t.tap(find.byTooltip('Menu'));
+    await t.pumpAndSettle();
+    expect(find.byType(Drawer), findsOneWidget);
+    await t.tap(find.byTooltip('Minha conta'));
+    await t.pumpAndSettle();
+    expect(find.byType(Drawer), findsNothing);
+    expect(find.text('Senha atual'), findsOneWidget);
+  });
+
   testWidgets('Minha conta envia PUT /api/auth/senha', (t) async {
     final vistos = await _show(t);
     await t.tap(find.byTooltip('Minha conta'));

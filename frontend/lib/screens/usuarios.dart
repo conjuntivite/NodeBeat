@@ -224,8 +224,8 @@ class _FormDialogState extends State<_FormDialog> {
     final t = tokensOf(context);
     return AlertDialog(
       title: Text(widget.titulo),
-      content: SizedBox(
-        width: 400,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             for (var i = 0; i < widget.campos.length; i++) ...[

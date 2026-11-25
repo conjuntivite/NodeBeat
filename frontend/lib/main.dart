@@ -10,9 +10,14 @@ import 'screens/painel_eventos.dart';
 import 'screens/preparar_mk.dart';
 import 'screens/switch_detail.dart';
 import 'screens/usuarios.dart';
+import 'sessao.dart';
 import 'theme/theme.dart';
 
-void main() => runApp(NodeBeatApp(api: ApiClient()));
+void main() {
+  final api = ApiClient();
+  carregarSessao(api); // tema/usuário em qualquer página recarregada (ignora erros)
+  runApp(NodeBeatApp(api: api));
+}
 
 class NodeBeatApp extends StatelessWidget {
   const NodeBeatApp({super.key, required this.api});

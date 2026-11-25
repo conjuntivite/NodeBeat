@@ -96,7 +96,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
-    carregarSessao(widget.api); // quem recarrega a página já logado
     _beat.addListener(_onBeat);
     _tabs.index = painelAba.value;
     painelAba.addListener(_irParaAba);

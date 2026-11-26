@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 
 import 'api/client.dart';
 import 'screens/login.dart';
@@ -13,6 +14,13 @@ import 'screens/switch_detail.dart';
 import 'screens/usuarios.dart';
 import 'sessao.dart';
 import 'theme/theme.dart';
+
+/// Rola arrastando também com mouse e touchpad (TV com controle/air mouse); o padrão do Flutter web é só toque.
+class RolagemComMouse extends MaterialScrollBehavior {
+  const RolagemComMouse();
+  @override
+  Set<PointerDeviceKind> get dragDevices => PointerDeviceKind.values.toSet();
+}
 
 void main() {
   final api = ApiClient();
@@ -48,6 +56,7 @@ class NodeBeatApp extends StatelessWidget {
         builder: (_, mode, _) => MaterialApp(
           title: 'NodeBeat',
           debugShowCheckedModeBanner: false,
+          scrollBehavior: const RolagemComMouse(),
           theme: tradeTheme(Brightness.light),
           darkTheme: tradeTheme(Brightness.dark),
           themeMode: mode,

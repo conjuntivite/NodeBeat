@@ -154,7 +154,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   Future<void> _painel() async {
     if (_expirou || !widget.visivel()) return;
     try {
-      final b = (await widget.api.painelEventos('24h').timeout(widget.intervalo * 3)).blocos['acesso'];
+      final b = (await widget.api.painelEventos('24h').timeout(widget.intervaloRodape) /* painel leva ~12 s com cache frio */).blocos['acesso'];
       if (!mounted) return;
       setState(() {
         _acesso = b;

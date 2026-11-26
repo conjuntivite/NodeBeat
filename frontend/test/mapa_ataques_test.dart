@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +18,7 @@ Map<String, dynamic> _ataque({bool sucesso = false}) => {
       'quando': '2026-11-25T12:00:00+00:00', 'usuario': 'admin',
     };
 
-Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const []}) => {
+Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const [], List<Map<String, dynamic>>? paises}) => {
       'periodo': '24h',
       'resumo': <String, int>{},
       'serie_hora': <Object>[],
@@ -29,9 +30,10 @@ Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const []}) => 
             {'ip': '203.0.113.9', 'n': 5, 'pais': 'CN', 'pais_nome': 'China'},
           ],
           'por_via': {'ssh': 4, 'winbox': 1},
-          'top_paises': [
-            {'pais': 'CN', 'pais_nome': 'China', 'n': 5},
-          ],
+          'top_paises': paises ??
+              [
+                {'pais': 'CN', 'pais_nome': 'China', 'n': 5},
+              ],
           'logins_externos': logins,
         },
       },
@@ -43,17 +45,21 @@ Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const []}) => 
 
 class _Servidor {
   int feedStatus = 200;
+  int chamadasFeed = 0;
+  bool travarPrimeira = false;
   List<Map<String, dynamic>> ataques = [];
   List<Map<String, dynamic>> logins = [];
+  List<Map<String, dynamic>>? paises;
 
   ApiClient get api => ApiClient(
         client: MockClient((req) async {
           if (req.url.path == '/api/eventos/ataques') {
+            if (chamadasFeed++ == 0 && travarPrimeira) return Completer<http.Response>().future; // nunca responde
             return feedStatus == 200
                 ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': 0})
                 : _json({'detail': 'x'}, feedStatus);
           }
-          if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins));
+          if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins, paises: paises));
           return http.Response('', 404);
         }),
       );
@@ -113,6 +119,49 @@ void main() {
     expect(find.textContaining('MK Alfa'), findsNothing);
   });
 
+  testWidgets('cienteSobreviveAoReabrir', (t) async {
+    final s = _Servidor()
+      ..logins = [
+        {'mk_id': 'b', 'nome': 'MK Beta', 'usuario': 'root', 'ip': '198.51.100.8', 'via': 'ssh',
+         'quando': '2026-11-25T11:00:00+00:00', 'pais_nome': null},
+      ];
+    await _mostrar(t, s);
+    await t.tap(find.text('Ciente'));
+    await t.pump();
+    await t.pumpWidget(const SizedBox());
+    await _mostrar(t, s);
+    expect(find.textContaining('MK Beta'), findsNothing);
+  });
+
+  testWidgets('rotuloComNomeDaMk', (t) async {
+    final s = _Servidor()..ataques = [_ataque()];
+    await _mostrar(t, s);
+    await t.pump(const Duration(milliseconds: 100));
+    final st = t.state<MapaAtaquesState>(find.byType(MapaAtaques));
+    expect(st.rotulosDesenhados, contains('MK Feed'));
+  });
+
+  testWidgets('contadorDescartados', (t) async {
+    final s = _Servidor();
+    await _mostrar(t, s);
+    expect(find.textContaining(RegExp(r'^\+\d')), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    await _mostrar(t, _Servidor()..ataques = [for (var i = 0; i < 61; i++) _ataque()]);
+    expect(find.text('+1'), findsOneWidget);
+  });
+
+  testWidgets('consultaPresaExpiraEVolta', (t) async {
+    final s = _Servidor()
+      ..travarPrimeira = true
+      ..ataques = [_ataque()];
+    await _mostrar(t, s);
+    for (var i = 0; i < 5; i++) {
+      await t.pump(const Duration(seconds: 1));
+    }
+    expect(s.chamadasFeed, greaterThan(1));
+    expect(t.state<MapaAtaquesState>(find.byType(MapaAtaques)).linhasAtivas, greaterThan(0));
+  });
+
   testWidgets('avisoDoFeed', (t) async {
     final s = _Servidor()..ataques = [_ataque(sucesso: true)];
     await _mostrar(t, s);
@@ -134,6 +183,12 @@ void main() {
     await _mostrar(t, _Servidor(), tv: true);
     expect(find.text('TOP PAÍSES'), findsOneWidget);
     expect(find.text('China'), findsWidgets);
+  });
+
+  testWidgets('rodapeAguentaCampoFaltando', (t) async {
+    await _mostrar(t, _Servidor()..paises = [{'pais': 'AR'}], tv: true);
+    expect(t.takeException(), isNull);
+    expect(find.text('AR'), findsOneWidget);
   });
 
   testWidgets('creditoDbIp', (t) async {

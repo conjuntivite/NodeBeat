@@ -27,6 +27,9 @@ final Future<List<List<Offset>>> _terra = rootBundle.load('assets/ataques/terra.
 
 typedef _Aviso = ({String mk, String? usuario, String ip, String via, String quando, String? pais});
 
+// "Ciente" vale para a aba inteira: sobrevive a fechar e reabrir o mapa.
+final _cientes = <String>{};
+
 String _chave(_Aviso a) => '${a.mk}|${a.ip}|${a.usuario}|${a.quando}';
 String _utc(String iso) => DateTime.parse(iso).toUtc().toIso8601String();
 
@@ -62,13 +65,16 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   BlocoPainel? _acesso;
   List<_Aviso> _avisosPainel = const [];
   final _avisosFeed = <String, _Aviso>{};
-  final _cientes = <String>{};
+  final _rotulos = <String>[];
+  final _textos = <String, TextPainter>{};
 
   // Relógio do ticker: avança com os quadros (e com o pump nos testes).
   DateTime get _agora => _t0.add(_decorrido);
 
   @visibleForTesting
   int get linhasAtivas => _fila.ativas(_agora).length;
+  @visibleForTesting
+  List<String> get rotulosDesenhados => _rotulos;
 
   @override
   void initState() {
@@ -97,6 +103,9 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     _timerPainel?.cancel();
     _ticker.dispose();
     _quadro.dispose();
+    for (final p in _textos.values) {
+      p.dispose();
+    }
     super.dispose();
   }
 
@@ -116,7 +125,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     if (_buscando || _expirou) return;
     _buscando = true;
     try {
-      final r = await widget.api.ataques(desde: _cursor); // 1ª sem cursor: começa do agora
+      final r = await widget.api.ataques(desde: _cursor).timeout(widget.intervalo * 3); // 1ª sem cursor: começa do agora
       if (!mounted) return;
       _cursor = r.cursor;
       _fila.receber(r.ataques, _agora, janela: widget.intervalo);
@@ -137,7 +146,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   Future<void> _painel() async {
     if (_expirou) return;
     try {
-      final b = (await widget.api.painelEventos('24h')).blocos['acesso'];
+      final b = (await widget.api.painelEventos('24h').timeout(widget.intervalo * 3)).blocos['acesso'];
       if (!mounted) return;
       setState(() {
         _acesso = b;
@@ -164,7 +173,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
             aspectRatio: 360 / 142,
             child: Stack(fit: StackFit.expand, children: [
               RepaintBoundary(child: CustomPaint(painter: _Terra(_poligonos, t.bgHover, t.borderSubtle))),
-              RepaintBoundary(child: CustomPaint(painter: _Linhas(_fila, () => _agora, t, _quadro))),
+              RepaintBoundary(child: CustomPaint(painter: _Linhas(_fila, () => _agora, t, _quadro, _textos, _rotulos))),
             ]),
           ),
         ),
@@ -188,9 +197,16 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       Positioned(
         right: t.space4,
         top: t.space4,
-        child: parado > const Duration(seconds: 30)
-            ? Pilula('sem dados há ${formatDuration(parado.inSeconds)}', cor: t.warning, ponto: true)
-            : Text('● ao vivo', style: TradeType.bodySm.copyWith(color: t.positive, fontWeight: FontWeight.w500)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          // linhas que não couberam no teto da fila
+          if (_fila.descartados > 0) ...[
+            Text('+${_fila.descartados}', style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgMuted)),
+            SizedBox(width: t.space2),
+          ],
+          parado > const Duration(seconds: 30)
+              ? Pilula('sem dados há ${formatDuration(parado.inSeconds)}', cor: t.warning, ponto: true)
+              : Text('● ao vivo', style: TradeType.bodySm.copyWith(color: t.positive, fontWeight: FontWeight.w500)),
+        ]),
       ),
       Positioned(
         right: t.space4,
@@ -248,7 +264,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
         padding: EdgeInsets.all(t.space4),
         decoration: BoxDecoration(border: Border(top: BorderSide(color: t.borderSubtle))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _lista(t, 'Top países', [for (final p in b.topPaises) ('${p['pais_nome'] ?? p['pais'] ?? '?'}', (p['n'] as num).toInt())]),
+          _lista(t, 'Top países', [for (final p in b.topPaises) ('${p['pais_nome'] ?? p['pais'] ?? '?'}', (p['n'] as num?)?.toInt() ?? 0)]),
           SizedBox(width: t.space6),
           _lista(t, 'Top IPs', [for (final c in b.topIps) (c.paisNome == null ? c.ip : '${c.ip} · ${c.paisNome}', c.n)]),
           SizedBox(width: t.space6),
@@ -288,15 +304,36 @@ class _Terra extends CustomPainter {
 
 // Camada das linhas: repinta a cada quadro do ticker (via [repaint]).
 class _Linhas extends CustomPainter {
-  _Linhas(this.fila, this.agora, this.t, Listenable repaint) : super(repaint: repaint);
+  _Linhas(this.fila, this.agora, this.t, Listenable repaint, this.textos, this.rotulos) : super(repaint: repaint);
   final FilaAtaques fila;
   final DateTime Function() agora;
   final TradeTokens t;
+  final Map<String, TextPainter> textos; // cache por nome + cor
+  final List<String> rotulos; // o que foi desenhado no último quadro (testes)
+
+  // Nome da MK centrado acima de [p]; opacidade em 10 degraus para o cache valer.
+  void _rotulo(Canvas canvas, String nome, Offset p, double opacidade) {
+    final cor = t.fgSecondary.withValues(alpha: (opacidade * 10).round() / 10);
+    if (cor.a == 0) return;
+    if (textos.length > 300) {
+      for (final tp in textos.values) {
+        tp.dispose();
+      }
+      textos.clear();
+    }
+    final tp = textos.putIfAbsent('$nome|${cor.toARGB32()}', () => TextPainter(
+          text: TextSpan(text: nome, style: TradeType.bodySm.copyWith(color: cor)),
+          textDirection: TextDirection.ltr,
+        )..layout());
+    tp.paint(canvas, p - Offset(tp.width / 2, tp.height + 6));
+    rotulos.add(nome);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final agora = this.agora();
     final b = projetar(destinoLat, destinoLon, size);
+    rotulos.clear();
     for (final l in fila.ativas(agora)) {
       final f = fase(agora.difference(l.inicio));
       final a = projetar(l.ataque.lat!, l.ataque.lon!, size);
@@ -314,8 +351,10 @@ class _Linhas extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeWidth = l.ataque.sucesso ? 3 : 1.5);
       canvas.drawCircle(a, 2, Paint()..color = cor);
+      final cabeca = pontoNoArco(a, c, b, f.cabeca);
+      _rotulo(canvas, l.ataque.mkNome, cabeca, f.opacidade); // na cabeça; no destino quando cheia
       if (f.cabeca < 1) {
-        canvas.drawCircle(pontoNoArco(a, c, b, f.cabeca), 3, Paint()..color = cor);
+        canvas.drawCircle(cabeca, 3, Paint()..color = cor);
       } else {
         // pulso no destino enquanto a linha está cheia
         final idade = agora.difference(l.inicio) - viagem;

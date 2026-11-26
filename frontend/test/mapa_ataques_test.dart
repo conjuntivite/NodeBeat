@@ -55,6 +55,7 @@ class _Servidor {
   List<Map<String, dynamic>> ataques = [];
   List<Map<String, dynamic>> logins = [];
   List<Map<String, dynamic>>? paises;
+  Duration atrasoPainel = Duration.zero;
 
   ApiClient get api => ApiClient(
         client: MockClient((req) async {
@@ -64,7 +65,10 @@ class _Servidor {
                 ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': descartados})
                 : _json({'detail': 'x'}, feedStatus);
           }
-          if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins, paises: paises), painelStatus);
+          if (req.url.path == '/api/eventos/painel') {
+            if (atrasoPainel > Duration.zero) await Future<void>.delayed(atrasoPainel); // o painel real leva ~12 s com cache frio
+            return _json(_painel(logins: logins, paises: paises), painelStatus);
+          }
           return http.Response('', 404);
         }),
       );
@@ -342,6 +346,15 @@ void main() {
             matching: find.byWidgetPredicate((w) =>
                 w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(tk, 'ssh'))),
         findsOneWidget);
+  });
+
+  // o painel pode levar mais que 3x o intervalo do feed; o limite é o intervalo do rodapé
+  testWidgets('painelLentoAindaPreencheColuna', (t) async {
+    await _mostrar(t, _Servidor()..atrasoPainel = const Duration(seconds: 5), tv: true);
+    expect(find.text('Aguardando dados'), findsOneWidget);
+    await t.pump(const Duration(seconds: 6));
+    expect(find.text('Aguardando dados'), findsNothing);
+    expect(find.text('TOP PAÍSES'), findsOneWidget);
   });
 
   testWidgets('colunaVaziaAguardandoDados', (t) async {

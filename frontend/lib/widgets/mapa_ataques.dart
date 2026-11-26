@@ -337,7 +337,13 @@ class _Linhas extends CustomPainter {
     final agora = this.agora();
     final b = projetar(destinoLat, destinoLon, size);
     rotulos.clear();
-    for (final l in fila.ativas(agora)) {
+    final todas = fila.ativas(agora);
+    // Paradas no destino, só a mais recente leva o nome da MK (senão os rótulos se sobrepõem).
+    LinhaAtiva? cheiaRecente;
+    for (final l in todas.where((l) => fase(agora.difference(l.inicio)).cabeca >= 1)) {
+      if (cheiaRecente == null || l.inicio.isAfter(cheiaRecente.inicio)) cheiaRecente = l;
+    }
+    for (final l in todas) {
       final f = fase(agora.difference(l.inicio));
       final a = projetar(l.ataque.lat!, l.ataque.lon!, size);
       final c = controleArco(a, b);
@@ -355,7 +361,7 @@ class _Linhas extends CustomPainter {
         ..strokeWidth = l.ataque.sucesso ? 3 : 1.5);
       canvas.drawCircle(a, 2, Paint()..color = cor);
       final cabeca = pontoNoArco(a, c, b, f.cabeca);
-      _rotulo(canvas, l.ataque.mkNome, cabeca, f.opacidade); // na cabeça; no destino quando cheia
+      if (f.cabeca < 1 || identical(l, cheiaRecente)) _rotulo(canvas, l.ataque.mkNome, cabeca, f.opacidade); // na cabeça; no destino quando cheia
       if (f.cabeca < 1) {
         canvas.drawCircle(cabeca, 3, Paint()..color = cor);
       } else {

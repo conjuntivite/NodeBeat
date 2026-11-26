@@ -9,6 +9,7 @@ import 'package:nodebeat/screens/painel_eventos.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/mapa_ataques.dart';
+import 'package:nodebeat/widgets/common.dart' show TradeCard;
 
 import 'painel_api_test.dart' show painelJson;
 
@@ -412,6 +413,7 @@ void main() {
       expect(t.takeException(), isNull);
     });
   }
+  popupAcesso();
 }
 
 String _hora(String iso) {
@@ -430,7 +432,8 @@ void popupAcesso() {
     await t.tap(find.byTooltip('Fechar'));
     await t.pump();
     await t.pump(const Duration(milliseconds: 600));
-    await t.tap(find.text('Ver detalhes →').at(2)); // VPN
+    final cardVpn = find.ancestor(of: find.byKey(const Key('total-vpn')), matching: find.byType(TradeCard));
+    await t.tap(find.descendant(of: cardVpn, matching: find.text('Ver detalhes →')));
     await t.pumpAndSettle();
     expect(find.byType(MapaAtaques), findsNothing);
     expect(find.byTooltip('Abrir em tela cheia'), findsNothing);

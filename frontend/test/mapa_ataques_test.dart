@@ -142,6 +142,21 @@ void main() {
     expect(st.rotulosDesenhados, contains('MK Feed'));
   });
 
+  testWidgets('rotuloSoDaLinhaCheiaMaisRecente', (t) async {
+    final s = _Servidor()
+      ..ataques = [
+        {..._ataque(), 'mk_nome': 'MK Antiga'},
+        {..._ataque(), 'mk_nome': 'MK Nova'},
+      ];
+    await _mostrar(t, s);
+    s.ataques = []; // só o 1º lote: as duas linhas saem em 0 s e 0,5 s
+    final st = t.state<MapaAtaquesState>(find.byType(MapaAtaques));
+    await t.pump(const Duration(milliseconds: 1600)); // Antiga cheia, Nova ainda viaja
+    expect(st.rotulosDesenhados, unorderedEquals(['MK Antiga', 'MK Nova']));
+    await t.pump(const Duration(milliseconds: 600)); // as duas cheias ao mesmo tempo
+    expect(st.rotulosDesenhados, ['MK Nova']);
+  });
+
   testWidgets('contadorDescartados', (t) async {
     final s = _Servidor();
     await _mostrar(t, s);

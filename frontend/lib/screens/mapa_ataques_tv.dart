@@ -75,7 +75,6 @@ class _SeletorPaleta extends StatelessWidget {
     final t = tokensOf(context);
     return PopupMenuButton<PaletaMapa>(
       tooltip: 'Paleta do mapa',
-      icon: Icon(Icons.palette_outlined, color: t.fgSecondary),
       onSelected: aoEscolher,
       itemBuilder: (_) => [
         for (final p in paletasMapa)
@@ -89,6 +88,16 @@ class _SeletorPaleta extends StatelessWidget {
             ]),
           ),
       ],
+      // miniatura + texto em vez de ícone: a fonte de ícones sem hash fica horas no cache do navegador (Cloudflare)
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: t.space3, vertical: t.space1),
+        decoration: BoxDecoration(border: Border.all(color: t.borderSubtle), borderRadius: BorderRadius.circular(t.radiusPill)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          _Miniatura(atual),
+          SizedBox(width: t.space2),
+          Text('Paleta', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+        ]),
+      ),
     );
   }
 }

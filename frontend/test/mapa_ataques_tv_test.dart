@@ -122,6 +122,8 @@ void main() {
     await t.pump();
     expect(find.byType(ThemeToggle), findsNothing);
     expect(find.byTooltip('Paleta do mapa'), findsOneWidget);
+    // botão visível sem depender da fonte de ícones
+    expect(find.descendant(of: find.byTooltip('Paleta do mapa'), matching: find.text('Paleta')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

@@ -102,7 +102,7 @@ class ColunaTopsVazia extends StatelessWidget {
 class ColunaTops extends StatelessWidget {
   const ColunaTops({super.key, required this.acesso, required this.paleta});
   final BlocoPainel acesso;
-  final PaletaMapa paleta; // reservada: tops sem bolinha de serviço hoje
+  final PaletaMapa paleta;
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +138,10 @@ class ColunaTops extends StatelessWidget {
             for (final p in acesso.topPaises.take(5))
               item(p['pais'] as String?, '${p['pais_nome'] ?? p['pais'] ?? '?'}', (p['n'] as num?)?.toInt() ?? 0),
           ])),
-          bloco('Top tipos de acesso', GraficoBarras(dados: [for (final e in vias.take(5)) (e.key.toUpperCase(), e.value)])),
+          bloco('Top tipos de acesso', GraficoBarras(
+            dados: [for (final e in vias.take(5)) (e.key.toUpperCase(), e.value)],
+            cores: [for (final e in vias.take(5)) corVia(paleta, e.key)],
+          )),
         ]),
       ),
     );

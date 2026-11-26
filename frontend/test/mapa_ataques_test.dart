@@ -413,4 +413,23 @@ void abaOculta() {
     expect(s.chamadasFeed, greaterThan(0));
     await t.pumpWidget(const SizedBox());
   });
+
+  testWidgets('popupSemSeletor', (t) async {
+    t.view.physicalSize = const Size(1280, 720);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(theme: tradeTheme(Brightness.light), home: Scaffold(body: MapaAtaques(api: _Servidor().api))));
+    await t.pump();
+    await t.pump();
+    expect(find.byTooltip('Paleta do mapa'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is ColoredBox && w.color == paletaPorId('cinza').fundo), findsWidgets);
+  });
+
+  testWidgets('barrasDosTiposUsamCorDaVia', (t) async {
+    await _mostrar(t, _Servidor(), tv: true);
+    final barras = find.descendant(of: find.byType(ColunaTops), matching: find.byType(LinearProgressIndicator));
+    final p = paletaPadrao(Brightness.dark);
+    expect(t.widget<LinearProgressIndicator>(barras.at(0)).color, corVia(p, 'ssh'));
+    expect(t.widget<LinearProgressIndicator>(barras.at(1)).color, corVia(p, 'winbox'));
+  });
 }

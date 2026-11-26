@@ -61,9 +61,10 @@ class _Legenda extends StatelessWidget {
 
 /// Barras horizontais com rótulo e número (nomes de MK longos não cabem no eixo de um gráfico vertical).
 class GraficoBarras extends StatelessWidget {
-  const GraficoBarras({super.key, required this.dados, this.cor});
+  const GraficoBarras({super.key, required this.dados, this.cor, this.cores});
   final List<(String, int)> dados;
   final Color? cor;
+  final List<Color>? cores; // uma por barra; sem ela vale `cor`
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +72,7 @@ class GraficoBarras extends StatelessWidget {
     if (dados.isEmpty) return const _Vazio();
     final maximo = dados.map((d) => d.$2).reduce((a, b) => a > b ? a : b);
     return Column(children: [
-      for (final (nome, n) in dados)
+      for (final (i, (nome, n)) in dados.indexed)
         Padding(
           padding: EdgeInsets.symmetric(vertical: t.space1),
           child: Row(children: [
@@ -83,7 +84,7 @@ class GraficoBarras extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: maximo == 0 ? 0 : n / maximo,
                   minHeight: 10,
-                  color: cor ?? t.info,
+                  color: cores?[i] ?? cor ?? t.info,
                   backgroundColor: t.borderSubtle,
                 ),
               ),

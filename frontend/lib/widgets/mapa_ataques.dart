@@ -140,7 +140,8 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       _cursor = r.cursor;
       _descServidor = r.descartados;
       _fila.receber(r.ataques, _agora, janela: widget.intervalo);
-      _recentes = ([...r.ataques, ..._recentes]..sort((a, b) => b.quando.compareTo(a.quando))).take(8).toList();
+      // só o lote novo é ordenado (sort não é estável); o cursor garante que é mais novo que o já visto
+      _recentes = [...([...r.ataques]..sort((a, b) => b.quando.compareTo(a.quando))), ..._recentes].take(8).toList();
       final limite = DateTime.now().toUtc().subtract(const Duration(hours: 24));
       _avisosFeed.removeWhere((_, a) => DateTime.parse(a.quando).isBefore(limite));
       for (final a in r.ataques.where((a) => a.sucesso)) {
@@ -235,7 +236,9 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
       if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
       Expanded(child: mapa),
-      if (widget.tv) ListaAoVivo(recentes: _recentes),
+      // rolagem desligada: em TV baixa as linhas mais antigas são cortadas e o mapa não colapsa
+      if (widget.tv)
+        Flexible(child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes))),
     ]);
     // TV: lista ao vivo embaixo do mapa e tops de 24 h à direita (layout do FortiGuard)
     return ColoredBox(

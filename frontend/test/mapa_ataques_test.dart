@@ -285,6 +285,21 @@ void main() {
     expect(find.text('IP data by DB-IP'), findsOneWidget);
   });
 
+  testWidgets('tvBaixaNaoEstoura', (t) async {
+    final s = _Servidor()
+      ..logins = [
+        for (var i = 1; i <= 3; i++)
+          {'mk_id': 'm$i', 'nome': 'MK Lote$i', 'usuario': 'admin', 'ip': '198.51.100.$i', 'via': 'ssh',
+           'quando': '2026-11-25T1$i:00:00+00:00', 'pais_nome': null},
+      ]
+      ..ataques = [for (var i = 0; i < 8; i++) {..._ataque(sucesso: i.isEven), 'mk_nome': 'MK $i'}];
+    await _mostrar(t, s, tv: true);
+    t.view.physicalSize = const Size(1280, 600);
+    await t.pump();
+    expect(find.byType(ListaAoVivo), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
   testWidgets('temaClaroRenderiza', (t) async {
     t.view.physicalSize = const Size(1280, 720);
     t.view.devicePixelRatio = 1;

@@ -99,7 +99,7 @@ class GraficoBarras extends StatelessWidget {
               ),
             ),
             SizedBox(width: t.space2),
-            SizedBox(width: 40, child: Text('$n', textAlign: TextAlign.end, style: TradeType.dataSm.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+            SizedBox(width: 56, child: Text('$n', textAlign: TextAlign.end, maxLines: 1, softWrap: false, style: TradeType.dataSm.copyWith(color: t.fgPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
           ]),
         ),
     ]);

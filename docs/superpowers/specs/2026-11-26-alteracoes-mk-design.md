@@ -126,11 +126,9 @@ pelo caminho de leitura. Devolve por peer: `id` (`.id`), `nome` (`name`, existe 
      `sa-dst-address` = antigo → `set`. Erro nesse `set` entra na resposta ("peer trocado, policy X não") em vez de
      ser engolido. Confirmar com um print real de `/ip ipsec policy` de uma v6 e de uma v7 no primeiro passo do
      plano (fixture dos testes);
-  4. relê o peer para confirmar o endereço novo;
-  5. **aviso, sem escrita:** lê `/ip/firewall/filter` e `/ip/firewall/address-list` e, se alguma regra não
-     desativada ou entrada de lista cita o endereço antigo (ex.: `input` liberando udp 500/4500 ou ipsec-esp só
-     da sede antiga), a resposta lista essas regras: "o túnel pode não subir até ajustar estas regras". O
-     NodeBeat não altera filtro.
+  4. relê o peer para confirmar o endereço novo.
+  Firewall da MK não é conferido nem alterado: segundo o usuário, as MKs aceitam as 3 saídas da sede (e o lado da
+  sede aceita os túneis nos 3 IPs).
   Se a conexão cair depois do passo 2 (possível pelo túnel), responder "Enviado; não deu para confirmar" e não erro.
 - Grava no histórico (ver 5). Não altera nada no Mongo da MK (o `ip_tunel` não muda).
 
@@ -217,13 +215,13 @@ a administradores é uma troca de `current_user` por `admin_user` nas 4 rotas de
 - Troca de peer uma MK por vez, para IP fixo escolhido.
 - Port forward só para IP interno (DVR); nada de liberar IP externo para a MK.
 - Script explícito na Preparar MK dizendo que é para alterar dados (portas e IPsec).
+- As MKs aceitam as 3 saídas da sede; quase todas (senão todas) têm uma WAN só.
 
 ## Chamadas minhas (para conferir)
 
 - Troca de peer vai primeiro pelo IP público; leitura e port forward, primeiro pelo túnel.
 - Atalhos com os IPs da sede + campo livre; peer por domínio pode ser trocado, com aviso.
 - v6: atualizar `sa-dst-address` das policies sem campo `peer` junto com o peer.
-- Regras de filtro/address-list que citam o IP antigo da sede: só avisar, não alterar.
 - Port forward numa WAN só (a do IP público cadastrado; senão a rota padrão principal), no fim do `dstnat`,
   comentário `nodebeat:<descrição>` com descrição única por MK; remover apaga o grupo todo; só NAT, sem filtro
   `forward` nem mangle.

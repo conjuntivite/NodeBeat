@@ -28,6 +28,23 @@ String scriptLigarEventos({required String ipOrigem, required String ipTunel}) =
 ${_eventos.replaceAll('@DST@', '"remote=$ipOrigem remote-port=514 src-address=$ipTunel"')}}
 ''';
 
+/// MK sem IPsec: o IP do NodeBeat (privado) não é alcançável pela internet, então o log vai a um IP público da sede,
+/// que o leva ao NodeBeat ([scriptSedeSyslog]). Sem src-address: a MK sai pela WAN, e o NodeBeat a reconhece pelo IP
+/// público cadastrado.
+String scriptLigarEventosSemIpsec({required String ipSede}) => '''{
+${_eventos.replaceAll('@DST@', '"remote=$ipSede remote-port=514"')}}
+''';
+
+/// Na MK da sede, uma vez por MK sem IPsec: leva o UDP 514 que chega dessa MK no IP público da sede ao NodeBeat.
+/// src-address limita à MK, para a 514 da sede não ficar aberta para a internet.
+String scriptSedeSyslog({required String ipMk, required String ipSede, required String ipOrigem}) => '''{
+/ip firewall nat remove [find where comment="nodebeat-syslog-$ipMk"]
+:local n [/ip firewall nat add chain=dstnat comment="nodebeat-syslog-$ipMk"]
+/ip firewall nat set \$n protocol=udp dst-port=514 src-address=$ipMk dst-address=$ipSede
+/ip firewall nat set \$n action=dst-nat to-addresses=$ipOrigem to-ports=514
+}
+''';
+
 /// No Preparar o IP de origem e o do túnel já são variáveis da MK.
 const _dstPreparar = r'("remote=" . $ipOrigem . " remote-port=514 src-address=" . $ipTunel)';
 
@@ -325,7 +342,7 @@ const _modelo = r'''{
 # eventos (syslog): so com um IP de tunel unico; a descoberta pode juntar varios ou dizer "nao encontrado"
 :do {
 :if ($semIpsec) do={
-  :put "Eventos nao ligados: MK sem IPsec (o syslog so vai pelo tunel)"
+  :put "Eventos nao ligados: MK sem IPsec, use Ligar eventos no detalhe da MK depois do cadastro"
 } else={
 :if ([:typeof [:toip $ipTunel]] = "ip") do={
 @EVENTOS@} else={

@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/widgets/ataques_tv.dart';
+import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/mapa_ataques.dart';
 
 http.Response _json(Object o, [int code = 200]) =>
@@ -222,19 +224,60 @@ void main() {
     expect(n, 1);
   });
 
-  testWidgets('rodapeSoNaTv', (t) async {
+  testWidgets('colunaTopsNaTv', (t) async {
     await _mostrar(t, _Servidor());
-    expect(find.text('TOP PAÍSES'), findsNothing);
+    expect(find.byType(ColunaTops), findsNothing);
     await t.pumpWidget(const SizedBox());
     await _mostrar(t, _Servidor(), tv: true);
-    expect(find.text('TOP PAÍSES'), findsOneWidget);
-    expect(find.text('China'), findsWidgets);
+    final coluna = find.byType(ColunaTops);
+    expect(find.descendant(of: coluna, matching: find.text('TOP PAÍSES')), findsOneWidget);
+    expect(find.descendant(of: coluna, matching: find.text('China')), findsOneWidget);
+    expect(find.descendant(of: coluna, matching: find.text('TOP TENTATIVAS')), findsOneWidget);
+    expect(find.descendant(of: coluna, matching: find.text('203.0.113.9')), findsOneWidget);
+    expect(find.descendant(of: coluna, matching: find.text('TOP TIPOS DE ACESSO')), findsOneWidget);
+    expect(find.descendant(of: coluna, matching: find.text('SSH')), findsOneWidget);
   });
 
-  testWidgets('rodapeAguentaCampoFaltando', (t) async {
+  testWidgets('colunaAguentaCampoFaltando', (t) async {
     await _mostrar(t, _Servidor()..paises = [{'pais': 'AR'}], tv: true);
     expect(t.takeException(), isNull);
     expect(find.text('AR'), findsOneWidget);
+  });
+
+  testWidgets('listaAoVivoNaTv', (t) async {
+    await _mostrar(t, _Servidor()..ataques = [_ataque()]);
+    expect(find.byType(ListaAoVivo), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    await _mostrar(t, _Servidor()..ataques = [_ataque()], tv: true);
+    final lista = find.byType(ListaAoVivo);
+    expect(find.descendant(of: lista, matching: find.text('MK Feed')), findsOneWidget);
+    expect(find.descendant(of: lista, matching: find.text('China')), findsOneWidget);
+    expect(find.descendant(of: lista, matching: find.text('203.0.113.9')), findsOneWidget);
+    expect(find.descendant(of: lista, matching: find.text('SSH')), findsOneWidget);
+    expect(find.descendant(of: lista, matching: find.text('Tentativa')), findsOneWidget);
+  });
+
+  testWidgets('listaMostraMultiplicador', (t) async {
+    await _mostrar(t, _Servidor()..ataques = [_ataque(), {..._ataque(), 'n': 1, 'mk_nome': 'MK Um'}], tv: true);
+    final lista = find.byType(ListaAoVivo);
+    expect(find.descendant(of: lista, matching: find.text('×3')), findsOneWidget);
+    expect(find.descendant(of: lista, matching: find.text('×1')), findsNothing);
+  });
+
+  testWidgets('listaMarcaAcessoAceito', (t) async {
+    await _mostrar(t, _Servidor()..ataques = [_ataque(sucesso: true)], tv: true);
+    expect(find.descendant(of: find.byType(ListaAoVivo), matching: find.text('Acesso aceito')), findsOneWidget);
+  });
+
+  testWidgets('listaGuardaSo8', (t) async {
+    final s = _Servidor()
+      ..ataques = [
+        for (var i = 0; i < 12; i++) {..._ataque(), 'mk_nome': 'MK $i', 'quando': '2026-11-25T12:00:${two(i)}+00:00'},
+      ];
+    await _mostrar(t, s, tv: true);
+    final st = t.state<MapaAtaquesState>(find.byType(MapaAtaques));
+    expect(st.recentes.length, 8);
+    expect(st.recentes.first.mkNome, 'MK 11');
   });
 
   testWidgets('creditoDbIp', (t) async {
@@ -243,14 +286,18 @@ void main() {
   });
 
   testWidgets('temaClaroRenderiza', (t) async {
-    t.view.physicalSize = const Size(800, 600);
+    t.view.physicalSize = const Size(1280, 720);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     await t.pumpWidget(MaterialApp(
       theme: tradeTheme(Brightness.light),
-      home: Scaffold(body: MapaAtaques(api: _Servidor().api, tv: true)),
+      home: Scaffold(
+        body: MapaAtaques(api: (_Servidor()..ataques = [for (var i = 0; i < 8; i++) {..._ataque(sucesso: i.isEven), 'mk_nome': 'MK $i'}]).api, tv: true),
+      ),
     ));
     await t.pump();
+    await t.pump();
+    expect(find.byType(ListaAoVivo), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 }

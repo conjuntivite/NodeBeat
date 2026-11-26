@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
+from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 PAINEL_TTL = 120  # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
@@ -532,6 +532,34 @@ def create_app(db, r, settings) -> FastAPI:
         grupos, desc = ataques.agrupar(evs, nomes, painel.Ctx(settings.sede_redes, settings.ips_publicos_sede))
         return {"cursor": novo, "ataques": grupos, "descartados": desc}
 
+    # Rotas públicas da TV: sem sessão, campos fechados (nodebeat.tv)
+    tv = APIRouter(prefix="/api/tv")
+
+    @tv.get("/ataques")
+    async def tv_ataques(desde: str | None = None) -> dict:
+        if desde is None:
+            u = await store.ultimo_evento_id(db)
+            return {"cursor": str(u) if u else "", "ataques": [], "descartados": 0}
+        try:
+            cur = ObjectId(desde)  # "" é inválido: não lê a base desde o início
+        except InvalidId:
+            raise HTTPException(400, "cursor inválido")
+        evs = await store.listar_eventos_apos(db, cur, LIMITE_LEITURA)
+        novo = str(evs[-1]["_id"]) if evs else desde
+        nomes = {m["id"]: m["nome"] for m in await store.list_mks(db)}
+        grupos, desc = ataques.agrupar(evs, nomes, painel.Ctx(settings.sede_redes, settings.ips_publicos_sede))
+        return {"cursor": novo, "ataques": [tv_pub.ataque_publico(g) for g in grupos], "descartados": desc}
+
+    @tv.get("/tops")
+    async def tv_tops() -> dict:
+        chave = ("24h", None)
+        c = _painel_cache.get(chave)
+        if (not c or time.monotonic() - c[0] >= PAINEL_TTL) and chave not in _painel_calc:
+            # stale-while-revalidate: dispara o cálculo sem esperar
+            tarefa = _painel_calc[chave] = asyncio.create_task(_calcular_painel(chave, "24h", None))
+            tarefa.add_done_callback(lambda _: _painel_calc.pop(chave, None))
+        return tv_pub.tops_publicos(c[1]["blocos"]["acesso"] if c else None)
+
     async def _capacidade(sws: list[dict], agora: datetime, desde: datetime) -> list[dict]:
         retratos = await store.listar_retratos(db, [e["id"] for e in sws], agora - timedelta(days=30))
         out = []
@@ -750,6 +778,7 @@ def create_app(db, r, settings) -> FastAPI:
         return await history.history(r, f"eq:{id}")
 
     app.include_router(mks)
+    app.include_router(tv)
     return app
 
 

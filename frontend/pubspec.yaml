@@ -24,6 +24,7 @@ flutter:
   assets:
     - assets/brand/
     - assets/ataques/
+    - assets/bandeiras/
   fonts:
     - family: Poppins
       fonts:

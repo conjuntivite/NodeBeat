@@ -537,11 +537,12 @@ def create_app(db, r, settings) -> FastAPI:
 
     @tv.get("/ataques")
     async def tv_ataques(desde: str | None = None) -> dict:
-        if desde is None:
+        if not desde:  # None ou "": refixa o cursor, nunca lê a base desde o início
+
             u = await store.ultimo_evento_id(db)
             return {"cursor": str(u) if u else "", "ataques": [], "descartados": 0}
         try:
-            cur = ObjectId(desde)  # "" é inválido: não lê a base desde o início
+            cur = ObjectId(desde)
         except InvalidId:
             raise HTTPException(400, "cursor inválido")
         evs = await store.listar_eventos_apos(db, cur, LIMITE_LEITURA)

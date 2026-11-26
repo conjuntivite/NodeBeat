@@ -25,8 +25,13 @@ async def test_tv_ataques_so_campos_publicos(anon, client, db):
         assert "usuario" not in a
 
 
-async def test_tv_ataques_cursor_vazio_recusado(anon):
-    assert (await anon.get("/api/tv/ataques", params={"desde": ""})).status_code == 400
+async def test_tv_ataques_cursor_vazio_refixa(anon, client, db):
+    mk = await criar(client)
+    await db.eventos.insert_many([falha(mk, "203.0.113.1"), falha(mk, "203.0.113.2")])
+    ultimo = await db.eventos.find_one(sort=[("_id", -1)])
+    r_ = await anon.get("/api/tv/ataques", params={"desde": ""})
+    assert r_.status_code == 200
+    assert r_.json() == {"cursor": str(ultimo["_id"]), "ataques": [], "descartados": 0}
     assert (await anon.get("/api/tv/ataques", params={"desde": "xyz"})).status_code == 400
     j = (await anon.get("/api/tv/ataques")).json()
     assert j["ataques"] == [] and "cursor" in j
@@ -57,7 +62,6 @@ async def test_tv_tops_nao_espera_calculo(anon, monkeypatch):
     assert all(x.status_code == 200 and x.json()["total"] == 0 for x in rs)
     for _ in range(100):  # espera a tarefa em segundo plano terminar
         if chamadas:
-            await asyncio.sleep(0.05)
             break
         await asyncio.sleep(0.05)
     assert len(chamadas) == 1

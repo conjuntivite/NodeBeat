@@ -92,16 +92,16 @@ void main() {
   testWidgets('indicadorSemDados', (t) async {
     final s = _Servidor()..feedStatus = 500;
     await _mostrar(t, s);
-    expect(find.text('● ao vivo'), findsOneWidget);
+    expect(find.text('ao vivo'), findsOneWidget);
     for (var i = 0; i < 31; i++) {
       await t.pump(const Duration(seconds: 1));
     }
     expect(find.textContaining('sem dados há'), findsOneWidget);
-    expect(find.text('● ao vivo'), findsNothing);
+    expect(find.text('ao vivo'), findsNothing);
     s.feedStatus = 200;
     await t.pump(const Duration(seconds: 1));
     await t.pump(const Duration(seconds: 1));
-    expect(find.text('● ao vivo'), findsOneWidget);
+    expect(find.text('ao vivo'), findsOneWidget);
     expect(find.textContaining('sem dados há'), findsNothing);
   });
 

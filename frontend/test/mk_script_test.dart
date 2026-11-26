@@ -18,6 +18,10 @@ void main() {
     expect(s, isNot(contains('@')));
   });
 
+  test('Preparar em MK sem IPsec aponta o Ligar eventos do detalhe', () {
+    expect(s, contains('Eventos nao ligados: MK sem IPsec, use Ligar eventos no detalhe da MK depois do cadastro'));
+  });
+
   test('detecta MK sem IPsec e orienta o cadastro sem VPN', () {
     expect(s, contains(r':local semIpsec ([:len [/ip ipsec policy find where !template]] = 0)'));
     expect(s, contains("marque 'Sem IPsec' no cadastro"));
@@ -153,6 +157,30 @@ void main() {
   });
 
   group('eventos (syslog)', () {
+    test('MK sem IPsec: manda ao IP publico da sede, sem src-address fixo', () {
+      final m = scriptLigarEventosSemIpsec(ipSede: '203.0.113.20');
+      expect(m, startsWith('{\n'));
+      expect(m, endsWith('}\n'));
+      expect(m, contains('remote=203.0.113.20 remote-port=514'));
+      expect(m, isNot(contains('src-address')));
+      expect(m, contains('"account,!debug"'));
+      expect(m.codeUnits.every((c) => c < 128), isTrue);
+    });
+
+    test('sede: dst-nat UDP 514 so da MK para o NodeBeat, idempotente e com comentario', () {
+      final s = scriptSedeSyslog(ipMk: '198.51.100.7', ipSede: '203.0.113.20', ipOrigem: '192.0.2.10');
+      expect(s, contains('/ip firewall nat remove [find where comment="nodebeat-syslog-198.51.100.7"]'));
+      expect(s, contains('add chain=dstnat comment="nodebeat-syslog-198.51.100.7"'));
+      expect(s, contains('protocol=udp dst-port=514 src-address=198.51.100.7 dst-address=203.0.113.20'));
+      expect(s, contains('action=dst-nat to-addresses=192.0.2.10 to-ports=514'));
+      expect(s.indexOf('remove'), lessThan(s.indexOf('add')));
+      expect(s, startsWith('{\n'));
+      expect(s, endsWith('}\n'));
+      for (final l in s.split('\n')) {
+        expect(l.length, lessThanOrEqualTo(110), reason: l);
+      }
+    });
+
     final e = scriptLigarEventos(ipOrigem: '192.0.2.10', ipTunel: '10.9.0.1');
 
     test('ligar eventos: action, v7 dentro de :parse, 8 topics, sem firewall, ASCII', () {

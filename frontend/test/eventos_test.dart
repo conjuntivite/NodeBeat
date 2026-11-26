@@ -21,7 +21,12 @@ Map<String, dynamic> _ev(String quando, String tipo, String msg) => {
     };
 
 Future<List<Uri>> _show(WidgetTester t,
-    {List<Map<String, dynamic>>? eventos, bool ativo = true, String? ipOrigem = '203.0.113.9', Brightness b = Brightness.light}) async {
+    {List<Map<String, dynamic>>? eventos,
+    bool ativo = true,
+    String? ipOrigem = '203.0.113.9',
+    List<String> ipsSede = const [],
+    bool semIpsec = false,
+    Brightness b = Brightness.light}) async {
   t.view.physicalSize = const Size(1000, 1600);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -36,14 +41,14 @@ Future<List<Uri>> _show(WidgetTester t,
       urls.add(req.url);
       return switch (req.url.path) {
         '/api/mks/x/eventos' => _json({'eventos': lista, 'syslog_ativo': ativo}),
-        '/api/preparar-mk' => _json({'ip_origem': ipOrigem, 'ips_publicos_sede': []}),
+        '/api/preparar-mk' => _json({'ip_origem': ipOrigem, 'ips_publicos_sede': ipsSede}),
         _ => http.Response('', 404),
       };
     }),
   );
   await t.pumpWidget(MaterialApp(
       theme: tradeTheme(b),
-      home: Scaffold(body: SingleChildScrollView(child: EventosCard(api: api, id: 'x', ipTunel: '198.51.100.7')))));
+      home: Scaffold(body: SingleChildScrollView(child: EventosCard(api: api, id: 'x', ipTunel: '198.51.100.7', semIpsec: semIpsec)))));
   await t.pump();
   await t.pump();
   return urls;
@@ -115,6 +120,36 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Cole no terminal da MK:'), findsOneWidget);
     expect(find.textContaining('/system logging', findRichText: true), findsWidgets);
+  });
+
+  testWidgets('MK sem IPsec: diálogo com o script da sede e o da MK, mandando ao IP público da sede', (t) async {
+    await _show(t, eventos: [], ativo: false, semIpsec: true, ipsSede: ['203.0.113.20', '203.0.113.21']);
+    expect(find.byTooltip('Ligar eventos'), findsOneWidget);
+    final copiados = <String>[];
+    t.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (c) async {
+      if (c.method == 'Clipboard.setData') copiados.add((c.arguments as Map)['text']);
+      return null;
+    });
+    await _tap(t, 'Ligar eventos');
+    await t.pumpAndSettle();
+    expect(find.text('1. Na MK da sede (uma vez para esta MK):'), findsOneWidget);
+    expect(find.text('2. No terminal desta MK:'), findsOneWidget);
+    await t.tap(find.byKey(const Key('copiar-sede')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('copiar-mk')));
+    await t.pump();
+    expect(copiados, [
+      scriptSedeSyslog(ipMk: '198.51.100.7', ipSede: '203.0.113.20', ipOrigem: '203.0.113.9'),
+      scriptLigarEventosSemIpsec(ipSede: '203.0.113.20'),
+    ]);
+  });
+
+  testWidgets('MK sem IPsec sem IPs da sede no servidor', (t) async {
+    await _show(t, eventos: [], ativo: false, semIpsec: true);
+    await _tap(t, 'Ligar eventos');
+    await t.pumpAndSettle();
+    expect(find.textContaining('Configure NODEBEAT_IPS_PUBLICOS_SEDE no servidor'), findsOneWidget);
+    expect(find.text('Copiar'), findsNothing);
   });
 
   testWidgets('ligar eventos sem IP de origem', (t) async {

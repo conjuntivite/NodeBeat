@@ -56,7 +56,7 @@ class EventosCard extends StatefulWidget {
   final ApiClient api;
   final String id;
   final String ipTunel;
-  final bool semIpsec; // o syslog das MKs chega pelo túnel
+  final bool semIpsec; // sem túnel o syslog vai a um IP público da sede
 
   @override
   State<EventosCard> createState() => _EventosCardState();
@@ -138,22 +138,33 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
   }
 
   Future<void> _ligar() async {
-    String? ipOrigem;
+    PrepararMkInfo? info;
     String? falha;
     try {
-      ipOrigem = (await widget.api.prepararMk()).ipOrigem;
+      info = await widget.api.prepararMk();
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
       falha = errorText(e);
     }
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (c) => _LigarDialogo(
-        script: ipOrigem == null ? null : scriptLigarEventos(ipOrigem: ipOrigem, ipTunel: widget.ipTunel),
-        falha: falha,
-      ),
-    );
+    final ipOrigem = info?.ipOrigem;
+    final ipSede = info == null || info.ipsSede.isEmpty ? null : info.ipsSede.first;
+    List<(String, String, String)>? scripts;
+    if (ipOrigem == null) {
+      falha ??= 'Configure NODEBEAT_IP_ORIGEM no servidor';
+    } else if (!widget.semIpsec) {
+      scripts = [('Cole no terminal da MK:', scriptLigarEventos(ipOrigem: ipOrigem, ipTunel: widget.ipTunel), 'copiar-mk')];
+    } else if (ipSede == null) {
+      falha = 'Configure NODEBEAT_IPS_PUBLICOS_SEDE no servidor';
+    } else {
+      // sem túnel o IP do NodeBeat não é alcançável: o log vai a um IP público da sede, que o redireciona
+      scripts = [
+        ('1. Na MK da sede (uma vez para esta MK):',
+            scriptSedeSyslog(ipMk: widget.ipTunel, ipSede: ipSede, ipOrigem: ipOrigem), 'copiar-sede'),
+        ('2. No terminal desta MK:', scriptLigarEventosSemIpsec(ipSede: ipSede), 'copiar-mk'),
+      ];
+    }
+    await showDialog<void>(context: context, builder: (c) => _LigarDialogo(scripts: scripts, falha: falha));
   }
 
   @override
@@ -165,7 +176,7 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Text('Eventos', style: TradeType.heading4.copyWith(color: t.fgPrimary))),
-          if (!widget.semIpsec) IconButton(icon: const Icon(Icons.terminal), tooltip: 'Ligar eventos', onPressed: _ligar),
+          IconButton(icon: const Icon(Icons.terminal), tooltip: 'Ligar eventos', onPressed: _ligar),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Atualizar', onPressed: carregar),
         ]),
         SizedBox(height: t.space3),
@@ -216,39 +227,42 @@ class _EventosCardState extends State<EventosCard> with Carrega<EventosCard, Eve
 }
 
 class _LigarDialogo extends StatelessWidget {
-  const _LigarDialogo({required this.script, this.falha});
-  final String? script;
+  const _LigarDialogo({required this.scripts, this.falha});
+
+  /// (instrução, script, chave do botão Copiar); null = mostrar [falha].
+  final List<(String, String, String)>? scripts;
   final String? falha;
 
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    final s = script;
+    final ss = scripts;
     return AlertDialog(
       title: const Text('Ligar eventos'),
       content: SingleChildScrollView(
-        child: s == null
-            ? Text(falha ?? 'Configure NODEBEAT_IP_ORIGEM no servidor',
-                style: TradeType.bodyMd.copyWith(color: t.fgSecondary))
+        child: ss == null
+            ? Text(falha ?? '', style: TradeType.bodyMd.copyWith(color: t.fgSecondary))
             : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                Text('Cole no terminal da MK:', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
-                SizedBox(height: t.space3),
-                SelectableText(s, style: dataStyle(context, TradeType.dataSm)),
+                for (final (i, (instrucao, s, chave)) in ss.indexed) ...[
+                  if (i > 0) SizedBox(height: t.space6),
+                  Text(instrucao, style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+                  SizedBox(height: t.space3),
+                  SelectableText(s, style: dataStyle(context, TradeType.dataSm)),
+                  SizedBox(height: t.space2),
+                  OutlinedButton(
+                    key: Key(chave),
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: s));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Script copiado')));
+                      }
+                    },
+                    child: const Text('Copiar'),
+                  ),
+                ],
               ]),
       ),
-      actions: [
-        if (s != null)
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: s));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Script copiado')));
-              }
-            },
-            child: const Text('Copiar'),
-          ),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
-      ],
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar'))],
     );
   }
 }

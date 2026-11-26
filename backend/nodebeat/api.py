@@ -538,18 +538,18 @@ def create_app(db, r, settings) -> FastAPI:
     @tv.get("/ataques")
     async def tv_ataques(desde: str | None = None) -> dict:
         if not desde:  # None ou "": refixa o cursor, nunca lê a base desde o início
-
             u = await store.ultimo_evento_id(db)
             return {"cursor": str(u) if u else "", "ataques": [], "descartados": 0}
         try:
-            cur = ObjectId(desde)
+            # cursor antigo não faz a rota pública varrer o histórico: no máximo 10 min para trás
+            cur = max(ObjectId(desde), ObjectId.from_datetime(datetime.now(UTC) - timedelta(minutes=10)))
         except InvalidId:
             raise HTTPException(400, "cursor inválido")
         evs = await store.listar_eventos_apos(db, cur, LIMITE_LEITURA)
         novo = str(evs[-1]["_id"]) if evs else desde
         nomes = {m["id"]: m["nome"] for m in await store.list_mks(db)}
         grupos, desc = ataques.agrupar(evs, nomes, painel.Ctx(settings.sede_redes, settings.ips_publicos_sede))
-        return {"cursor": novo, "ataques": [tv_pub.ataque_publico(g) for g in grupos], "descartados": desc}
+        return {"cursor": novo, "ataques": tv_pub.juntar_publicos(grupos), "descartados": desc}
 
     @tv.get("/tops")
     async def tv_tops() -> dict:

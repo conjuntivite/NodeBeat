@@ -76,3 +76,24 @@ async def test_tv_sem_sessao(anon, client):
 
 def test_tops_publicos_none():
     assert tv.tops_publicos(None) == {"total": 0, "top_ips": [], "top_paises": [], "por_via": {}, "logins_externos": []}
+
+
+def test_juntar_publicos_soma_por_usuario():
+    base = {"ip": "203.0.113.9", "mk_nome": "MK", "via": "ssh", "sucesso": True}
+    out = tv.juntar_publicos([{**base, "usuario": "a", "n": 2, "quando": "2026-01-01T10:00:00"},
+                              {**base, "usuario": "b", "n": 3, "quando": "2026-01-01T11:00:00"},
+                              {**base, "sucesso": False, "n": 1, "quando": "2026-01-01T09:00:00"}])
+    assert [(g["n"], g["quando"], g["sucesso"]) for g in out] == [
+        (5, "2026-01-01T11:00:00", True), (1, "2026-01-01T09:00:00", False)]
+    assert all("usuario" not in g for g in out)
+
+
+async def test_tv_ataques_cursor_antigo_limitado(anon, client, db):
+    from bson import ObjectId
+    mk = await criar(client)
+    agora = datetime.now(UTC)
+    velho = {**falha(mk, "203.0.113.1"), "_id": ObjectId.from_datetime(agora - timedelta(hours=1))}
+    novo = {**falha(mk, "203.0.113.2"), "_id": ObjectId.from_datetime(agora)}
+    await db.eventos.insert_many([velho, novo])
+    j = (await anon.get("/api/tv/ataques", params={"desde": "0" * 24})).json()
+    assert [a["ip"] for a in j["ataques"]] == ["203.0.113.2"]

@@ -10,6 +10,20 @@ def ataque_publico(a: dict) -> dict:
     return {c: a.get(c) for c in CAMPOS_ATAQUE}
 
 
+def juntar_publicos(ataques: list[dict]) -> list[dict]:
+    """Sem o usuário, grupos que só diferem por ele viram um só (soma n, maior quando); mantém a ordem de entrada."""
+    out: dict[tuple, dict] = {}
+    for a in ataques:
+        p = ataque_publico(a)
+        k = (p["ip"], p["mk_nome"], p["via"], p["sucesso"])
+        if k in out:
+            out[k]["n"] += p["n"]
+            out[k]["quando"] = max(out[k]["quando"], p["quando"])
+        else:
+            out[k] = p
+    return sorted(out.values(), key=lambda g: g["quando"], reverse=True)
+
+
 def tops_publicos(acesso: dict | None) -> dict:
     if not acesso:
         return {"total": 0, "top_ips": [], "top_paises": [], "por_via": {}, "logins_externos": []}

@@ -36,8 +36,8 @@ class NodeBeatApp extends StatelessWidget {
     final seg = Uri.parse(s.name ?? '').pathSegments;
     final page = switch (seg) {
       ['painel'] => DashboardScreen(api: api),
+      ['tv'] => MapaAtaquesTvScreen(api: api),
       ['faixas'] => FaixasScreen(api: api),
-      ['eventos', 'mapa'] => MapaAtaquesTvScreen(api: api),
       ['eventos'] => PainelEventosScreen(api: api),
       ['usuarios'] => UsuariosScreen(api: api),
       ['preparar-mk'] => PrepararMkScreen(api: api),

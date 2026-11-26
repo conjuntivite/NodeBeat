@@ -906,6 +906,12 @@ class ApiClient {
   Future<FeedAtaques> ataques({String? desde}) async => FeedAtaques.fromJson(await _send(
       'GET', '/eventos/ataques${desde == null ? '' : '?desde=${Uri.encodeQueryComponent(desde)}'}'));
 
+  // TV pública (sem login): campos fechados, sem usuário
+  Future<FeedAtaques> ataquesTv({String? desde}) async => FeedAtaques.fromJson(await _send(
+      'GET', '/tv/ataques${desde == null ? '' : '?desde=${Uri.encodeQueryComponent(desde)}'}'));
+
+  Future<BlocoPainel> topsTv() async => BlocoPainel.fromJson(await _send('GET', '/tv/tops'));
+
   Future<EventosSwitches> eventosSwitches(String periodo) async =>
       EventosSwitches.fromJson(await _send('GET', '/eventos/switches?periodo=${Uri.encodeQueryComponent(periodo)}'));
 

@@ -59,15 +59,22 @@ class _Servidor {
 
   ApiClient get api => ApiClient(
         client: MockClient((req) async {
-          if (req.url.path == '/api/eventos/ataques') {
+          // TV pública: mesmos dados, sem `usuario` (campos fechados do servidor)
+          final tv = req.url.path.startsWith('/api/tv/');
+          if (req.url.path == '/api/eventos/ataques' || req.url.path == '/api/tv/ataques') {
             if (chamadasFeed++ == 0 && travarPrimeira) return Completer<http.Response>().future; // nunca responde
             return feedStatus == 200
-                ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': descartados})
+                ? _json({'cursor': 'c1', 'ataques': [for (final a in ataques) tv ? ({...a}..remove('usuario')) : a], 'descartados': descartados})
                 : _json({'detail': 'x'}, feedStatus);
           }
           if (req.url.path == '/api/eventos/painel') {
             if (atrasoPainel > Duration.zero) await Future<void>.delayed(atrasoPainel); // o painel real leva ~12 s com cache frio
             return _json(_painel(logins: logins, paises: paises), painelStatus);
+          }
+          if (req.url.path == '/api/tv/tops') {
+            if (atrasoPainel > Duration.zero) await Future<void>.delayed(atrasoPainel);
+            final semUsuario = [for (final l in logins) {...l}..remove('usuario')..remove('mk_id')];
+            return _json((_painel(logins: semUsuario, paises: paises)['blocos'] as Map)['acesso'], painelStatus);
           }
           return http.Response('', 404);
         }),
@@ -220,6 +227,13 @@ void main() {
     final s = _Servidor()..ataques = [_ataque(sucesso: true)];
     await _mostrar(t, s);
     expect(find.textContaining('MK Feed'), findsOneWidget);
+  });
+
+  testWidgets('avisoTvSemUsuario', (t) async {
+    final s = _Servidor()..ataques = [{..._ataque(sucesso: true), 'ip': '203.0.113.5'}..remove('usuario')];
+    await _mostrar(t, s, tv: true);
+    expect(find.textContaining('Login de fora aceito: MK Feed · 203.0.113.5'), findsOneWidget);
+    expect(find.textContaining('?'), findsNothing);
   });
 
   testWidgets('sessaoExpiradaChamaCallback', (t) async {

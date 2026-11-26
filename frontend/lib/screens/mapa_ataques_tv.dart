@@ -3,14 +3,39 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
+import '../ataques/aba.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/mapa_ataques.dart';
 
-/// Aba da TV do NOC: segue o tema escolhido (botão no cabeçalho), sem menu lateral.
-class MapaAtaquesTvScreen extends StatelessWidget {
+/// Aba da TV do NOC, pública (sem login): o tema escolhido fica no navegador, sem menu lateral.
+class MapaAtaquesTvScreen extends StatefulWidget {
   const MapaAtaquesTvScreen({super.key, required this.api});
   final ApiClient api;
+
+  @override
+  State<MapaAtaquesTvScreen> createState() => _MapaAtaquesTvScreenState();
+}
+
+class _MapaAtaquesTvScreenState extends State<MapaAtaquesTvScreen> {
+  void _salvar() => salvarTemaTv(themeMode.value == ThemeMode.dark ? 'escuro' : 'claro');
+
+  @override
+  void initState() {
+    super.initState();
+    final salvo = temaTvSalvo();
+    // depois do quadro: mudar o tema no meio do build reconstruiria o MaterialApp acima
+    if (salvo != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => themeMode.value = salvo == 'escuro' ? ThemeMode.dark : ThemeMode.light);
+    }
+    themeMode.addListener(_salvar);
+  }
+
+  @override
+  void dispose() {
+    themeMode.removeListener(_salvar);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,11 +58,7 @@ class MapaAtaquesTvScreen extends StatelessWidget {
             ]),
           ),
           Expanded(
-            child: MapaAtaques(
-              api: api,
-              tv: true,
-              aoExpirarSessao: () => Navigator.of(context).pushReplacementNamed('/login', arguments: '/eventos/mapa'),
-            ),
+            child: MapaAtaques(api: widget.api, tv: true),
           ),
         ]),
       ),

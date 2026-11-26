@@ -130,7 +130,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     if (_buscando || _expirou || !widget.visivel()) return;
     _buscando = true;
     try {
-      final r = await widget.api.ataques(desde: _cursor).timeout(widget.intervalo * 3); // 1ª sem cursor: começa do agora
+      final r = await (widget.tv ? widget.api.ataquesTv(desde: _cursor) : widget.api.ataques(desde: _cursor)).timeout(widget.intervalo * 3); // 1ª sem cursor: começa do agora
       if (!mounted) return;
       _cursor = r.cursor;
       _descServidor = r.descartados;
@@ -154,7 +154,10 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   Future<void> _painel() async {
     if (_expirou || !widget.visivel()) return;
     try {
-      final b = (await widget.api.painelEventos('24h').timeout(widget.intervaloRodape) /* painel leva ~12 s com cache frio */).blocos['acesso'];
+      // painel leva ~12 s com cache frio
+      final b = widget.tv
+          ? await widget.api.topsTv().timeout(widget.intervaloRodape)
+          : (await widget.api.painelEventos('24h').timeout(widget.intervaloRodape)).blocos['acesso'];
       if (!mounted) return;
       setState(() {
         _acesso = b;
@@ -264,7 +267,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
           SizedBox(width: t.space3),
           Expanded(
             child: Text(
-              'Login de fora aceito: ${a.mk} · ${a.usuario ?? '?'} · ${a.ip}'
+              'Login de fora aceito: ${a.mk}${a.usuario == null ? '' : ' · ${a.usuario}'} · ${a.ip}'
               '${a.pais == null ? '' : ' · ${a.pais}'} · ${a.via.toUpperCase()} · ${formatDateTime(a.quando)}',
               style: TradeType.bodyMd.copyWith(color: t.negative, fontWeight: FontWeight.w500),
             ),

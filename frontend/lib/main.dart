@@ -24,9 +24,13 @@ class RolagemComMouse extends MaterialScrollBehavior {
 
 void main() {
   final api = ApiClient();
-  carregarSessao(api); // tema/usuário em qualquer página recarregada (ignora erros)
+  // tema/usuário em qualquer página recarregada (ignora erros); a TV é pública e não usa sessão
+  if (!ehTv(Uri.base)) carregarSessao(api);
   runApp(NodeBeatApp(api: api));
 }
+
+/// Página da TV pública (#/tv): sem sessão, nada de chamada logada.
+bool ehTv(Uri u) => Uri.parse(u.fragment).pathSegments.firstOrNull == 'tv';
 
 class NodeBeatApp extends StatelessWidget {
   const NodeBeatApp({super.key, required this.api});
@@ -36,8 +40,8 @@ class NodeBeatApp extends StatelessWidget {
     final seg = Uri.parse(s.name ?? '').pathSegments;
     final page = switch (seg) {
       ['painel'] => DashboardScreen(api: api),
+      ['tv'] => MapaAtaquesTvScreen(api: api),
       ['faixas'] => FaixasScreen(api: api),
-      ['eventos', 'mapa'] => MapaAtaquesTvScreen(api: api),
       ['eventos'] => PainelEventosScreen(api: api),
       ['usuarios'] => UsuariosScreen(api: api),
       ['preparar-mk'] => PrepararMkScreen(api: api),

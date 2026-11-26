@@ -294,25 +294,21 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
       context: context,
       builder: (ctx) {
         final tela = MediaQuery.sizeOf(ctx);
-        final botoes = Positioned(
-          top: t.space2,
-          right: t.space2,
-          child: Row(children: [
-            if (acesso)
-              IconButton(
-                tooltip: 'Abrir em tela cheia',
-                icon: const Icon(Icons.open_in_new, size: 20),
-                color: t.fgSecondary,
-                onPressed: abrirMapaEmNovaAba,
-              ),
+        final botoes = Row(mainAxisSize: MainAxisSize.min, children: [
+          if (acesso)
             IconButton(
-              tooltip: 'Fechar',
-              icon: const Icon(Icons.close, size: 20),
+              tooltip: 'Abrir em tela cheia',
+              icon: const Icon(Icons.open_in_new, size: 20),
               color: t.fgSecondary,
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: abrirMapaEmNovaAba,
             ),
-          ]),
-        );
+          IconButton(
+            tooltip: 'Fechar',
+            icon: const Icon(Icons.close, size: 20),
+            color: t.fgSecondary,
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+        ]);
         return Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -321,18 +317,23 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
               ? SizedBox(
                   width: tela.width * .92,
                   height: tela.height * .92,
-                  child: Stack(children: [
-                    Column(children: [
-                      SizedBox(height: tela.height * .92 * .6, child: MapaAtaques(api: widget.api)),
-                      SizedBox(height: t.space4),
-                      Expanded(child: SingleChildScrollView(child: _detalheDe(t, d, cat))),
-                    ]),
-                    botoes,
+                  // botões numa faixa própria acima do mapa: por cima, cobriam o "Ciente" e o "ao vivo"
+                  child: Column(children: [
+                    Container(
+                      color: t.bgSurface,
+                      alignment: Alignment.centerRight,
+                      padding: EdgeInsets.symmetric(horizontal: t.space2),
+                      child: botoes,
+                    ),
+                    SizedBox(height: tela.height * .92 * .6, child: MapaAtaques(api: widget.api)),
+                    SizedBox(height: t.space4),
+                    Expanded(child: SingleChildScrollView(child: _detalheDe(t, d, cat))),
                   ]),
                 )
               : ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 760),
-                  child: SingleChildScrollView(child: Stack(children: [_detalheDe(t, d, cat), botoes])),
+                  child: SingleChildScrollView(
+                      child: Stack(children: [_detalheDe(t, d, cat), Positioned(top: t.space2, right: t.space2, child: botoes)])),
                 ),
         );
       },

@@ -46,6 +46,7 @@ Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const [], List
 class _Servidor {
   int feedStatus = 200;
   int chamadasFeed = 0;
+  int descartados = 0;
   bool travarPrimeira = false;
   List<Map<String, dynamic>> ataques = [];
   List<Map<String, dynamic>> logins = [];
@@ -56,7 +57,7 @@ class _Servidor {
           if (req.url.path == '/api/eventos/ataques') {
             if (chamadasFeed++ == 0 && travarPrimeira) return Completer<http.Response>().future; // nunca responde
             return feedStatus == 200
-                ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': 0})
+                ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': descartados})
                 : _json({'detail': 'x'}, feedStatus);
           }
           if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins, paises: paises));
@@ -162,8 +163,18 @@ void main() {
     await _mostrar(t, s);
     expect(find.textContaining(RegExp(r'^\+\d')), findsNothing);
     await t.pumpWidget(const SizedBox());
-    await _mostrar(t, _Servidor()..ataques = [for (var i = 0; i < 61; i++) _ataque()]);
+    final s2 = _Servidor()..ataques = [for (var i = 0; i < 61; i++) _ataque()];
+    await _mostrar(t, s2);
     expect(find.text('+1'), findsOneWidget);
+    // só o último lote conta: zera na consulta seguinte e soma o que o servidor descartou
+    s2.ataques = [];
+    await t.pump(const Duration(seconds: 1));
+    await t.pump();
+    expect(find.textContaining(RegExp(r'^\+\d')), findsNothing);
+    s2.descartados = 3;
+    await t.pump(const Duration(seconds: 1));
+    await t.pump();
+    expect(find.text('+3'), findsOneWidget);
   });
 
   testWidgets('consultaPresaExpiraEVolta', (t) async {

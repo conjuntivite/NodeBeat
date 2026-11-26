@@ -422,6 +422,19 @@ String _hora(String iso) {
 }
 
 void popupAcesso() {
+  testWidgets('popupAcessoCienteNaoFicaCobertoPelosBotoes', (t) async {
+    await _show(t, altura: 4200);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    final aviso = find.textContaining('Login de fora aceito');
+    expect(aviso, findsOneWidget);
+    expect(find.text('● ao vivo').hitTestable(), findsOneWidget);
+    await t.tap(find.text('Ciente').hitTestable());
+    await t.pump();
+    expect(find.byType(MapaAtaques), findsOneWidget); // o toque não caiu no "Fechar"
+    expect(aviso, findsNothing);
+  });
   testWidgets('popupAcessoTemMapaEBotao', (t) async {
     await _show(t, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);

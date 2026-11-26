@@ -63,7 +63,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   Timer? _timerFeed, _timerPainel;
   String? _cursor;
   bool _buscando = false, _expirou = false;
-  int _ultimasLinhas = 0;
+  int _ultimasLinhas = 0, _descServidor = 0;
   List<List<Offset>> _poligonos = const [];
   BlocoPainel? _acesso;
   List<_Aviso> _avisosPainel = const [];
@@ -131,6 +131,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       final r = await widget.api.ataques(desde: _cursor).timeout(widget.intervalo * 3); // 1ª sem cursor: começa do agora
       if (!mounted) return;
       _cursor = r.cursor;
+      _descServidor = r.descartados;
       _fila.receber(r.ataques, _agora, janela: widget.intervalo);
       final limite = DateTime.now().toUtc().subtract(const Duration(hours: 24));
       _avisosFeed.removeWhere((_, a) => DateTime.parse(a.quando).isBefore(limite));
@@ -169,6 +170,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     final avisos = <String, _Aviso>{for (final a in [..._avisosPainel, ..._avisosFeed.values]) _chave(a): a}
       ..removeWhere((k, _) => _cientes.contains(k));
     final parado = _decorrido - _ultimoOk;
+    final descartados = _fila.descartados + _descServidor; // do último lote: fila + servidor
     final mapa = Stack(children: [
       Positioned.fill(
         child: Center(
@@ -201,9 +203,9 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
         right: t.space4,
         top: t.space4,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          // linhas que não couberam no teto da fila
-          if (_fila.descartados > 0) ...[
-            Text('+${_fila.descartados}', style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgMuted)),
+          // ataques do último lote que não viraram linha (teto da fila ou do servidor)
+          if (descartados > 0) ...[
+            Text('+$descartados', style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgMuted)),
             SizedBox(width: t.space2),
           ],
           parado > const Duration(seconds: 30)

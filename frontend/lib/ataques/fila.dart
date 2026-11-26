@@ -27,9 +27,10 @@ class FilaAtaques {
   int _descartados = 0;
   int get descartados => _descartados;
 
-  // Espalha o lote na janela; o que passa do teto é descartado da cauda.
+  // Espalha o lote na janela; o que passa do teto é descartado da cauda (`descartados` é só deste lote).
   void receber(List<Ataque> lote, DateTime agora, {Duration janela = const Duration(seconds: 5)}) {
     _limpar(agora);
+    _descartados = 0;
     final com = [for (final a in lote) if (a.lat != null && a.lon != null) a];
     for (var i = 0; i < com.length; i++) {
       if (_linhas.length >= teto) {

@@ -6,8 +6,18 @@ import 'tokens.g.dart';
 /// Tema escolhido pelo usuário; o app raiz escuta e a barra/login alternam.
 final themeMode = ValueNotifier<ThemeMode>(ThemeMode.light);
 
+/// Tokens trocados para uma subárvore (a TV pinta com a paleta escolhida).
+class TokensDaTela extends InheritedWidget {
+  const TokensDaTela({super.key, required this.tokens, required super.child});
+  final TradeTokens tokens;
+
+  @override
+  bool updateShouldNotify(TokensDaTela old) => tokens != old.tokens;
+}
+
 TradeTokens tokensOf(BuildContext c) =>
-    Theme.of(c).brightness == Brightness.dark ? TradeTokens.dark : TradeTokens.light;
+    c.dependOnInheritedWidgetOfExactType<TokensDaTela>()?.tokens ??
+    (Theme.of(c).brightness == Brightness.dark ? TradeTokens.dark : TradeTokens.light);
 
 /// Valores numéricos: Poppins com algarismos tabulares (IP/MAC/ID usam [TradeType.ticker], mono).
 TextStyle dataStyle(BuildContext c, [TextStyle base = TradeType.dataMd]) => base.copyWith(
@@ -15,8 +25,8 @@ TextStyle dataStyle(BuildContext c, [TextStyle base = TradeType.dataMd]) => base
       fontFeatures: const [FontFeature.tabularFigures()],
     );
 
-ThemeData tradeTheme(Brightness b) {
-  final t = b == Brightness.dark ? TradeTokens.dark : TradeTokens.light;
+ThemeData tradeTheme(Brightness b, [TradeTokens? tk]) {
+  final t = tk ?? (b == Brightness.dark ? TradeTokens.dark : TradeTokens.light);
   final md = RoundedRectangleBorder(borderRadius: BorderRadius.circular(t.radiusMd));
   final pad = EdgeInsets.symmetric(horizontal: t.space4, vertical: 9);
   OutlineInputBorder border(Color color, [double w = 1]) => OutlineInputBorder(

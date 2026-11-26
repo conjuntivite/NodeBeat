@@ -9,6 +9,7 @@ import 'package:nodebeat/main.dart';
 import 'package:nodebeat/screens/login.dart';
 import 'package:nodebeat/screens/mapa_ataques_tv.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/mapa_ataques.dart';
 
 const _json = {'content-type': 'application/json'};
@@ -50,36 +51,6 @@ void main() {
     expect(paths, contains('/api/tv/ataques'));
     expect(paths, contains('/api/tv/tops'));
     expect(paths.where((p) => p.startsWith('/api/eventos/')), isEmpty);
-    await t.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('tvGuardaTema', (t) async {
-    t.view.physicalSize = const Size(1920, 1080);
-    t.view.devicePixelRatio = 1;
-    addTearDown(t.view.reset);
-    salvarTemaTv('escuro');
-    final api = ApiClient(client: _semSessao([]));
-    await t.pumpWidget(ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeMode,
-      builder: (_, mode, _) => MaterialApp(
-        theme: tradeTheme(Brightness.light),
-        darkTheme: tradeTheme(Brightness.dark),
-        themeMode: mode,
-        home: MapaAtaquesTvScreen(api: api),
-      ),
-    ));
-    await t.pump();
-    await t.pump();
-    await t.pump(const Duration(milliseconds: 500)); // AnimatedTheme
-    expect(themeMode.value, ThemeMode.dark);
-    Brightness b() => Theme.of(t.element(find.byType(MapaAtaques))).brightness;
-    expect(b(), Brightness.dark);
-    await t.tap(find.byType(ThemeToggle));
-    await t.pump();
-    await t.pump();
-    await t.pump(const Duration(milliseconds: 500));
-    expect(b(), Brightness.light);
-    expect(temaTvSalvo(), 'claro');
     await t.pumpWidget(const SizedBox());
   });
 
@@ -128,5 +99,51 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
     expect(fundo(paletaPorId('oceano').fundo), findsWidgets);
     await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tvPintaComAPaleta', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    salvarPaletaTv('oceano');
+    await t.pumpWidget(tv(ApiClient(client: _semSessao([]))));
+    await t.pump();
+    final p = paletaPorId('oceano');
+    expect(t.widget<Scaffold>(find.byType(Scaffold)).backgroundColor, p.fundo);
+    expect(t.widget<Text>(find.text('Ataques às MKs')).style!.color, p.texto);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tvSemBotaoDeTema', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(tv(ApiClient(client: _semSessao([]))));
+    await t.pump();
+    expect(find.byType(ThemeToggle), findsNothing);
+    expect(find.byTooltip('Paleta do mapa'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tvIgnoraTemaGlobal', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    salvarPaletaTv('ardosia');
+    await t.pumpWidget(tv(ApiClient(client: _semSessao([]))));
+    await t.pump();
+    expect(themeMode.value, ThemeMode.light);
+    expect(Theme.of(t.element(find.byType(MapaAtaques))).brightness, Brightness.dark);
+    expect(tokensOf(t.element(find.byType(MapaAtaques))).bgSurface, paletaPorId('ardosia').painel);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('foraDaTvTokensIguais', (t) async {
+    late BuildContext ctx;
+    await t.pumpWidget(MaterialApp(theme: tradeTheme(Brightness.light), home: Builder(builder: (c) {
+      ctx = c;
+      return const SizedBox();
+    })));
+    expect(identical(tokensOf(ctx), TradeTokens.light), isTrue);
   });
 }

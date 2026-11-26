@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
+import 'package:nodebeat/ataques/paletas.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/ataques_tv.dart';
@@ -358,7 +359,7 @@ void main() {
         find.descendant(
             of: find.byType(ListaAoVivo),
             matching: find.byWidgetPredicate((w) =>
-                w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(tk, 'ssh'))),
+                w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(paletaPadrao(Brightness.light), 'ssh'))),
         findsOneWidget);
   });
 

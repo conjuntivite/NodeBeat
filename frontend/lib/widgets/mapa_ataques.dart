@@ -9,6 +9,7 @@ import '../api/client.dart';
 import '../ataques/aba.dart';
 import '../ataques/fila.dart';
 import '../ataques/geo.dart';
+import '../ataques/paletas.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import 'ataques_tv.dart';
@@ -41,12 +42,14 @@ class MapaAtaques extends StatefulWidget {
     this.intervalo = const Duration(seconds: 5),
     this.intervaloRodape = const Duration(seconds: 60),
     this.visivel = abaVisivel,
+    this.paleta,
   });
   final ApiClient api;
   final bool tv;
   final VoidCallback? aoExpirarSessao;
   final Duration intervalo, intervaloRodape;
   final bool Function() visivel; // aba oculta: não consulta
+  final PaletaMapa? paleta; // nula: cinza no claro, ardósia no escuro
 
   @override
   State<MapaAtaques> createState() => MapaAtaquesState();
@@ -174,6 +177,8 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final paleta = widget.paleta ?? paletaPadrao(Theme.of(context).brightness);
+    final secundario = paleta.texto.withValues(alpha: 0.8);
     final avisos = <String, _Aviso>{for (final a in [..._avisosPainel, ..._avisosFeed.values]) _chave(a): a}
       ..removeWhere((k, _) => _cientes.contains(k));
     final parado = _decorrido - _ultimoOk;
@@ -184,8 +189,8 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
           child: AspectRatio(
             aspectRatio: 360 / 142,
             child: Stack(fit: StackFit.expand, children: [
-              RepaintBoundary(child: CustomPaint(painter: _Terra(_poligonos, t.bgHover, t.borderSubtle))),
-              RepaintBoundary(child: CustomPaint(painter: _Linhas(_fila, () => _agora, t, _quadro, _textos, _rotulos))),
+              RepaintBoundary(child: CustomPaint(painter: _Terra(_poligonos, paleta.terra, paleta.borda))),
+              RepaintBoundary(child: CustomPaint(painter: _Linhas(_fila, () => _agora, paleta, _quadro, _textos, _rotulos))),
             ]),
           ),
         ),
@@ -194,14 +199,14 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
         left: t.space4,
         top: t.space4,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          eyebrow('Todas as MKs, ao vivo', cor: t.fgSecondary),
+          eyebrow('Todas as MKs, ao vivo', cor: secundario),
           SizedBox(height: t.space2),
           Wrap(spacing: t.space3, children: [
             for (final v in viasAtaque)
               Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, v), shape: BoxShape.circle)),
+                Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(paleta, v), shape: BoxShape.circle)),
                 SizedBox(width: t.space1),
-                Text(v.toUpperCase(), style: TradeType.bodySm.copyWith(color: t.fgSecondary)),
+                Text(v.toUpperCase(), style: TradeType.bodySm.copyWith(color: paleta.texto)),
               ]),
           ]),
         ]),
@@ -212,7 +217,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           // ataques do último lote que não viraram linha (teto da fila ou do servidor)
           if (descartados > 0) ...[
-            Text('+$descartados', style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgMuted)),
+            Text('+$descartados', style: dataStyle(context, TradeType.dataSm).copyWith(color: secundario)),
             SizedBox(width: t.space2),
           ],
           parado > const Duration(seconds: 30)
@@ -224,7 +229,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       Positioned(
         right: t.space4,
         bottom: t.space2,
-        child: Text('IP data by DB-IP', style: TradeType.bodySm.copyWith(color: t.fgMuted)),
+        child: Text('IP data by DB-IP', style: TradeType.bodySm.copyWith(color: secundario)),
       ),
     ]);
     // mais recentes primeiro (ISO em UTC ordena como texto); 2 viram faixa, o resto um resumo
@@ -233,12 +238,12 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     Widget centroDe(double alturaTotal) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
       if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
-      Expanded(child: mapa),
+      Expanded(child: ColoredBox(color: paleta.fundo, child: mapa)),
       // rolagem desligada: em TV baixa as linhas mais antigas são cortadas e o mapa não colapsa
       if (widget.tv)
         ConstrainedBox(
           constraints: BoxConstraints(maxHeight: alturaTotal * 0.4),
-          child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes)),
+          child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes, paleta: paleta)),
         ),
     ]);
     final centro = LayoutBuilder(builder: (_, c) => centroDe(c.maxHeight));
@@ -248,7 +253,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       child: widget.tv
           ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Expanded(child: centro),
-              SizedBox(width: 360, child: _acesso == null ? const ColunaTopsVazia() : ColunaTops(acesso: _acesso!)),
+              SizedBox(width: 360, child: _acesso == null ? const ColunaTopsVazia() : ColunaTops(acesso: _acesso!, paleta: paleta)),
             ])
           : centro,
     );
@@ -318,16 +323,16 @@ class _Terra extends CustomPainter {
 
 // Camada das linhas: repinta a cada quadro do ticker (via [repaint]).
 class _Linhas extends CustomPainter {
-  _Linhas(this.fila, this.agora, this.t, Listenable repaint, this.textos, this.rotulos) : super(repaint: repaint);
+  _Linhas(this.fila, this.agora, this.paleta, Listenable repaint, this.textos, this.rotulos) : super(repaint: repaint);
   final FilaAtaques fila;
   final DateTime Function() agora;
-  final TradeTokens t;
+  final PaletaMapa paleta;
   final Map<String, TextPainter> textos; // cache por nome + cor
   final List<String> rotulos; // o que foi desenhado no último quadro (testes)
 
   // Nome da MK centrado acima de [p]; opacidade em 10 degraus para o cache valer.
   void _rotulo(Canvas canvas, String nome, Offset p, double opacidade) {
-    final cor = t.fgSecondary.withValues(alpha: (opacidade * 10).round() / 10);
+    final cor = paleta.texto.withValues(alpha: (opacidade * 10).round() / 10);
     if (cor.a == 0) return;
     if (textos.length > 300) {
       for (final tp in textos.values) {
@@ -358,7 +363,7 @@ class _Linhas extends CustomPainter {
       final f = fase(agora.difference(l.inicio));
       final a = projetar(l.ataque.lat!, l.ataque.lon!, size);
       final c = controleArco(a, b);
-      final cor = (l.ataque.sucesso ? t.negative : corVia(t, l.ataque.via)).withValues(alpha: f.opacidade);
+      final cor = (l.ataque.sucesso ? corAceito : corVia(paleta, l.ataque.via)).withValues(alpha: f.opacidade);
       final passos = (24 * f.cabeca).ceil();
       final path = Path()..moveTo(a.dx, a.dy);
       for (var i = 1; i <= passos; i++) {
@@ -385,9 +390,9 @@ class _Linhas extends CustomPainter {
           ..strokeWidth = 1.5);
       }
     }
-    canvas.drawCircle(b, 4, Paint()..color = t.actionPrimary);
+    canvas.drawCircle(b, 4, Paint()..color = paleta.texto);
   }
 
   @override
-  bool shouldRepaint(_Linhas o) => o.t != t;
+  bool shouldRepaint(_Linhas o) => o.paleta != paleta;
 }

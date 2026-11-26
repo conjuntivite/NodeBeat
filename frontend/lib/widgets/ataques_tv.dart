@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
+import '../ataques/paletas.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import 'bandeira.dart';
@@ -9,13 +10,16 @@ import 'graficos.dart';
 
 const viasAtaque = ['ssh', 'telnet', 'ftp', 'api', 'winbox'];
 
-Color corVia(TradeTokens t, String via) =>
-    switch (viasAtaque.indexOf(via)) { 0 => t.chart1, 1 => t.chart2, 2 => t.chart3, 3 => t.chart4, 4 => t.chart5, _ => t.chart6 };
+Color corVia(PaletaMapa p, String via) {
+  final i = viasAtaque.indexOf(via);
+  return p.vias[i < 0 ? 5 : i];
+}
 
 /// Lista ao vivo embaixo do mapa da TV: as tentativas mais recentes, a mais nova no topo.
 class ListaAoVivo extends StatelessWidget {
-  const ListaAoVivo({super.key, required this.recentes});
+  const ListaAoVivo({super.key, required this.recentes, required this.paleta});
   final List<Ataque> recentes;
+  final PaletaMapa paleta;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +39,7 @@ class ListaAoVivo extends StatelessWidget {
             width: 84,
             child: Row(children: [
               // cor de gráfico só como preenchimento (ponto); texto em fgPrimary para contraste
-              Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, a.via), shape: BoxShape.circle)),
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(paleta, a.via), shape: BoxShape.circle)),
               SizedBox(width: t.space1),
               Text(a.via.toUpperCase(), style: corpo.copyWith(fontWeight: FontWeight.w500)),
             ]),
@@ -96,8 +100,9 @@ class ColunaTopsVazia extends StatelessWidget {
 
 /// Coluna à direita da TV: tops das últimas 24 h (painel de Acesso).
 class ColunaTops extends StatelessWidget {
-  const ColunaTops({super.key, required this.acesso});
+  const ColunaTops({super.key, required this.acesso, required this.paleta});
   final BlocoPainel acesso;
+  final PaletaMapa paleta; // reservada: tops sem bolinha de serviço hoje
 
   @override
   Widget build(BuildContext context) {

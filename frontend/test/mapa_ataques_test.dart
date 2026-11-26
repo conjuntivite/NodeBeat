@@ -135,6 +135,25 @@ void main() {
     expect(find.textContaining('MK Beta'), findsNothing);
   });
 
+  testWidgets('faixasLimitadasComCienteEmTodos', (t) async {
+    final s = _Servidor()
+      ..logins = [
+        for (var i = 1; i <= 5; i++)
+          {'mk_id': 'm$i', 'nome': 'MK Lote$i', 'usuario': 'admin', 'ip': '198.51.100.$i', 'via': 'ssh',
+           'quando': '2026-11-25T1$i:00:00+00:00', 'pais_nome': null},
+      ];
+    await _mostrar(t, s);
+    // só as 2 mais recentes viram faixa; o resto vira um resumo
+    expect(find.textContaining('MK Lote5'), findsOneWidget);
+    expect(find.textContaining('MK Lote4'), findsOneWidget);
+    expect(find.textContaining('MK Lote3'), findsNothing);
+    expect(find.text('+3 outros logins de fora aceitos'), findsOneWidget);
+    await t.tap(find.text('Ciente em todos'));
+    await t.pump();
+    expect(find.textContaining('MK Lote'), findsNothing);
+    expect(find.textContaining('outros logins'), findsNothing);
+  });
+
   testWidgets('rotuloComNomeDaMk', (t) async {
     final s = _Servidor()..ataques = [_ataque()];
     await _mostrar(t, s);

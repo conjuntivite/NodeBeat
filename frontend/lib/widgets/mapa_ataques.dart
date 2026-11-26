@@ -31,6 +31,9 @@ typedef _Aviso = ({String mk, String? usuario, String ip, String via, String qua
 // "Ciente" vale para a aba inteira: sobrevive a fechar e reabrir o mapa.
 final _cientes = <String>{};
 
+// faixas de login aceito empilhadas no topo; acima disso vira "+N outros" para não espremer o mapa
+const _faixasMax = 2;
+
 String _chave(_Aviso a) => '${a.mk}|${a.ip}|${a.usuario}|${a.quando}';
 String _utc(String iso) => DateTime.parse(iso).toUtc().toIso8601String();
 
@@ -220,12 +223,14 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
         child: Text('IP data by DB-IP', style: TradeType.bodySm.copyWith(color: t.fgMuted)),
       ),
     ]);
+    // mais recentes primeiro (ISO em UTC ordena como texto); 2 viram faixa, o resto um resumo
+    final ordem = avisos.entries.toList()..sort((x, y) => y.value.quando.compareTo(x.value.quando));
+    final resto = ordem.length - _faixasMax;
     return ColoredBox(
       color: t.bgSurface,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // os 3 mais recentes (ISO em UTC ordena como texto)
-        for (final e in (avisos.entries.toList()..sort((x, y) => y.value.quando.compareTo(x.value.quando))).take(3))
-          _faixa(t, e.key, e.value),
+        for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
+        if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
         Expanded(child: mapa),
         if (widget.tv && _acesso != null) _rodape(t, _acesso!),
       ]),
@@ -251,6 +256,22 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
             ),
           ),
           TextButton(onPressed: () => setState(() => _cientes.add(chave)), child: const Text('Ciente')),
+        ]),
+      );
+
+  Widget _resumo(TradeTokens t, int n, Iterable<String> chaves) => Container(
+        margin: EdgeInsets.fromLTRB(t.space4, t.space2, t.space4, 0),
+        padding: EdgeInsets.symmetric(horizontal: t.space4, vertical: t.space1),
+        decoration: BoxDecoration(
+          border: Border.all(color: t.negative),
+          borderRadius: BorderRadius.circular(t.radiusMd),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(n == 1 ? '+1 outro login de fora aceito' : '+$n outros logins de fora aceitos',
+                style: TradeType.bodySm.copyWith(color: t.negative)),
+          ),
+          TextButton(onPressed: () => setState(() => _cientes.addAll(chaves)), child: const Text('Ciente em todos')),
         ]),
       );
 

@@ -38,7 +38,8 @@ void main() {
       final k = tokensDaPaleta(p);
       final cores = [k.bgPage, k.bgSubtle, k.bgSurface, k.bgElevated, k.bgHover, k.borderSubtle, k.borderStrong, k.fgPrimary,
         k.fgSecondary, k.fgMuted, k.actionPrimary, k.actionAccent, k.focusRing, k.bgBrand, k.bgBrandDeep, k.brandHover,
-        k.brandText, k.chart1, k.brandTint, k.actionPrimaryFg, k.fgOnBrand];
+        k.brandText, k.chart1, k.brandTint, k.actionPrimaryFg, k.fgOnBrand, k.bgInverse, k.fgInverse, k.fgDisabled,
+        k.chartGrid, k.chartAxis, k.chart6, k.risk, k.riskFill];
       for (final c in cores) {
         expect(pink.contains(c.toARGB32() & 0xFFFFFF), isFalse, reason: p.id);
       }

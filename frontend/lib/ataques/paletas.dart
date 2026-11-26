@@ -66,7 +66,8 @@ PaletaMapa paletaPadrao(Brightness b) => paletaPorId(b == Brightness.light ? 'ci
 /// status, raios e espaços vêm da base clara/escura.
 TradeTokens tokensDaPaleta(PaletaMapa p) {
   final acao = p.vias[0];
-  return (p.escura ? TradeTokens.dark : TradeTokens.light).copyWith(
+  final base = p.escura ? TradeTokens.dark : TradeTokens.light;
+  return base.copyWith(
     bgPage: p.fundo,
     bgSubtle: p.fundo,
     bgSurface: p.painel,
@@ -88,5 +89,13 @@ TradeTokens tokensDaPaleta(PaletaMapa p) {
     brandTint: acao.withValues(alpha: 0.15),
     actionPrimaryFg: p.fundo,
     fgOnBrand: p.fundo,
+    bgInverse: p.texto, // tooltip e snackbar sem pink
+    fgInverse: p.fundo,
+    fgDisabled: p.textoSec,
+    chartGrid: p.bordaPainel,
+    chartAxis: p.bordaPainel,
+    chart6: p.vias[5],
+    risk: base.negative,
+    riskFill: base.negative,
   );
 }

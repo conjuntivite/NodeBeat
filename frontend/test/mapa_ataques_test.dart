@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
+import 'package:nodebeat/ataques/paletas.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/ataques_tv.dart';
@@ -358,8 +359,14 @@ void main() {
         find.descendant(
             of: find.byType(ListaAoVivo),
             matching: find.byWidgetPredicate((w) =>
-                w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(tk, 'ssh'))),
+                w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(paletaPadrao(Brightness.light), 'ssh'))),
         findsOneWidget);
+    // o ponto precisa de contorno para não sumir sobre o fundo da página
+    final ponto = t.widget<Container>(find.descendant(
+        of: find.byType(ListaAoVivo),
+        matching: find.byWidgetPredicate((w) =>
+            w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(paletaPadrao(Brightness.light), 'ssh'))));
+    expect((ponto.decoration as BoxDecoration).border, isNotNull);
   });
 
   // o painel pode levar mais que 3x o intervalo do feed; o limite é o intervalo do rodapé
@@ -411,5 +418,24 @@ void abaOculta() {
     await t.pump(const Duration(seconds: 1));
     expect(s.chamadasFeed, greaterThan(0));
     await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('popupSemSeletor', (t) async {
+    t.view.physicalSize = const Size(1280, 720);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(theme: tradeTheme(Brightness.light), home: Scaffold(body: MapaAtaques(api: _Servidor().api))));
+    await t.pump();
+    await t.pump();
+    expect(find.byTooltip('Paleta do mapa'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is ColoredBox && w.color == paletaPorId('cinza').fundo), findsWidgets);
+  });
+
+  testWidgets('barrasDosTiposUsamCorDaVia', (t) async {
+    await _mostrar(t, _Servidor(), tv: true);
+    final barras = find.descendant(of: find.byType(ColunaTops), matching: find.byType(LinearProgressIndicator));
+    final p = paletaPadrao(Brightness.dark);
+    expect(t.widget<LinearProgressIndicator>(barras.at(0)).color, corVia(p, 'ssh'));
+    expect(t.widget<LinearProgressIndicator>(barras.at(1)).color, corVia(p, 'winbox'));
   });
 }

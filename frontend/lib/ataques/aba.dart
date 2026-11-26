@@ -9,3 +9,7 @@ bool abaVisivel() => impl.abaVisivel();
 /// Tema da TV guardado no navegador ('claro' | 'escuro'); a TV não tem sessão.
 String? temaTvSalvo() => impl.temaTvSalvo();
 void salvarTemaTv(String tema) => impl.salvarTemaTv(tema);
+
+/// Id da paleta do mapa na TV, guardado no navegador.
+String? paletaTvSalva() => impl.paletaTvSalva();
+void salvarPaletaTv(String id) => impl.salvarPaletaTv(id);

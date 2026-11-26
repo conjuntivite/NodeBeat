@@ -4,6 +4,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/ataques/aba.dart';
+import 'package:nodebeat/ataques/paletas.dart';
 import 'package:nodebeat/main.dart';
 import 'package:nodebeat/screens/login.dart';
 import 'package:nodebeat/screens/mapa_ataques_tv.dart';
@@ -68,15 +69,64 @@ void main() {
       ),
     ));
     await t.pump();
+    await t.pump();
     await t.pump(const Duration(milliseconds: 500)); // AnimatedTheme
     expect(themeMode.value, ThemeMode.dark);
     Brightness b() => Theme.of(t.element(find.byType(MapaAtaques))).brightness;
     expect(b(), Brightness.dark);
     await t.tap(find.byType(ThemeToggle));
     await t.pump();
+    await t.pump();
     await t.pump(const Duration(milliseconds: 500));
     expect(b(), Brightness.light);
     expect(temaTvSalvo(), 'claro');
+    await t.pumpWidget(const SizedBox());
+  });
+
+  Widget tv(ApiClient api) => MaterialApp(theme: tradeTheme(Brightness.light), home: MapaAtaquesTvScreen(api: api));
+  PaletaMapa paletaDoMapa(WidgetTester t) => t.widget<MapaAtaques>(find.byType(MapaAtaques)).paleta!;
+
+  testWidgets('tvGuardaPaleta', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    salvarPaletaTv('ardosia');
+    final api = ApiClient(client: _semSessao([]));
+    await t.pumpWidget(tv(api));
+    await t.pump();
+    expect(paletaDoMapa(t).id, 'ardosia');
+    await t.tap(find.byTooltip('Paleta do mapa'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Oceano'), findsOneWidget);
+    await t.tap(find.text('Oceano'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(paletaTvSalva(), 'oceano');
+    expect(paletaDoMapa(t).id, 'oceano');
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(tv(api));
+    await t.pump();
+    expect(paletaDoMapa(t).id, 'oceano');
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('trocarPaletaRepinta', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    salvarPaletaTv('ardosia');
+    await t.pumpWidget(tv(ApiClient(client: _semSessao([]))));
+    await t.pump();
+    Finder fundo(Color c) => find.descendant(of: find.byType(MapaAtaques), matching: find.byWidgetPredicate((w) => w is ColoredBox && w.color == c));
+    expect(fundo(paletaPorId('ardosia').fundo), findsWidgets);
+    await t.tap(find.byTooltip('Paleta do mapa'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    await t.tap(find.text('Oceano'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(fundo(paletaPorId('oceano').fundo), findsWidgets);
     await t.pumpWidget(const SizedBox());
   });
 }

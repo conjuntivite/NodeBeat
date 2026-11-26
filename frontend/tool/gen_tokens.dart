@@ -41,6 +41,16 @@ void main() {
       b.writeln('  final double ${camel(t['name'])} = ${px(t['value']).toDouble()};');
     }
   }
+  // copyWith: a TV troca só algumas cores sobre a base clara/escura.
+  b.writeln('\n  TradeTokens copyWith({');
+  for (final n in sem.keys) {
+    b.writeln('    Color? ${camel(n)},');
+  }
+  b.writeln('  }) =>\n      TradeTokens._(');
+  for (final n in sem.keys) {
+    b.writeln('        ${camel(n)}: ${camel(n)} ?? this.${camel(n)},');
+  }
+  b.writeln('      );');
   for (final theme in ['light', 'dark']) {
     b.writeln('\n  static const $theme = TradeTokens._(');
     for (final e in sem.entries) {

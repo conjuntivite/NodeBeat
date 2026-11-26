@@ -9,7 +9,7 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/mapa_ataques.dart';
 
-/// Aba da TV do NOC, pública (sem login): o tema escolhido fica no navegador, sem menu lateral.
+/// Aba da TV do NOC, pública (sem login): a paleta escolhida (guardada no navegador) é o tema da tela, sem menu lateral.
 class MapaAtaquesTvScreen extends StatefulWidget {
   const MapaAtaquesTvScreen({super.key, required this.api});
   final ApiClient api;
@@ -26,51 +26,40 @@ class _MapaAtaquesTvScreenState extends State<MapaAtaquesTvScreen> {
     setState(() => _paleta = p);
   }
 
-  void _salvar() => salvarTemaTv(themeMode.value == ThemeMode.dark ? 'escuro' : 'claro');
-
-  @override
-  void initState() {
-    super.initState();
-    final salvo = temaTvSalvo();
-    // depois do quadro: mudar o tema no meio do build reconstruiria o MaterialApp acima
-    if (salvo != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => themeMode.value = salvo == 'escuro' ? ThemeMode.dark : ThemeMode.light);
-    }
-    themeMode.addListener(_salvar);
-  }
-
-  @override
-  void dispose() {
-    themeMode.removeListener(_salvar);
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    final escuro = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: t.bgSubtle,
-      body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: t.space6, vertical: t.space3),
-            child: Row(children: [
-              Image.asset('assets/brand/nodebeat-icon-${escuro ? 'dark' : 'light'}.png', width: 28, height: 28, excludeFromSemantics: true),
-              SizedBox(width: t.space3),
-              Text('Ataques às MKs', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
-              const Spacer(),
-              const _Relogio(),
-              SizedBox(width: t.space3),
-              _SeletorPaleta(atual: _paleta, aoEscolher: _escolher),
-              SizedBox(width: t.space2),
-              const ThemeToggle(),
+    // A paleta é o tema da TV inteira; o tema global (themeMode) não entra aqui.
+    final p = _paleta;
+    final t = tokensDaPaleta(p);
+    return Theme(
+      data: tradeTheme(p.escura ? Brightness.dark : Brightness.light, t),
+      child: TokensDaTela(
+        tokens: t,
+        child: Scaffold(
+          backgroundColor: t.bgPage,
+          body: SafeArea(
+            child: Column(children: [
+              DecoratedBox(
+                decoration: BoxDecoration(color: t.bgSurface, border: Border(bottom: BorderSide(color: t.borderSubtle))),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: t.space6, vertical: t.space3),
+                  child: Row(children: [
+                    Image.asset('assets/brand/nodebeat-icon-${p.escura ? 'dark' : 'light'}.png', width: 28, height: 28, excludeFromSemantics: true),
+                    SizedBox(width: t.space3),
+                    Text('Ataques às MKs', style: TradeType.heading3.copyWith(color: t.fgPrimary)),
+                    const Spacer(),
+                    const _Relogio(),
+                    SizedBox(width: t.space3),
+                    _SeletorPaleta(atual: p, aoEscolher: _escolher),
+                  ]),
+                ),
+              ),
+              Expanded(
+                child: MapaAtaques(api: widget.api, tv: true, paleta: p),
+              ),
             ]),
           ),
-          Expanded(
-            child: MapaAtaques(api: widget.api, tv: true, paleta: _paleta),
-          ),
-        ]),
+        ),
       ),
     );
   }

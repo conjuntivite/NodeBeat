@@ -8,6 +8,7 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/painel_eventos.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
+import 'package:nodebeat/widgets/mapa_ataques.dart';
 
 import 'painel_api_test.dart' show painelJson;
 
@@ -115,7 +116,8 @@ void main() {
     ((j['blocos'] as Map)['acesso'] as Map)['logins_externos'] = <Object>[];
     await _show(t, corpo: j, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Nenhum login de fora aceito'), findsOneWidget);
     expect(find.textContaining('login de fora aceito'), findsOneWidget);
   });
@@ -141,13 +143,15 @@ void main() {
   testWidgets('Ver detalhes abre a janela com o detalhe e fecha no X', (t) async {
     await _show(t, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Quem está tentando entrar'), findsOneWidget);
     expect(find.text('203.0.113.9'), findsWidgets);
     expect(find.text('7 tentativas'), findsOneWidget);
     expect(find.text('1 login de fora aceito'), findsOneWidget);
     await t.tap(find.byTooltip('Fechar'));
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Quem está tentando entrar'), findsNothing);
     for (var i = 1; i < 4; i++) {
       await t.tap(find.text('Ver detalhes →').at(i));
@@ -413,4 +417,22 @@ void main() {
 String _hora(String iso) {
   final d = DateTime.parse(iso).toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
+void popupAcesso() {
+  testWidgets('popupAcessoTemMapaEBotao', (t) async {
+    await _show(t, altura: 4200);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.byType(MapaAtaques), findsOneWidget);
+    expect(find.byTooltip('Abrir em tela cheia'), findsOneWidget);
+    await t.tap(find.byTooltip('Fechar'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    await t.tap(find.text('Ver detalhes →').at(2)); // VPN
+    await t.pumpAndSettle();
+    expect(find.byType(MapaAtaques), findsNothing);
+    expect(find.byTooltip('Abrir em tela cheia'), findsNothing);
+  });
 }

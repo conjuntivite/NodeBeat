@@ -1,12 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
+import '../ataques/aba.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 import '../widgets/common.dart';
 import '../widgets/shell.dart';
 import '../widgets/eventos.dart' show formatEventoHora;
 import '../widgets/graficos.dart';
+import '../widgets/mapa_ataques.dart';
 import '../widgets/painel_cards.dart';
 import '../widgets/painel_textos.dart';
 import 'painel_switches.dart';
@@ -287,31 +289,53 @@ class _PainelEventosScreenState extends State<PainelEventosScreen> {
 
   /// Janela por cima da tela com o detalhe da categoria (mantém período e filtro de MK).
   void _abrirDetalhe(BuildContext context, TradeTokens t, PainelEventos d, String cat) {
+    final acesso = cat == 'acesso'; // só o Acesso ganha mapa: janela quase do tamanho da tela
     showDialog<void>(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        insetPadding: EdgeInsets.all(t.space4),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: SingleChildScrollView(
-            child: Stack(children: [
-              _detalheDe(t, d, cat),
-              Positioned(
-                top: t.space2,
-                right: t.space2,
-                child: IconButton(
-                  tooltip: 'Fechar',
-                  icon: const Icon(Icons.close, size: 20),
-                  color: t.fgSecondary,
-                  onPressed: () => Navigator.of(ctx).pop(),
-                ),
+      builder: (ctx) {
+        final tela = MediaQuery.sizeOf(ctx);
+        final botoes = Positioned(
+          top: t.space2,
+          right: t.space2,
+          child: Row(children: [
+            if (acesso)
+              IconButton(
+                tooltip: 'Abrir em tela cheia',
+                icon: const Icon(Icons.open_in_new, size: 20),
+                color: t.fgSecondary,
+                onPressed: abrirMapaEmNovaAba,
               ),
-            ]),
-          ),
-        ),
-      ),
+            IconButton(
+              tooltip: 'Fechar',
+              icon: const Icon(Icons.close, size: 20),
+              color: t.fgSecondary,
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ]),
+        );
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: acesso ? EdgeInsets.symmetric(horizontal: tela.width * .04, vertical: tela.height * .04) : EdgeInsets.all(t.space4),
+          child: acesso
+              ? SizedBox(
+                  width: tela.width * .92,
+                  height: tela.height * .92,
+                  child: Stack(children: [
+                    Column(children: [
+                      SizedBox(height: tela.height * .92 * .6, child: MapaAtaques(api: widget.api)),
+                      SizedBox(height: t.space4),
+                      Expanded(child: SingleChildScrollView(child: _detalheDe(t, d, cat))),
+                    ]),
+                    botoes,
+                  ]),
+                )
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: SingleChildScrollView(child: Stack(children: [_detalheDe(t, d, cat), botoes])),
+                ),
+        );
+      },
     );
   }
 

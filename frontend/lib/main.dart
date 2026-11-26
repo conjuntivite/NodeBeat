@@ -5,6 +5,7 @@ import 'screens/login.dart';
 import 'screens/dashboard.dart';
 import 'screens/faixas.dart';
 import 'screens/mk_detail.dart';
+import 'screens/mapa_ataques_tv.dart';
 import 'screens/mk_form.dart';
 import 'screens/painel_eventos.dart';
 import 'screens/preparar_mk.dart';
@@ -28,6 +29,7 @@ class NodeBeatApp extends StatelessWidget {
     final page = switch (seg) {
       ['painel'] => DashboardScreen(api: api),
       ['faixas'] => FaixasScreen(api: api),
+      ['eventos', 'mapa'] => MapaAtaquesTvScreen(api: api),
       ['eventos'] => PainelEventosScreen(api: api),
       ['usuarios'] => UsuariosScreen(api: api),
       ['preparar-mk'] => PrepararMkScreen(api: api),
@@ -35,7 +37,7 @@ class NodeBeatApp extends StatelessWidget {
       ['mk', 'novo'] => MkFormScreen(api: api),
       ['mk', final id] => MkDetailScreen(api: api, id: id, chooseInterfaces: s.arguments == true),
       ['mk', final id, 'editar'] => MkFormScreen(api: api, id: id),
-      _ => LoginScreen(api: api),
+      _ => LoginScreen(api: api, depois: s.arguments is String ? s.arguments as String : '/painel'),
     };
     return MaterialPageRoute(settings: s, builder: (_) => page);
   }

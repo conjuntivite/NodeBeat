@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../api/client.dart';
+import '../ataques/aba.dart';
 import '../ataques/fila.dart';
 import '../ataques/geo.dart';
 import '../theme/theme.dart';
@@ -41,11 +42,13 @@ class MapaAtaques extends StatefulWidget {
     this.aoExpirarSessao,
     this.intervalo = const Duration(seconds: 5),
     this.intervaloRodape = const Duration(seconds: 60),
+    this.visivel = abaVisivel,
   });
   final ApiClient api;
   final bool tv;
   final VoidCallback? aoExpirarSessao;
   final Duration intervalo, intervaloRodape;
+  final bool Function() visivel; // aba oculta: não consulta
 
   @override
   State<MapaAtaques> createState() => MapaAtaquesState();
@@ -122,7 +125,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   }
 
   Future<void> _feed() async {
-    if (_buscando || _expirou) return;
+    if (_buscando || _expirou || !widget.visivel()) return;
     _buscando = true;
     try {
       final r = await widget.api.ataques(desde: _cursor).timeout(widget.intervalo * 3); // 1ª sem cursor: começa do agora
@@ -144,7 +147,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   }
 
   Future<void> _painel() async {
-    if (_expirou) return;
+    if (_expirou || !widget.visivel()) return;
     try {
       final b = (await widget.api.painelEventos('24h').timeout(widget.intervalo * 3)).blocos['acesso'];
       if (!mounted) return;

@@ -80,6 +80,7 @@ Future<void> _mostrar(WidgetTester t, _Servidor s, {bool tv = false, VoidCallbac
 }
 
 void main() {
+  abaOculta();
   testWidgets('desenhaLinhaDoFeed', (t) async {
     final s = _Servidor()..ataques = [_ataque()];
     await _mostrar(t, s);
@@ -206,5 +207,26 @@ void main() {
     ));
     await t.pump();
     expect(t.takeException(), isNull);
+  });
+}
+
+void abaOculta() {
+  testWidgets('abaOcultaPulaConsulta', (t) async {
+    final s = _Servidor();
+    var visivel = false;
+    t.view.physicalSize = const Size(1400, 1000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(
+      theme: tradeTheme(Brightness.dark),
+      home: Scaffold(body: MapaAtaques(api: s.api, intervalo: const Duration(seconds: 1), visivel: () => visivel)),
+    ));
+    await t.pump();
+    await t.pump(const Duration(seconds: 3));
+    expect(s.chamadasFeed, 0);
+    visivel = true;
+    await t.pump(const Duration(seconds: 1));
+    expect(s.chamadasFeed, greaterThan(0));
+    await t.pumpWidget(const SizedBox());
   });
 }

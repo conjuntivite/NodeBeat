@@ -5,8 +5,11 @@ import ipaddress
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+
+from nodebeat.geoip import Pais
 
 SILENCIO_H, REBOOTS_24H = 24, 2
 FLAP_N, VPN_FALHAS_N, PPPOE_MASSA_N, INCIDENTE_MKS = 3, 3, 10, 3
@@ -26,6 +29,7 @@ _LINK_FISICO = re.compile(r"collision|duplex mismatch", re.I)
 class Ctx:
     sede_redes: list[str] = field(default_factory=list)
     ips_sede: list[str] = field(default_factory=list)
+    pais_de: Callable[[str], Pais | None] = lambda ip: None  # geolocalização do IP (geoip.pais)
 
 
 _INTERNAS = [ipaddress.ip_network(n) for n in
@@ -80,6 +84,10 @@ def categoria(ev: dict, ctx: Ctx) -> tuple[str, str] | None:
     if _LINK_FISICO.search(msg):
         return "erros", "link_fisico"
     return None
+
+
+def _nome(p: Pais | None) -> str:
+    return p.nome if p else "Desconhecido"
 
 
 def _por_mk(contagem: Counter, nomes: dict) -> list[dict]:
@@ -160,13 +168,17 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
         elif st == "login_externo_ok":
             cp = ev["campos"]
             logins.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]], "usuario": cp.get("usuario"),
-                           "ip": cp.get("ip"), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
+                           "ip": cp.get("ip"), "pais_nome": _nome(ctx.pais_de(cp.get("ip") or "")), "via": cp.get("via"), "quando": ev["recebido_em"].isoformat()})
         elif st == "falha" and c == "vpn":
             vpn_tempos[ev["mk_id"]].append(ev["recebido_em"])
             vpn_falhas.append({"mk_id": ev["mk_id"], "nome": nomes[ev["mk_id"]],
                                "quando": ev["recebido_em"].isoformat(), "mensagem": ev["mensagem"]})
         elif st == "link_fisico":
             ifaces[(ev["mk_id"], ev["mensagem"].split(" ", 1)[0])] += 1
+
+    paises = Counter()  # por IP, não por evento: os IPs distintos são poucos
+    for ip, n in ips.items():
+        paises[ctx.pais_de(ip)] += n
 
     def bloco(c: str, **extra) -> dict:
         return {"total": resumo[c], "por_mk": _por_mk(por_mk_cat[c], nomes), **extra}
@@ -207,7 +219,10 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                                        sub["acesso"]["login_externo_ok"], vpn_tempos),
         "serie_hora": [{"hora": h.isoformat(), **v} for h, v in serie.items()],
         "blocos": {
-            "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n} for i, n in ips.most_common(10)],
+            "acesso": bloco("acesso", top_ips=[{"ip": i, "n": n, "pais": (p := ctx.pais_de(i)) and p.cc, "pais_nome": _nome(p)}
+                                     for i, n in ips.most_common(10)],
+                            top_paises=[{"pais": p and p.cc, "pais_nome": _nome(p), "n": n}
+                                        for p, n in paises.most_common(5)],
                             por_via=dict(vias.most_common()), logins_externos=logins[::-1]),
             "autenticacao": bloco("autenticacao", por_subtipo=dict(sub["autenticacao"])),
             "vpn": bloco("vpn", por_subtipo=dict(sub["vpn"]), ultimos=vpn_falhas[::-1][:20]),
@@ -219,6 +234,21 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                     "contagens": {c: contagens[i][c] for c in CATEGORIAS}} for i, n in nomes.items()],
         "atencao": atencao, "incidentes": incidentes, "config": config,
     }
+
+
+def janela(agora: datetime, periodo: str) -> datetime:
+    """Início do que `montar` olha: período + 7 dias de base + 1 h (o `_regras` volta 24 h + 7 dias de `agora`,
+    e o período começa na hora cheia). Nunca além dos 30 dias de retenção."""
+    return max(agora - timedelta(hours=PERIODOS[periodo] + 168 + 1), agora - timedelta(days=30))
+
+
+def marcos(primeiros: list[dict]) -> list[dict]:
+    """Eventos sintéticos com o 1.º instante de cada MK / (MK, usuário) anterior à janela (store.primeiros_eventos).
+    Dão a `montar` o mesmo `primeiro`, silêncio e usuários novos que os 30 dias dariam, sem entrar em nenhuma
+    contagem: o tipo "logout" não tem categoria e eles ficam antes da base e do `_regras`."""
+    return [{"mk_id": p["mk_id"], "recebido_em": p["recebido_em"], "tipo": "logout", "severidade": "info",
+             "topicos": [], "mensagem": "", "campos": {"usuario": p["usuario"]} if p["usuario"] else {}}
+            for p in primeiros]
 
 
 def _rajada(tempos: list[datetime], n: int, janela: timedelta) -> bool:

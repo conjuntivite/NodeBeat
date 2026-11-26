@@ -103,3 +103,89 @@ async def test_resposta_traz_resumo_estado_das_quatro_categorias(client, db):
     body = (await client.get("/api/eventos/painel")).json()
     assert set(body["resumo_estado"]) == {"acesso", "autenticacao", "vpn", "erros"}
     assert body["resumo_estado"]["acesso"] == {"estado": "esperado", "delta_pct": None}
+
+
+def _historia_30d(agora):
+    """Eventos espalhados em 30 dias, com as armadilhas de quem olha para trás: MK que só falou há 20 dias
+    (silêncio), MK que começou há 15 dias (dias de base), usuário visto há 20 dias e de novo hoje (usuário novo)."""
+    def ev(mk, tipo, msg, h, sev="info", campos=None):
+        return {"mk_id": mk, "recebido_em": agora - timedelta(hours=h), "severidade": sev, "topicos": [],
+                "tipo": tipo, "campos": campos or {}, "mensagem": msg}
+    evs = []
+    for h in range(1, 720, 7):
+        evs.append(ev("a", "login_falha", f"login failure for user root from 203.0.113.{h % 50} via ssh", h + 0.3, "crit"))
+        evs.append(ev("a", "interface", "ether3 link down", h + 0.5))
+        if h % 3 == 0:
+            evs.append(ev("a", "ipsec", "phase1 negotiation failed", h + 0.1, "err"))
+        if h < 360:
+            evs.append(ev("c", "erro", "algo falhou", h + 0.2, "err"))
+    for h in (480, 490, 500):
+        evs.append(ev("b", "pppoe", "x terminating... authentication failed", h))
+    for h in (2, 240, 480):  # reboots correlacionados (incidente) em a, b, c
+        for i, mk in enumerate("abc"):
+            evs.append(ev(mk, "reboot", "router rebooted", h + i * 0.01, "crit"))
+    for u, h in (("joao", 480), ("joao", 2), ("admin", 600), ("maria", 3), ("antigo", 690)):
+        evs.append(ev("a", "config", f"item changed by {u}", h, campos={"usuario": u, "objeto": "ip", "acao": "changed"}))
+    evs.append(ev("a", "login", "user admin logged in from 203.0.113.9 via ssh", 5,
+                  campos={"usuario": "admin", "ip": "203.0.113.9", "via": "ssh"}))
+    evs.append(ev("c", "login", "user ze logged in from 10.1.0.5 via winbox", 400,
+                  campos={"usuario": "ze", "ip": "10.1.0.5", "via": "winbox"}))
+    evs.append(ev("c", "login", "user ze logged in from 10.1.0.5 via winbox", 1,
+                  campos={"usuario": "ze", "ip": "10.1.0.5", "via": "winbox"}))
+    return evs
+
+
+@pytest.mark.parametrize("periodo", ["24h", "7d", "30d"])
+async def test_janela_reduzida_da_o_mesmo_painel_que_30_dias(db, periodo):
+    from nodebeat import painel
+    agora = datetime.now(UTC)
+    await store.inserir_eventos(db, _historia_30d(agora))
+    mks = [{"id": m, "nome": m.upper()} for m in "abc"]
+    ctx = painel.Ctx(SET.sede_redes, SET.ips_publicos_sede, lambda ip: None)
+    cheio = painel.montar(await store.listar_eventos_periodo(db, agora - timedelta(days=30)), mks, ctx, agora, periodo)
+    reduzido = painel.montar(await painel_ler(db, agora, periodo), mks, ctx, agora, periodo)
+    assert reduzido == cheio
+    assert any(m["motivos"] for m in cheio["por_mk"])  # o cenário exercita as regras
+
+
+async def painel_ler(db, agora, periodo):
+    from nodebeat import api
+    return await api.ler_eventos_painel(db, agora, periodo)
+
+
+async def test_janela_reduzida_le_menos_que_30_dias(db):
+    from nodebeat import api
+    agora = datetime.now(UTC)
+    await store.inserir_eventos(db, _historia_30d(agora))
+    assert len(await api.ler_eventos_painel(db, agora, "24h")) < len(
+        await store.listar_eventos_periodo(db, agora - timedelta(days=30))) / 2
+
+
+async def test_chamadas_simultaneas_fazem_uma_leitura(client, db, monkeypatch):
+    import asyncio
+    await criar(client)
+    original, leituras = store.listar_eventos_periodo, []
+
+    async def contando(*a, **kw):
+        leituras.append(1)
+        await asyncio.sleep(0.05)
+        return await original(*a, **kw)
+    monkeypatch.setattr(store, "listar_eventos_periodo", contando)
+    r1, r2 = await asyncio.gather(client.get("/api/eventos/painel"), client.get("/api/eventos/painel"))
+    assert r1.status_code == r2.status_code == 200 and r1.json() == r2.json()
+    assert len(leituras) == 1
+
+
+def test_ttl_do_cache_maior_que_o_intervalo_da_tv():
+    from nodebeat import api
+    assert api.PAINEL_TTL > 60
+
+
+def test_startup_precarrega_geoip(monkeypatch):
+    import threading
+
+    from fastapi.testclient import TestClient
+    feito = threading.Event()
+    monkeypatch.setattr("nodebeat.geoip.precarregar", feito.set)
+    with TestClient(create_app(AsyncMongoMockClient()["nodebeat"], fakeredis.FakeAsyncRedis(), SET)):
+        assert feito.wait(2)

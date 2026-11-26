@@ -6,8 +6,9 @@ import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.api});
+  const LoginScreen({super.key, required this.api, this.depois = '/painel'});
   final ApiClient api;
+  final String depois; // rota depois do login
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -35,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await widget.api.login(_user.text.trim(), _pass.text);
       await carregarSessao(widget.api);
-      if (mounted) Navigator.of(context).pushReplacementNamed('/painel');
+      if (mounted) Navigator.of(context).pushReplacementNamed(widget.depois);
     } on ApiError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {

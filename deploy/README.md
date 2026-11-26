@@ -122,6 +122,16 @@ Limites e cuidados:
 - A tela considera "leitura do switch antiga" após 30 min (limite fixo na tela, não acompanha `NODEBEAT_SWITCH_S`). Em "Sem resposta SNMP", a hora mostrada é a da última leitura boa.
 - O mapa se atualiza sozinho a cada 30 s.
 
+## Mapa de ataques (base de países)
+
+O mapa de ataques localiza o país de cada IP com a base offline DB-IP "IP to Country Lite", guardada no repositório em `backend/nodebeat/dados/` (`geoip-pais.csv.gz` e `paises.csv`). A DB-IP publica uma versão nova por mês; atualize uma vez por mês:
+
+1. Em `backend/`, rode `python scripts/geoip_atualizar.py` (opcional: `AAAA-MM` para um mês específico).
+2. Commite os arquivos alterados em `backend/nodebeat/dados/*`.
+3. Faça o deploy de sempre. A API carrega a base no startup, em segundo plano.
+
+Atribuição (licença CC-BY 4.0 da DB-IP): o mapa mostra "IP data by DB-IP" no canto. Não remova esse texto.
+
 ## 4. Checklist de verificação (manual)
 
 - [ ] `docker compose ... ps`: os 5 serviços `running`.

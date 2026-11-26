@@ -8,6 +8,8 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/screens/painel_eventos.dart';
 import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/theme/tokens.g.dart';
+import 'package:nodebeat/widgets/mapa_ataques.dart';
+import 'package:nodebeat/widgets/common.dart' show TradeCard;
 
 import 'painel_api_test.dart' show painelJson;
 
@@ -115,7 +117,8 @@ void main() {
     ((j['blocos'] as Map)['acesso'] as Map)['logins_externos'] = <Object>[];
     await _show(t, corpo: j, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Nenhum login de fora aceito'), findsOneWidget);
     expect(find.textContaining('login de fora aceito'), findsOneWidget);
   });
@@ -141,13 +144,15 @@ void main() {
   testWidgets('Ver detalhes abre a janela com o detalhe e fecha no X', (t) async {
     await _show(t, altura: 4200);
     await t.tap(find.text('Ver detalhes →').first);
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Quem está tentando entrar'), findsOneWidget);
     expect(find.text('203.0.113.9'), findsWidgets);
     expect(find.text('7 tentativas'), findsOneWidget);
     expect(find.text('1 login de fora aceito'), findsOneWidget);
     await t.tap(find.byTooltip('Fechar'));
-    await t.pumpAndSettle();
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600)); // o mapa anima sem parar: sem pumpAndSettle
     expect(find.text('Quem está tentando entrar'), findsNothing);
     for (var i = 1; i < 4; i++) {
       await t.tap(find.text('Ver detalhes →').at(i));
@@ -408,9 +413,42 @@ void main() {
       expect(t.takeException(), isNull);
     });
   }
+  popupAcesso();
 }
 
 String _hora(String iso) {
   final d = DateTime.parse(iso).toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
+void popupAcesso() {
+  testWidgets('popupAcessoCienteNaoFicaCobertoPelosBotoes', (t) async {
+    await _show(t, altura: 4200);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    final aviso = find.textContaining('Login de fora aceito');
+    expect(aviso, findsOneWidget);
+    expect(find.text('● ao vivo').hitTestable(), findsOneWidget);
+    await t.tap(find.text('Ciente').hitTestable());
+    await t.pump();
+    expect(find.byType(MapaAtaques), findsOneWidget); // o toque não caiu no "Fechar"
+    expect(aviso, findsNothing);
+  });
+  testWidgets('popupAcessoTemMapaEBotao', (t) async {
+    await _show(t, altura: 4200);
+    await t.tap(find.text('Ver detalhes →').first);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.byType(MapaAtaques), findsOneWidget);
+    expect(find.byTooltip('Abrir em tela cheia'), findsOneWidget);
+    await t.tap(find.byTooltip('Fechar'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    final cardVpn = find.ancestor(of: find.byKey(const Key('total-vpn')), matching: find.byType(TradeCard));
+    await t.tap(find.descendant(of: cardVpn, matching: find.text('Ver detalhes →')));
+    await t.pumpAndSettle();
+    expect(find.byType(MapaAtaques), findsNothing);
+    expect(find.byTooltip('Abrir em tela cheia'), findsNothing);
+  });
 }

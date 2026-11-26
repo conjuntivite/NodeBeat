@@ -210,7 +210,8 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
           ],
           parado > const Duration(seconds: 30)
               ? Pilula('sem dados há ${formatDuration(parado.inSeconds)}', cor: t.warning, ponto: true)
-              : Text('● ao vivo', style: TradeType.bodySm.copyWith(color: t.positive, fontWeight: FontWeight.w500)),
+              // ponto desenhado pela Pilula: o "●" não existe na Poppins e o build não baixa fonte de fora
+              : Pilula('ao vivo', cor: t.positive, ponto: true),
         ]),
       ),
       Positioned(

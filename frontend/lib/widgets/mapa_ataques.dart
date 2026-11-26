@@ -11,13 +11,8 @@ import '../ataques/fila.dart';
 import '../ataques/geo.dart';
 import '../theme/theme.dart';
 import '../theme/tokens.g.dart';
+import 'ataques_tv.dart';
 import 'common.dart';
-import 'graficos.dart';
-
-const _vias = ['ssh', 'telnet', 'ftp', 'api', 'winbox'];
-
-Color corVia(TradeTokens t, String via) =>
-    switch (_vias.indexOf(via)) { 0 => t.chart1, 1 => t.chart2, 2 => t.chart3, 3 => t.chart4, 4 => t.chart5, _ => t.chart6 };
 
 // Contorno dos continentes, lido uma vez por página.
 // rootBundle.load + utf8 (loadString usaria compute(), que trava no teste).
@@ -71,6 +66,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   BlocoPainel? _acesso;
   List<_Aviso> _avisosPainel = const [];
   final _avisosFeed = <String, _Aviso>{};
+  List<Ataque> _recentes = const [];
   final _rotulos = <String>[];
   final _textos = <String, TextPainter>{};
 
@@ -81,6 +77,9 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
   int get linhasAtivas => _fila.ativas(_agora).length;
   @visibleForTesting
   List<String> get rotulosDesenhados => _rotulos;
+  /// Lista ao vivo da TV: mais novo primeiro, no máximo 8.
+  @visibleForTesting
+  List<Ataque> get recentes => _recentes;
 
   @override
   void initState() {
@@ -136,6 +135,8 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       _cursor = r.cursor;
       _descServidor = r.descartados;
       _fila.receber(r.ataques, _agora, janela: widget.intervalo);
+      // só o lote novo é ordenado (sort não é estável); o cursor garante que é mais novo que o já visto
+      _recentes = [...([...r.ataques]..sort((a, b) => b.quando.compareTo(a.quando))), ..._recentes].take(8).toList();
       final limite = DateTime.now().toUtc().subtract(const Duration(hours: 24));
       _avisosFeed.removeWhere((_, a) => DateTime.parse(a.quando).isBefore(limite));
       for (final a in r.ataques.where((a) => a.sucesso)) {
@@ -193,7 +194,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
           eyebrow('Todas as MKs, ao vivo', cor: t.fgSecondary),
           SizedBox(height: t.space2),
           Wrap(spacing: t.space3, children: [
-            for (final v in _vias)
+            for (final v in viasAtaque)
               Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, v), shape: BoxShape.circle)),
                 SizedBox(width: t.space1),
@@ -226,14 +227,27 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     // mais recentes primeiro (ISO em UTC ordena como texto); 2 viram faixa, o resto um resumo
     final ordem = avisos.entries.toList()..sort((x, y) => y.value.quando.compareTo(x.value.quando));
     final resto = ordem.length - _faixasMax;
+    Widget centroDe(double alturaTotal) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
+      if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
+      Expanded(child: mapa),
+      // rolagem desligada: em TV baixa as linhas mais antigas são cortadas e o mapa não colapsa
+      if (widget.tv)
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: alturaTotal * 0.4),
+          child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes)),
+        ),
+    ]);
+    final centro = LayoutBuilder(builder: (_, c) => centroDe(c.maxHeight));
+    // TV: lista ao vivo embaixo do mapa e tops de 24 h à direita (layout do FortiGuard)
     return ColoredBox(
       color: t.bgSurface,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
-        if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
-        Expanded(child: mapa),
-        if (widget.tv && _acesso != null) _rodape(t, _acesso!),
-      ]),
+      child: widget.tv
+          ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(child: centro),
+              SizedBox(width: 360, child: _acesso == null ? const ColunaTopsVazia() : ColunaTops(acesso: _acesso!)),
+            ])
+          : centro,
     );
   }
 
@@ -272,36 +286,6 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
                 style: TradeType.bodySm.copyWith(color: t.negative)),
           ),
           TextButton(onPressed: () => setState(() => _cientes.addAll(chaves)), child: const Text('Ciente em todos')),
-        ]),
-      );
-
-  Widget _lista(TradeTokens t, String titulo, List<(String, int)> itens) => Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          eyebrow(titulo, cor: t.fgMuted),
-          SizedBox(height: t.space2),
-          for (final (nome, n) in itens.take(5))
-            Row(children: [
-              Expanded(child: Text(nome, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
-              Text('$n', style: dataStyle(context, TradeType.dataSm)),
-            ]),
-        ]),
-      );
-
-  Widget _rodape(TradeTokens t, BlocoPainel b) => Container(
-        padding: EdgeInsets.all(t.space4),
-        decoration: BoxDecoration(border: Border(top: BorderSide(color: t.borderSubtle))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _lista(t, 'Top países', [for (final p in b.topPaises) ('${p['pais_nome'] ?? p['pais'] ?? '?'}', (p['n'] as num?)?.toInt() ?? 0)]),
-          SizedBox(width: t.space6),
-          _lista(t, 'Top IPs', [for (final c in b.topIps) (c.paisNome == null ? c.ip : '${c.ip} · ${c.paisNome}', c.n)]),
-          SizedBox(width: t.space6),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              eyebrow('Serviço atacado (24 h)', cor: t.fgMuted),
-              SizedBox(height: t.space2),
-              GraficoBarras(dados: [for (final e in b.porVia.entries) (e.key.toUpperCase(), e.value)]),
-            ]),
-          ),
         ]),
       );
 }

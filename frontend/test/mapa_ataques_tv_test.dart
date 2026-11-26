@@ -6,6 +6,7 @@ import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/main.dart';
 import 'package:nodebeat/screens/login.dart';
 import 'package:nodebeat/screens/mapa_ataques_tv.dart';
+import 'package:nodebeat/theme/theme.dart';
 import 'package:nodebeat/widgets/mapa_ataques.dart';
 
 void main() {
@@ -39,14 +40,29 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tvTemaEscuro', (t) async {
+  testWidgets('tvSegueTemaEAlterna', (t) async {
     t.view.physicalSize = const Size(1920, 1080);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
+    addTearDown(() => themeMode.value = ThemeMode.light);
+    themeMode.value = ThemeMode.light;
     final api = ApiClient(client: MockClient((_) async => http.Response('{"detail":"x"}', 500)));
-    await t.pumpWidget(MaterialApp(themeMode: ThemeMode.light, home: MapaAtaquesTvScreen(api: api)));
+    await t.pumpWidget(ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeMode,
+      builder: (_, mode, _) => MaterialApp(
+        theme: tradeTheme(Brightness.light),
+        darkTheme: tradeTheme(Brightness.dark),
+        themeMode: mode,
+        home: MapaAtaquesTvScreen(api: api),
+      ),
+    ));
     await t.pump();
-    expect(Theme.of(t.element(find.byType(MapaAtaques))).brightness, Brightness.dark);
+    Brightness b() => Theme.of(t.element(find.byType(MapaAtaques))).brightness;
+    expect(b(), Brightness.light);
+    await t.tap(find.byTooltip('Tema escuro'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500)); // AnimatedTheme
+    expect(b(), Brightness.dark);
     await t.pumpWidget(const SizedBox());
   });
 }

@@ -361,6 +361,12 @@ void main() {
             matching: find.byWidgetPredicate((w) =>
                 w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(paletaPadrao(Brightness.light), 'ssh'))),
         findsOneWidget);
+    // o ponto precisa de contorno para não sumir sobre o fundo da página
+    final ponto = t.widget<Container>(find.descendant(
+        of: find.byType(ListaAoVivo),
+        matching: find.byWidgetPredicate((w) =>
+            w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(paletaPadrao(Brightness.light), 'ssh'))));
+    expect((ponto.decoration as BoxDecoration).border, isNotNull);
   });
 
   // o painel pode levar mais que 3x o intervalo do feed; o limite é o intervalo do rodapé

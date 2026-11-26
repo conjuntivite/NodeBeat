@@ -188,4 +188,13 @@ void main() {
     expect(find.text('SW B'), findsOneWidget);
     expect(find.text('P5'), findsOneWidget);
   });
+
+  testWidgets('GraficoBarras: trilho padrão sem cores; trilho neutro com cores', (t) async {
+    final tk = TradeTokens.light;
+    Color? trilho() => t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).backgroundColor;
+    await _mostra(t, const GraficoBarras(dados: [('A', 3)]), Brightness.light);
+    expect(trilho(), tk.borderSubtle);
+    await _mostra(t, const GraficoBarras(dados: [('A', 3), ('B', 1)], cores: [Color(0xFFFFFFFF)]), Brightness.light);
+    expect(t.widgetList<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).first.backgroundColor, tk.fgMuted.withValues(alpha: 0.15));
+  });
 }

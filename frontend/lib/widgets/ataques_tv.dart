@@ -39,7 +39,7 @@ class ListaAoVivo extends StatelessWidget {
             width: 84,
             child: Row(children: [
               // cor de gráfico só como preenchimento (ponto); texto em fgPrimary para contraste
-              Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(paleta, a.via), shape: BoxShape.circle)),
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(paleta, a.via), shape: BoxShape.circle, border: Border.all(color: t.fgMuted, width: 1))),
               SizedBox(width: t.space1),
               Text(a.via.toUpperCase(), style: corpo.copyWith(fontWeight: FontWeight.w500)),
             ]),

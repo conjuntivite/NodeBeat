@@ -79,13 +79,22 @@ class GraficoBarras extends StatelessWidget {
             Expanded(flex: 5, child: Text(nome, overflow: TextOverflow.ellipsis, style: TradeType.bodyMd.copyWith(color: t.fgPrimary))),
             Expanded(
               flex: 6,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(t.radiusPill),
-                child: LinearProgressIndicator(
-                  value: maximo == 0 ? 0 : n / maximo,
-                  minHeight: 10,
-                  color: cores?[i] ?? cor ?? t.info,
-                  backgroundColor: t.borderSubtle,
+              child: Container(
+                // Com paleta própria a cor da barra pode sumir no fundo da página: trilho neutro + contorno de 1 px.
+                foregroundDecoration: cores == null
+                    ? null
+                    : BoxDecoration(
+                        border: Border.all(color: t.fgMuted, width: 1),
+                        borderRadius: BorderRadius.circular(t.radiusPill),
+                      ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(t.radiusPill),
+                  child: LinearProgressIndicator(
+                    value: maximo == 0 ? 0 : n / maximo,
+                    minHeight: 10,
+                    color: cores != null && i < cores!.length ? cores![i] : (cor ?? t.info),
+                    backgroundColor: cores == null ? t.borderSubtle : t.fgMuted.withValues(alpha: 0.15),
+                  ),
                 ),
               ),
             ),

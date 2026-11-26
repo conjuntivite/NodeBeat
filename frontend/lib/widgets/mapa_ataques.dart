@@ -14,11 +14,6 @@ import '../theme/tokens.g.dart';
 import 'ataques_tv.dart';
 import 'common.dart';
 
-const _vias = ['ssh', 'telnet', 'ftp', 'api', 'winbox'];
-
-Color corVia(TradeTokens t, String via) =>
-    switch (_vias.indexOf(via)) { 0 => t.chart1, 1 => t.chart2, 2 => t.chart3, 3 => t.chart4, 4 => t.chart5, _ => t.chart6 };
-
 // Contorno dos continentes, lido uma vez por página.
 // rootBundle.load + utf8 (loadString usaria compute(), que trava no teste).
 final Future<List<List<Offset>>> _terra = rootBundle.load('assets/ataques/terra.json').then((d) => [
@@ -199,7 +194,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
           eyebrow('Todas as MKs, ao vivo', cor: t.fgSecondary),
           SizedBox(height: t.space2),
           Wrap(spacing: t.space3, children: [
-            for (final v in _vias)
+            for (final v in viasAtaque)
               Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, v), shape: BoxShape.circle)),
                 SizedBox(width: t.space1),
@@ -250,7 +245,7 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
       child: widget.tv
           ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Expanded(child: centro),
-              SizedBox(width: 360, child: _acesso == null ? null : ColunaTops(acesso: _acesso!)),
+              SizedBox(width: 360, child: _acesso == null ? const ColunaTopsVazia() : ColunaTops(acesso: _acesso!)),
             ])
           : centro,
     );

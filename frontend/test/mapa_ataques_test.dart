@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:nodebeat/api/client.dart';
 import 'package:nodebeat/theme/theme.dart';
+import 'package:nodebeat/theme/tokens.g.dart';
 import 'package:nodebeat/widgets/ataques_tv.dart';
 import 'package:nodebeat/widgets/common.dart';
 import 'package:nodebeat/widgets/mapa_ataques.dart';
@@ -47,6 +48,7 @@ Map<String, dynamic> _painel({List<Map<String, dynamic>> logins = const [], List
 
 class _Servidor {
   int feedStatus = 200;
+  int painelStatus = 200;
   int chamadasFeed = 0;
   int descartados = 0;
   bool travarPrimeira = false;
@@ -62,7 +64,7 @@ class _Servidor {
                 ? _json({'cursor': 'c1', 'ataques': ataques, 'descartados': descartados})
                 : _json({'detail': 'x'}, feedStatus);
           }
-          if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins, paises: paises));
+          if (req.url.path == '/api/eventos/painel') return _json(_painel(logins: logins, paises: paises), painelStatus);
           return http.Response('', 404);
         }),
       );
@@ -300,6 +302,9 @@ void main() {
     final lista = t.getSize(find.ancestor(of: find.byType(ListaAoVivo), matching: find.byType(SingleChildScrollView))).height; // área ocupada (já limitada a 40%)
     final mapa = t.getSize(find.ancestor(of: find.text('IP data by DB-IP'), matching: find.byType(Stack)).first).height;
     expect(lista, greaterThan(0));
+    // 8 linhas inteiras: altura natural da lista cabe no limite de 40%
+    expect(t.getSize(find.byType(ListaAoVivo)).height, lessThanOrEqualTo(lista + 0.01));
+    expect(lista, lessThanOrEqualTo(1080 * 0.4));
     expect(lista + mapa, closeTo(1080, 4));
   });
 
@@ -316,6 +321,32 @@ void main() {
     await t.pump();
     expect(find.byType(ListaAoVivo), findsOneWidget);
     expect(t.takeException(), isNull);
+  });
+
+  testWidgets('servicoUsaFgPrimaryEPontoColorido', (t) async {
+    t.view.physicalSize = const Size(1280, 720);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(
+      theme: tradeTheme(Brightness.light),
+      home: Scaffold(body: MapaAtaques(api: (_Servidor()..ataques = [_ataque()]).api, tv: true)),
+    ));
+    await t.pump();
+    await t.pump();
+    final tk = TradeTokens.light;
+    final txt = t.widget<Text>(find.descendant(of: find.byType(ListaAoVivo), matching: find.text('SSH')));
+    expect(txt.style!.color, tk.fgPrimary);
+    expect(
+        find.descendant(
+            of: find.byType(ListaAoVivo),
+            matching: find.byWidgetPredicate((w) =>
+                w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == corVia(tk, 'ssh'))),
+        findsOneWidget);
+  });
+
+  testWidgets('colunaVaziaAguardandoDados', (t) async {
+    await _mostrar(t, _Servidor()..painelStatus = 500, tv: true);
+    expect(find.text('Aguardando dados'), findsOneWidget);
   });
 
   testWidgets('temaClaroRenderiza', (t) async {

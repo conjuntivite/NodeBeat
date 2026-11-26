@@ -6,7 +6,11 @@ import '../theme/tokens.g.dart';
 import 'bandeira.dart';
 import 'common.dart';
 import 'graficos.dart';
-import 'mapa_ataques.dart' show corVia;
+
+const viasAtaque = ['ssh', 'telnet', 'ftp', 'api', 'winbox'];
+
+Color corVia(TradeTokens t, String via) =>
+    switch (viasAtaque.indexOf(via)) { 0 => t.chart1, 1 => t.chart2, 2 => t.chart3, 3 => t.chart4, 4 => t.chart5, _ => t.chart6 };
 
 /// Lista ao vivo embaixo do mapa da TV: as tentativas mais recentes, a mais nova no topo.
 class ListaAoVivo extends StatelessWidget {
@@ -28,8 +32,13 @@ class ListaAoVivo extends StatelessWidget {
                 style: dataStyle(context, TradeType.dataSm).copyWith(color: t.fgMuted)),
           ),
           SizedBox(
-            width: 64,
-            child: Text(a.via.toUpperCase(), style: corpo.copyWith(color: corVia(t, a.via), fontWeight: FontWeight.w500)),
+            width: 84,
+            child: Row(children: [
+              // cor de gráfico só como preenchimento (ponto); texto em fgPrimary para contraste
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: corVia(t, a.via), shape: BoxShape.circle)),
+              SizedBox(width: t.space1),
+              Text(a.via.toUpperCase(), style: corpo.copyWith(fontWeight: FontWeight.w500)),
+            ]),
           ),
           SizedBox(
             width: 40,
@@ -56,16 +65,31 @@ class ListaAoVivo extends StatelessWidget {
     }
 
     return Container(
-      padding: EdgeInsets.all(t.space4),
+      padding: EdgeInsets.all(t.space3),
       decoration: BoxDecoration(border: Border(top: BorderSide(color: t.borderSubtle))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         eyebrow('Ataques em tempo real', cor: t.fgSecondary),
-        SizedBox(height: t.space2),
+        SizedBox(height: t.space1),
         if (recentes.isEmpty)
           Text('Aguardando tentativas', style: TradeType.bodySm.copyWith(color: t.fgMuted))
         else
           for (final a in recentes) linha(a),
       ]),
+    );
+  }
+}
+
+/// Coluna da TV enquanto o painel de Acesso não chegou.
+class ColunaTopsVazia extends StatelessWidget {
+  const ColunaTopsVazia({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(border: Border(left: BorderSide(color: t.borderSubtle))),
+      child: Text('Aguardando dados', style: TradeType.bodySm.copyWith(color: t.fgMuted)),
     );
   }
 }

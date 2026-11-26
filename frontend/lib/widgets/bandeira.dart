@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../theme/theme.dart';
+
 /// Bandeira do pais (asset local, 20x15). O nome do pais aparece ao lado.
 class Bandeira extends StatelessWidget {
   const Bandeira(this.cc, {super.key});
@@ -15,6 +17,12 @@ class Bandeira extends StatelessWidget {
       width: 20,
       height: 15,
       excludeFromSemantics: true,
+      // borda 1 px por cima (20x15 no total): bandeiras de faixa branca não somem no tema claro
+      frameBuilder: (_, child, _, _) => DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(border: Border.all(color: tokensOf(context).borderSubtle)),
+        child: child,
+      ),
       errorBuilder: (_, _, _) => vazio,
     );
   }

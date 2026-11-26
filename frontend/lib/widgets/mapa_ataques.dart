@@ -232,14 +232,18 @@ class MapaAtaquesState extends State<MapaAtaques> with SingleTickerProviderState
     // mais recentes primeiro (ISO em UTC ordena como texto); 2 viram faixa, o resto um resumo
     final ordem = avisos.entries.toList()..sort((x, y) => y.value.quando.compareTo(x.value.quando));
     final resto = ordem.length - _faixasMax;
-    final centro = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    Widget centroDe(double alturaTotal) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (final e in ordem.take(_faixasMax)) _faixa(t, e.key, e.value),
       if (resto > 0) _resumo(t, resto, ordem.map((e) => e.key)),
       Expanded(child: mapa),
       // rolagem desligada: em TV baixa as linhas mais antigas são cortadas e o mapa não colapsa
       if (widget.tv)
-        Flexible(child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes))),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: alturaTotal * 0.4),
+          child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: ListaAoVivo(recentes: _recentes)),
+        ),
     ]);
+    final centro = LayoutBuilder(builder: (_, c) => centroDe(c.maxHeight));
     // TV: lista ao vivo embaixo do mapa e tops de 24 h à direita (layout do FortiGuard)
     return ColoredBox(
       color: t.bgSurface,

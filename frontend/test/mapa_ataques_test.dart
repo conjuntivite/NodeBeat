@@ -285,6 +285,24 @@ void main() {
     expect(find.text('IP data by DB-IP'), findsOneWidget);
   });
 
+  testWidgets('tvMapaPegaOQueSobraDaLista', (t) async {
+    t.view.physicalSize = const Size(1920, 1080);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(
+      theme: tradeTheme(Brightness.dark),
+      home: Scaffold(
+        body: MapaAtaques(api: (_Servidor()..ataques = [for (var i = 0; i < 8; i++) {..._ataque(), 'mk_nome': 'MK $i'}]).api, tv: true),
+      ),
+    ));
+    await t.pump();
+    await t.pump();
+    final lista = t.getSize(find.ancestor(of: find.byType(ListaAoVivo), matching: find.byType(SingleChildScrollView))).height; // área ocupada (já limitada a 40%)
+    final mapa = t.getSize(find.ancestor(of: find.text('IP data by DB-IP'), matching: find.byType(Stack)).first).height;
+    expect(lista, greaterThan(0));
+    expect(lista + mapa, closeTo(1080, 4));
+  });
+
   testWidgets('tvBaixaNaoEstoura', (t) async {
     final s = _Servidor()
       ..logins = [

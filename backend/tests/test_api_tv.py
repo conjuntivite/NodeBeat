@@ -84,7 +84,7 @@ def test_juntar_publicos_soma_por_usuario():
                               {**base, "usuario": "b", "n": 3, "quando": "2026-01-01T11:00:00"},
                               {**base, "sucesso": False, "n": 1, "quando": "2026-01-01T09:00:00"}])
     assert [(g["n"], g["quando"], g["sucesso"]) for g in out] == [
-        (5, "2026-01-01T11:00:00", True), (1, "2026-01-01T09:00:00", False)]
+        (1, "2026-01-01T09:00:00", False), (5, "2026-01-01T11:00:00", True)]  # mais antigo primeiro
     assert all("usuario" not in g for g in out)
 
 

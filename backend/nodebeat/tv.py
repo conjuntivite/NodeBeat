@@ -11,7 +11,7 @@ def ataque_publico(a: dict) -> dict:
 
 
 def juntar_publicos(ataques: list[dict]) -> list[dict]:
-    """Sem o usuário, grupos que só diferem por ele viram um só (soma n, maior quando); mantém a ordem de entrada."""
+    """Sem o usuário, grupos que só diferem por ele viram um só (soma n, maior quando)."""
     out: dict[tuple, dict] = {}
     for a in ataques:
         p = ataque_publico(a)
@@ -21,7 +21,7 @@ def juntar_publicos(ataques: list[dict]) -> list[dict]:
             out[k]["quando"] = max(out[k]["quando"], p["quando"])
         else:
             out[k] = p
-    return sorted(out.values(), key=lambda g: g["quando"], reverse=True)
+    return sorted(out.values(), key=lambda g: g["quando"])  # mais antigo primeiro, como ataques.agrupar
 
 
 def tops_publicos(acesso: dict | None) -> dict:

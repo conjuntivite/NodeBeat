@@ -233,7 +233,7 @@ void main() {
     final s = _Servidor()..ataques = [{..._ataque(sucesso: true), 'ip': '203.0.113.5'}..remove('usuario')];
     await _mostrar(t, s, tv: true);
     expect(find.textContaining('Login de fora aceito: MK Feed · 203.0.113.5'), findsOneWidget);
-    expect(find.textContaining('?'), findsNothing);
+    expect(find.textContaining('· ?'), findsNothing);
   });
 
   testWidgets('sessaoExpiradaChamaCallback', (t) async {

@@ -26,6 +26,14 @@ void main() {
   setUp(() => themeMode.value = ThemeMode.light);
   tearDown(() => themeMode.value = ThemeMode.light);
 
+  test('tvNaoCarregaSessao', () {
+    expect(ehTv(Uri.parse('https://x/#/tv')), isTrue);
+    expect(ehTv(Uri.parse('https://x/#/tv?a=1')), isTrue);
+    expect(ehTv(Uri.parse('https://x/#/painel')), isFalse);
+    expect(ehTv(Uri.parse('https://x/#/tvx')), isFalse);
+    expect(ehTv(Uri.parse('https://x/')), isFalse);
+  });
+
   testWidgets('tvAbreSemLogin', (t) async {
     t.view.physicalSize = const Size(1920, 1080);
     t.view.devicePixelRatio = 1;

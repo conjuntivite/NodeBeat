@@ -19,7 +19,8 @@ def agrupar(eventos: list[dict], nomes: dict[str, str], ctx: painel.Ctx, pais_de
             sucesso, usuario = True, ev["campos"].get("usuario")
         else:
             continue
-        g = grupos.setdefault((ip, ev["mk_id"], via, sucesso), {"ip": ip, "mk_id": ev["mk_id"], "via": via, "n": 0,
+        # login aceito: o usuário entra na chave (usuários diferentes no mesmo IP não se fundem)
+        g = grupos.setdefault((ip, ev["mk_id"], via, sucesso, usuario), {"ip": ip, "mk_id": ev["mk_id"], "via": via, "n": 0,
                                                                  "sucesso": sucesso, "t": ev["recebido_em"], "usuario": usuario})
         g["n"] += 1
         g["t"] = max(g["t"], ev["recebido_em"])

@@ -129,7 +129,7 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
     contagens: dict[str, Counter] = defaultdict(Counter)  # mk -> categoria -> n
     por_mk_cat: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
     sub: dict[str, Counter] = {c: Counter() for c in CATEGORIAS}
-    ips, vias, paises = Counter(), Counter(), Counter()
+    ips, vias = Counter(), Counter()
     logins, vpn_falhas, ifaces = [], [], Counter()
 
     base_ini = inicio - timedelta(days=7)
@@ -164,7 +164,6 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
         if st == "falha_externa":
             _, ip, via = falha_login(ev)
             ips[ip] += 1
-            paises[ctx.pais_de(ip)] += 1
             vias[via] += 1
         elif st == "login_externo_ok":
             cp = ev["campos"]
@@ -176,6 +175,10 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                                "quando": ev["recebido_em"].isoformat(), "mensagem": ev["mensagem"]})
         elif st == "link_fisico":
             ifaces[(ev["mk_id"], ev["mensagem"].split(" ", 1)[0])] += 1
+
+    paises = Counter()  # por IP, não por evento: os IPs distintos são poucos
+    for ip, n in ips.items():
+        paises[ctx.pais_de(ip)] += n
 
     def bloco(c: str, **extra) -> dict:
         return {"total": resumo[c], "por_mk": _por_mk(por_mk_cat[c], nomes), **extra}
@@ -231,6 +234,21 @@ def montar(eventos: list[dict], mks: list[dict], ctx: Ctx, agora: datetime, peri
                     "contagens": {c: contagens[i][c] for c in CATEGORIAS}} for i, n in nomes.items()],
         "atencao": atencao, "incidentes": incidentes, "config": config,
     }
+
+
+def janela(agora: datetime, periodo: str) -> datetime:
+    """Início do que `montar` olha: período + 7 dias de base + 1 h (o `_regras` volta 24 h + 7 dias de `agora`,
+    e o período começa na hora cheia). Nunca além dos 30 dias de retenção."""
+    return max(agora - timedelta(hours=PERIODOS[periodo] + 168 + 1), agora - timedelta(days=30))
+
+
+def marcos(primeiros: list[dict]) -> list[dict]:
+    """Eventos sintéticos com o 1.º instante de cada MK / (MK, usuário) anterior à janela (store.primeiros_eventos).
+    Dão a `montar` o mesmo `primeiro`, silêncio e usuários novos que os 30 dias dariam, sem entrar em nenhuma
+    contagem: o tipo "logout" não tem categoria e eles ficam antes da base e do `_regras`."""
+    return [{"mk_id": p["mk_id"], "recebido_em": p["recebido_em"], "tipo": "logout", "severidade": "info",
+             "topicos": [], "mensagem": "", "campos": {"usuario": p["usuario"]} if p["usuario"] else {}}
+            for p in primeiros]
 
 
 def _rajada(tempos: list[datetime], n: int, janela: timedelta) -> bool:

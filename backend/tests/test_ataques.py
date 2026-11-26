@@ -63,3 +63,8 @@ def test_teto_de_grupos():
 def test_sem_ip_publico():
     g, _ = ag([falha("203.0.113.5"), login("203.0.113.6", "admin")])
     assert all(set(x) == CHAVES or set(x) == CHAVES - {"usuario"} for x in g)
+
+
+def test_logins_aceitos_de_usuarios_diferentes_no_mesmo_ip_nao_se_fundem():
+    g, _ = ag([login("203.0.113.5", "admin"), login("203.0.113.5", "joao"), login("203.0.113.5", "admin")])
+    assert sorted((x["usuario"], x["n"]) for x in g) == [("admin", 2), ("joao", 1)]

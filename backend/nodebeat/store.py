@@ -259,6 +259,20 @@ async def listar_eventos_periodo(db, desde: datetime, mk_id: str | None = None) 
     return [_utc(d) async for d in db.eventos.find(f).sort("recebido_em", 1)]
 
 
+async def primeiros_eventos(db, desde: datetime, ate: datetime) -> list[dict]:
+    """1.º instante em [desde, ate) de cada MK e de cada (MK, usuário) de config/login/logout.
+    `usuario` é None na linha da MK. Agregado no Mongo: poupa trazer semanas de eventos para o Python."""
+    f: dict = {"recebido_em": {"$gte": desde, "$lt": ate}, "mk_id": {"$not": {"$regex": "^eq:"}}}
+    t = {"$min": "$recebido_em"}
+    por_mk = [{"$match": f}, {"$group": {"_id": "$mk_id", "t": t}}]
+    por_usuario = [{"$match": f | {"tipo": {"$in": ["config", "login", "logout"]}}},
+                   {"$group": {"_id": {"mk": "$mk_id", "u": "$campos.usuario"}, "t": t}}]
+    out = [{"mk_id": d["_id"], "usuario": None, "recebido_em": d["t"]} async for d in db.eventos.aggregate(por_mk)]
+    out += [{"mk_id": d["_id"]["mk"], "usuario": d["_id"]["u"], "recebido_em": d["t"]}
+            async for d in db.eventos.aggregate(por_usuario) if d["_id"].get("u")]
+    return [_utc(d) for d in out]
+
+
 async def listar_eventos_apos(db, cursor: ObjectId | None, limite: int) -> list[dict]:
     """Eventos de MK com _id > cursor (mantém _id), em ordem crescente; só os tipos do mapa de ataques."""
     f: dict = {"mk_id": {"$not": {"$regex": "^eq:"}}, "tipo": {"$in": ["login_falha", "erro", "login"]}}

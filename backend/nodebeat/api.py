@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -20,7 +21,7 @@ from pymongo.errors import DuplicateKeyError
 from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
-PAINEL_TTL = 60  # s: o painel relê 30 dias de eventos; o cache poupa isso a cada troca de filtro
+PAINEL_TTL = 120  # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
 LIMITE_LEITURA = 5000  # eventos lidos por chamada do feed de ataques
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
@@ -147,8 +148,22 @@ _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senh
             "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo"}
 
 
+async def ler_eventos_painel(db, agora: datetime, periodo: str) -> list[dict]:
+    """Só a janela que `painel.montar` usa + os marcos do resto dos 30 dias: mesmo resultado que ler os 30 dias."""
+    desde = painel.janela(agora, periodo)
+    antes = await store.primeiros_eventos(db, agora - timedelta(days=30), desde)
+    return painel.marcos(antes) + await store.listar_eventos_periodo(db, desde)
+
+
+@asynccontextmanager
+async def _vida(app: FastAPI):
+    # geoip leva ~3 s para carregar: em segundo plano, sem segurar o boot nem a 1.ª consulta do painel
+    app.state.geoip = asyncio.create_task(asyncio.to_thread(geoip.precarregar))
+    yield
+
+
 def create_app(db, r, settings) -> FastAPI:
-    app = FastAPI()
+    app = FastAPI(lifespan=_vida)
     app.state.db, app.state.r, app.state.settings = db, r, settings
 
     @app.exception_handler(RequestValidationError)
@@ -478,21 +493,28 @@ def create_app(db, r, settings) -> FastAPI:
                 "syslog_ativo": ultimo is not None and ultimo > datetime.now(UTC) - timedelta(hours=24)}
 
     _painel_cache: dict = {}  # (periodo, mk) -> (instante, resposta); no máx. 3 períodos x (1 + 19 MKs)
+    _painel_calc: dict = {}  # (periodo, mk) -> Task em andamento: quem chega junto espera o mesmo cálculo
+
+    async def _calcular_painel(chave: tuple, periodo: str, mk: str | None) -> dict:
+        t, agora = time.monotonic(), datetime.now(UTC)
+        # ponytail: a janela ainda vai para a memória (~30 mil eventos/dia); pipeline do Mongo se o cache não bastar
+        evs = await ler_eventos_painel(db, agora, periodo)
+        ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede, geoip.pais)
+        res = await asyncio.to_thread(painel.montar, evs, await store.list_mks(db), ctx, agora, periodo, mk)
+        _painel_cache[chave] = (t, res)
+        return res
 
     @mks.get("/eventos/painel")
     async def painel_eventos(periodo: str = Query("24h", pattern="^(24h|7d|30d)$"), mk: str | None = None) -> dict:
         if mk:
             await _achar(mk)
-        chave, t = (periodo, mk), time.monotonic()
-        if (c := _painel_cache.get(chave)) and t - c[0] < PAINEL_TTL:
+        chave = (periodo, mk)
+        if (c := _painel_cache.get(chave)) and time.monotonic() - c[0] < PAINEL_TTL:
             return c[1]
-        agora = datetime.now(UTC)
-        # ponytail: lê os 30 dias em memória (~30 mil eventos/dia); pipeline do Mongo se o cache não bastar
-        evs = await store.listar_eventos_periodo(db, agora - timedelta(days=30))
-        ctx = painel.Ctx(settings.sede_redes, settings.ips_publicos_sede, geoip.pais)
-        res = painel.montar(evs, await store.list_mks(db), ctx, agora, periodo, mk)
-        _painel_cache[chave] = (t, res)
-        return res
+        if chave not in _painel_calc:
+            tarefa = _painel_calc[chave] = asyncio.create_task(_calcular_painel(chave, periodo, mk))
+            tarefa.add_done_callback(lambda _: _painel_calc.pop(chave, None))
+        return await asyncio.shield(_painel_calc[chave])  # shield: um cliente que desiste não cancela os outros
 
     @mks.get("/eventos/ataques")
     async def ataques_ao_vivo(desde: str | None = None) -> dict:

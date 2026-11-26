@@ -37,13 +37,18 @@ def carregar(faixas_csv_gz: Path, paises_csv: Path) -> None:
     _dados = (inicios, fins, ccs, paises)
 
 
+def precarregar() -> None:
+    """Carrega a base padrão se ainda não carregou (~3 s); a API chama no startup, fora do event loop."""
+    if _dados is None:
+        carregar(_DADOS / "geoip-pais.csv.gz", _DADOS / "paises.csv")
+
+
 def pais(ip: str) -> Pais | None:
     try:
         a = ipaddress.IPv4Address(ip)
     except ValueError:
         return None
-    if _dados is None:
-        carregar(_DADOS / "geoip-pais.csv.gz", _DADOS / "paises.csv")
+    precarregar()
     inicios, fins, ccs, paises = _dados
     n = int(a)
     i = bisect_right(inicios, n) - 1

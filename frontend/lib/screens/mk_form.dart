@@ -22,6 +22,9 @@ class _MkFormScreenState extends State<MkFormScreen> {
   final _ipPublico = TextEditingController();
   final _usuario = TextEditingController();
   final _senha = TextEditingController();
+  final _senhaRw = TextEditingController();
+  bool _temRw = false;
+  bool _removerRw = false;
   Map<String, String> _errors = {};
   String? _general;
   bool _semIpsec = false;
@@ -43,6 +46,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
           _semIpsec = m.semIpsec;
           if (m.semIpsec) _ipTunel.clear();
           _usuario.text = m.usuario;
+          _temRw = m.temRw;
           _loaded = true;
         });
       }).catchError((Object e) {
@@ -55,7 +59,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_nome, _ipTunel, _ipPublico, _usuario, _senha]) {
+    for (final c in [_nome, _ipTunel, _ipPublico, _usuario, _senha, _senhaRw]) {
       c.dispose();
     }
     super.dispose();
@@ -87,6 +91,8 @@ class _MkFormScreenState extends State<MkFormScreen> {
       ipPublico: _ipPublico.text.trim(),
       usuario: _usuario.text.trim(),
       senha: _senha.text.isEmpty ? null : _senha.text,
+      senhaRw: _senhaRw.text.isEmpty ? null : _senhaRw.text,
+      removerRw: _removerRw && _senhaRw.text.isEmpty,
     );
     try {
       final nav = Navigator.of(context);
@@ -104,7 +110,7 @@ class _MkFormScreenState extends State<MkFormScreen> {
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
       setState(() {
-        const known = {'nome', 'ip_tunel', 'ip_publico', 'usuario', 'senha'};
+        const known = {'nome', 'ip_tunel', 'ip_publico', 'usuario', 'senha', 'senha_rw'};
         _errors = e is ApiError ? {for (final k in e.fields.keys) if (known.contains(k)) k: e.fields[k]!} : {};
         _general = _errors.isEmpty ? errorText(e) : null;
       });
@@ -150,6 +156,16 @@ class _MkFormScreenState extends State<MkFormScreen> {
                       _field('ip_publico', 'IP público', _ipPublico),
                       _field('usuario', 'Usuário da API', _usuario),
                       _field('senha', 'Senha da API', _senha, secret: true, hint: _edit ? 'deixe vazio para manter' : null),
+                      _field('senha_rw', 'Senha de alterações (nodebeat-rw)', _senhaRw,
+                          secret: true, hint: _edit ? 'deixe vazio para manter' : null),
+                      if (_edit && _temRw)
+                        GestureDetector(
+                          onTap: () => setState(() => _removerRw = !_removerRw),
+                          child: Row(children: [
+                            Checkbox(value: _removerRw, onChanged: (v) => setState(() => _removerRw = v ?? false)),
+                            const Expanded(child: Text('Remover senha de alterações')),
+                          ]),
+                        ),
                       if (_general != null)
                         Padding(
                           padding: EdgeInsets.only(bottom: t.space4),

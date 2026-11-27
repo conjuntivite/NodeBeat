@@ -28,6 +28,7 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
   PrepararMkInfo? _info;
   String? _error;
   String _senha = gerarSenha();
+  String _senhaRw = gerarSenha();
 
   @override
   void initState() {
@@ -65,6 +66,8 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
               _novaMk(context, t, i),
               SizedBox(height: t.space4),
               _reinicioPublico(t, i),
+              SizedBox(height: t.space4),
+              _alteracoes(context, t, i),
               SizedBox(height: t.space4),
               _card(t, 'Desfazer tudo', 'Remove da MK o usuário, o grupo, os certificados e as regras de firewall, e desliga a api-ssl.',
                   scriptDesfazer, 'copiar-desfazer', 'Comando copiado'),
@@ -149,6 +152,53 @@ class _PrepararMkScreenState extends State<PrepararMkScreen> {
         scriptLiberarReinicio(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede),
         'copiar-reinicio',
         'Script copiado');
+  }
+
+  /// Cria o usuário nodebeat-rw; precisa dos mesmos IPs do servidor que o Nova MK.
+  Widget _alteracoes(BuildContext context, TradeTokens t, PrepararMkInfo i) {
+    const titulo = 'MK já cadastrada: permitir alterações pelo NodeBeat';
+    final faltam = [
+      if (i.ipOrigem == null) 'NODEBEAT_IP_ORIGEM',
+      if (i.ipsSede.isEmpty) 'NODEBEAT_IPS_PUBLICOS_SEDE',
+    ];
+    if (faltam.isNotEmpty) {
+      return TradeCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titulo, style: TradeType.heading4.copyWith(color: t.fgPrimary)),
+          SizedBox(height: t.space3),
+          Text('O script precisa de ${faltam.join(' e ')} no servidor.', style: TradeType.bodyMd.copyWith(color: t.negative)),
+        ]),
+      );
+    }
+    final script = scriptLiberarAlteracoes(ipOrigem: i.ipOrigem!, ipsSede: i.ipsSede, senha: _senhaRw);
+    return TradeCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(titulo, style: TradeType.heading4.copyWith(color: t.fgPrimary)),
+        SizedBox(height: t.space3),
+        Text(
+            'Cria o usuário nodebeat-rw, que o NodeBeat usa para alterar dados da MK: liberar portas (port forward) e trocar o peer do IPsec. '
+            'O usuário monitor continua só leitura. Depois de colar, preencha a senha em Editar MK → Senha de alterações. '
+            'Rodar de novo troca a senha.',
+            style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+        SizedBox(height: t.space3),
+        Wrap(spacing: t.space3, runSpacing: t.space2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Text('Senha do nodebeat-rw:', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+          SelectableText(_senhaRw, key: const Key('senha-alteracoes'), style: dataStyle(context, TradeType.dataSm)),
+          TextButton(
+              key: const Key('outra-senha-alteracoes'),
+              onPressed: () => setState(() => _senhaRw = gerarSenha()),
+              child: const Text('Gerar outra senha')),
+        ]),
+        SizedBox(height: t.space3),
+        _codigo(t, script, null),
+        SizedBox(height: t.space3),
+        FilledButton(
+          key: const Key('copiar-alteracoes'),
+          onPressed: () => _copiar(script, 'Script copiado'),
+          child: const Text('Copiar script'),
+        ),
+      ]),
+    );
   }
 
   Widget _card(TradeTokens t, String titulo, String texto, String comando, String chave, String aviso) => TradeCard(

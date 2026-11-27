@@ -389,4 +389,40 @@ void main() {
       expect(scriptDesfazer, contains('/ip firewall filter remove [find where comment="monitor-api-wan"]'));
     });
   });
+
+  group('permitir alterações (nodebeat-rw)', () {
+    final r = scriptLiberarAlteracoes(ipOrigem: '192.0.2.53', ipsSede: ['203.0.113.10'], senha: 'Abc123');
+
+    test('um bloco só, ASCII, linhas curtas', () {
+      expect(r.startsWith('{'), isTrue);
+      expect(r.endsWith('}\n'), isTrue);
+      expect(r.codeUnits.every((c) => c <= 0x7f), isTrue);
+      expect(r.split('\n').every((l) => l.length <= 110), isTrue);
+      expect(r, isNot(contains('?')));
+    });
+
+    test('cria grupo e usuário com write, depois de checar o monitor', () {
+      expect(r, contains(':error "Usuario monitor nao existe'));
+      expect(r.indexOf('policy=read,write,api'), greaterThan(r.indexOf(':error "Usuario monitor nao existe')));
+      expect(r, contains('name=nodebeat-rw'));
+      expect(r, contains('address=\$lista'));
+      expect(r, contains('Abc123'));
+      expect(r, contains(':put "  Usuario:      nodebeat-rw"'));
+      expect(r, contains('ATENCAO: a senha do nodebeat-rw foi trocada'));
+    });
+
+    test('não mexe em serviço, certificado nem firewall', () {
+      for (final x in ['/ip service', '/certificate', '/ip firewall']) {
+        expect(r, isNot(contains(x)));
+      }
+    });
+
+    test('Desfazer remove usuário e grupo nodebeat-rw antes do grupo monitor', () {
+      const u = '/user remove [find where name="nodebeat-rw"]';
+      const g = '/user group remove [find where name="nodebeat-rw"]';
+      expect(scriptDesfazer, contains(u));
+      expect(scriptDesfazer, contains(g));
+      expect(scriptDesfazer.indexOf(g), lessThan(scriptDesfazer.indexOf('/user remove [find where name="monitor"]')));
+    });
+  });
 }

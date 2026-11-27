@@ -8,7 +8,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Callable, Literal, TypeVar
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -18,10 +18,37 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
+from nodebeat import alteracoes, ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
-PAINEL_TTL = 120  # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
+USUARIO_RW = "nodebeat-rw"
+T = TypeVar("T")
+
+
+async def _na_mk(mk: dict, chamar: Callable[..., T], publico_primeiro: bool = False) -> tuple[T, str]:
+    """Tenta túnel, IP público e porta alternativa; só SemConexao pula para o próximo caminho."""
+    passos = [("tunel", mk["ip_tunel"], {})]
+    if mk.get("ip_publico"):
+        passos += [("publico", mk["ip_publico"], {}), ("publico", mk["ip_publico"], {"porta": routeros.PORTA_API_ALT})]
+    if publico_primeiro:
+        passos.sort(key=lambda p: p[0] != "publico")
+    erros: dict[str, str] = {}
+    for rotulo, host, kw in passos:
+        try:
+            return await asyncio.to_thread(chamar, host, **kw), rotulo
+        except routeros.SemConexao as e:
+            erros[rotulo] = e.detalhe
+        except routeros.RouterOsError as e:
+            erros[rotulo] = e.detalhe
+            break
+    nomes = {"tunel": "Túnel", "publico": "IP público"}
+    raise routeros.RouterOsError(
+        ". ".join(f"{nomes[k]}: {v}" for k, v in erros.items()) if len(erros) > 1 else next(iter(erros.values())))
+_MSG_SEM_RW = ("Para alterar esta MK pelo NodeBeat, aplique o script 'permitir alterações' da página "
+               "Preparar MK e preencha a senha no cadastro.")
+
+
+PAINEL_TTL = 120 # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
 LIMITE_LEITURA = 5000  # eventos lidos por chamada do feed de ataques
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
@@ -59,6 +86,40 @@ class UsuarioPatch(BaseModel):
     admin: bool | None = None
 
 
+class PeerIn(BaseModel):
+    endereco: str
+
+    @field_validator("endereco")
+    @classmethod
+    def _publico(cls, v: str) -> str:
+        try:
+            ok = ipaddress.IPv4Address(v.strip()).is_global
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("Use um IPv4 público")
+        return v.strip()
+
+
+class PortaIn(BaseModel):
+    protocolo: str = Field(pattern="^(tcp|udp|ambos)$")
+    porta_externa: int = Field(ge=1, le=65535)
+    ip_interno: str
+    porta_interna: int | None = Field(default=None, ge=1, le=65535)
+    descricao: str = Field(pattern=r"^[A-Za-z0-9 ._-]{1,40}$")
+
+    @field_validator("ip_interno")
+    @classmethod
+    def _privado(cls, v: str) -> str:
+        try:
+            ok = ipaddress.IPv4Address(v.strip()).is_private
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("Use um IPv4 privado")
+        return v.strip()
+
+
 class MkIn(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
     ip_tunel: str = ""  # vazio quando sem_ipsec
@@ -66,6 +127,8 @@ class MkIn(BaseModel):
     sem_ipsec: bool = False  # MK sem VPN: o NodeBeat acessa pelo IP público (guardado também como ip_tunel)
     usuario: str = Field(min_length=1)
     senha: str = ""
+    senha_rw: str = ""  # senha do usuário nodebeat-rw (alterações); vazio = não mexe
+    remover_rw: bool = False
 
     @field_validator("nome", "usuario")
     @classmethod
@@ -145,7 +208,11 @@ def _alertas(mk: dict, st: dict) -> list[str]:
 _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
             "nova": "Mínimo de 12 caracteres",
             "ip_tunel": "Use o IP privado do túnel",
-            "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo"}
+            "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo",
+            "endereco": "Use um IPv4 público", "ip_interno": "Use um IPv4 privado",
+            "descricao": "Descrição: 1 a 40 caracteres, só letras sem acento, números, espaço, . _ -",
+            "porta_externa": "Porta de 1 a 65535", "porta_interna": "Porta de 1 a 65535",
+            "protocolo": "Use tcp, udp ou ambos"}
 
 
 async def ler_eventos_painel(db, agora: datetime, periodo: str) -> list[dict]:
@@ -309,9 +376,14 @@ def create_app(db, r, settings) -> FastAPI:
 
     extras = [ipaddress.ip_network(n) for n in settings.redes_tunel_extra]
 
+    def _senha_rw(mk: dict) -> str:
+        if not mk.get("senha_rw_cifrada"):
+            raise HTTPException(409, _MSG_SEM_RW)
+        return crypto.decrypt(mk["senha_rw_cifrada"], settings.secret_key)
+
     def _tunel_ok(body: MkIn) -> dict:
         """Campos a gravar; sem IPsec o IP de acesso (ip_tunel) é o público."""
-        campos = body.model_dump(exclude={"senha"})
+        campos = body.model_dump(exclude={"senha", "senha_rw", "remover_rw"})
         if body.sem_ipsec:
             return campos | {"ip_tunel": body.ip_publico}
         if not body.ip_tunel:
@@ -331,13 +403,17 @@ def create_app(db, r, settings) -> FastAPI:
         doc = campos | {
             "senha_cifrada": crypto.encrypt(body.senha, settings.secret_key),
             "cert_sha256": None, "interfaces_vigiadas": []}
+        if body.senha_rw:
+            doc["senha_rw_cifrada"] = crypto.encrypt(body.senha_rw, settings.secret_key)
         return {"id": await store.insert_mk(db, doc)}
 
     @mks.get("/mks/{id}")
     async def obter(id: str) -> dict:
         mk = await _achar(id)
+        tem_rw = bool(mk.get("senha_rw_cifrada"))
         mk = {k: v for k, v in mk.items() if k in ("id", "nome", "ip_tunel", "ip_publico", "usuario", "sem_ipsec",
                                                    "interfaces_vigiadas", "cert_sha256")}
+        mk["tem_rw"] = tem_rw
         mk["estado"] = (await history.load_states(r)).get(id)
         return mk
 
@@ -349,9 +425,12 @@ def create_app(db, r, settings) -> FastAPI:
         await _tunel_livre(campos["ip_tunel"], id)
         if body.senha:
             campos["senha_cifrada"] = crypto.encrypt(body.senha, settings.secret_key)
+        if body.senha_rw:
+            campos["senha_rw_cifrada"] = crypto.encrypt(body.senha_rw, settings.secret_key)
         if campos["ip_tunel"] != antigo["ip_tunel"]:
             campos["cert_sha256"] = None  # outro aparelho: o pin antigo não vale
-        await store.update_mk(db, id, campos)
+        remover = ("senha_rw_cifrada",) if body.remover_rw and not body.senha_rw else ()
+        await store.update_mk(db, id, campos, remover)
         return Response(status_code=204)
 
     @mks.delete("/mks/{id}", status_code=204)
@@ -380,25 +459,10 @@ def create_app(db, r, settings) -> FastAPI:
     async def reiniciar(id: str, user: dict = Depends(auth.current_user)):
         mk = await _achar(id)
 
-        async def _reboot(host: str, **kw) -> None:
-            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
-            await asyncio.to_thread(routeros.reboot, host, mk["usuario"], senha, mk.get("cert_sha256"), **kw)
-
-        via = "tunel"
         try:
-            try:
-                await _reboot(mk["ip_tunel"])
-            except routeros.SemConexao as e:  # túnel caído: tenta pela internet (só falha de rede, não login/TLS)
-                if not mk.get("ip_publico"):
-                    raise
-                via = "publico"
-                try:
-                    try:
-                        await _reboot(mk["ip_publico"])
-                    except routeros.SemConexao:  # operadora bloqueando a 8729: tenta a porta alternativa
-                        await _reboot(mk["ip_publico"], porta=routeros.PORTA_API_ALT)
-                except routeros.RouterOsError as e2:
-                    raise routeros.RouterOsError(f"Túnel: {e.detalhe}. IP público: {e2.detalhe}") from None
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            _, via = await _na_mk(mk, lambda host, **kw: routeros.reboot(
+                host, mk["usuario"], senha, mk.get("cert_sha256"), **kw))
         except routeros.RouterOsError as e:
             return JSONResponse({"detalhe": e.detalhe}, status_code=502)
         except Exception:  # nunca ecoar str(e): pode conter segredo
@@ -408,6 +472,129 @@ def create_app(db, r, settings) -> FastAPI:
         await history.record(r, Event("reinicio", "reinicio", MkRef(id, mk["nome"]), detalhe,
                                       datetime.now(UTC), None, None))
         return {"via": via}
+
+    async def _registrar_alteracao(mk: dict, detalhe: str) -> None:
+        await history.record(r, Event("alteracao", "alteracao", MkRef(mk["id"], mk["nome"]), detalhe,
+                                      datetime.now(UTC), None, None))
+
+    @mks.get("/mks/{id}/ipsec/peers")
+    async def ipsec_peers(id: str):
+        mk = await _achar(id)
+        try:
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            peers, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, mk["usuario"], senha, mk.get("cert_sha256"), alteracoes.ler_peers, **kw))
+        except routeros.RouterOsError as e:
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        return {"peers": peers, "via": via}
+
+    @mks.put("/mks/{id}/ipsec/peers/{peer_id}")
+    async def trocar_peer(id: str, peer_id: str, body: PeerIn, user: dict = Depends(auth.current_user)):
+        mk = await _achar(id)
+        if mk.get("sem_ipsec"):
+            raise HTTPException(409, "MK sem IPsec")
+        senha = _senha_rw(mk)
+        escreveu = []
+        try:
+            res, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, USUARIO_RW, senha, mk.get("cert_sha256"),
+                lambda api: alteracoes.trocar_peer(api, peer_id, body.endereco, lambda: escreveu.append(1)),
+                **kw), publico_primeiro=True)
+        except KeyError:
+            raise HTTPException(404, "Peer não encontrado na MK")
+        except ValueError:
+            raise HTTPException(422, "O peer já está com esse endereço")
+        except routeros.RouterOsError as e:
+            if escreveu:
+                await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            if escreveu:
+                await _registrar_alteracao(mk, "Falhou: resposta inesperada da API")
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        nome = res.get("nome") or peer_id
+        await _registrar_alteracao(mk, f"Peer IPsec {nome}: {res['antigo']} → {res['novo']}, por {user['usuario']}"
+                                   + (" pelo IP público" if via == "publico" else "")
+                                   + ("" if res["confirmado"] else " (não confirmado)")
+                                   + (f" (policy {', '.join(res['policies_erro'])} não atualizada)"
+                                      if res["policies_erro"] else ""))
+        return res | {"via": via}
+
+    @mks.get("/mks/{id}/portas-liberadas")
+    async def portas_liberadas(id: str):
+        mk = await _achar(id)
+        try:
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            lista, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, mk["usuario"], senha, mk.get("cert_sha256"), alteracoes.ler_liberacoes, **kw))
+        except routeros.RouterOsError as e:
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        return {"liberacoes": lista, "via": via}
+
+    @mks.post("/mks/{id}/portas-liberadas", status_code=201)
+    async def liberar_porta(id: str, body: PortaIn, user: dict = Depends(auth.current_user)):
+        mk = await _achar(id)
+        senha = _senha_rw(mk)
+        inv = await _inv(id)
+        avisos = ["Se não abrir, confira o filtro forward da MK"]
+        if any(x.get("ip") == body.ip_interno for x in inv["redes"]):
+            raise HTTPException(422, "IP é da própria MK")
+        redes = [ipaddress.ip_network(x["rede"]) for x in inv["redes"] if x.get("origem") != "ipsec"]
+        if not redes or inv["desatualizado"]:
+            avisos.insert(0, "Inventário desatualizado: confira o IP")
+        elif not any(ipaddress.ip_address(body.ip_interno) in n for n in redes):
+            raise HTTPException(422, "IP fora das redes da MK")
+        pedido = body.model_dump() | {"porta_interna": body.porta_interna or body.porta_externa}
+        reservadas = {8729, routeros.PORTA_API_ALT, 8291, 18291}
+        escreveu = []
+        try:
+            res, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, USUARIO_RW, senha, mk.get("cert_sha256"),
+                lambda api: alteracoes.liberar_porta(api, pedido, mk.get("ip_publico"), reservadas,
+                                                     lambda: escreveu.append(1)), **kw))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except routeros.RouterOsError as e:
+            if escreveu:
+                await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            if escreveu:
+                await _registrar_alteracao(mk, "Falhou: resposta inesperada da API")
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        proto = "tcp+udp" if body.protocolo == "ambos" else body.protocolo
+        await _registrar_alteracao(mk, f"Porta {proto} {body.porta_externa} → {body.ip_interno}:"
+                                   f"{pedido['porta_interna']} liberada ({body.descricao}), por {user['usuario']}"
+                                   + (" pelo túnel" if via == "tunel" else " pelo IP público"))
+        return res | {"via": via, "avisos": avisos}
+
+    @mks.delete("/mks/{id}/portas-liberadas", status_code=204)
+    async def remover_porta(id: str, descricao: str = Query(pattern=r"^[A-Za-z0-9 ._-]{1,40}$"),
+                            user: dict = Depends(auth.current_user)) -> Response:
+        mk = await _achar(id)
+        senha = _senha_rw(mk)
+        escreveu = []
+        try:
+            n, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, USUARIO_RW, senha, mk.get("cert_sha256"),
+                lambda api: alteracoes.remover_porta(api, descricao, lambda: escreveu.append(1)), **kw))
+        except routeros.RouterOsError as e:
+            if escreveu:
+                await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            if escreveu:
+                await _registrar_alteracao(mk, "Falhou: resposta inesperada da API")
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        if not n:
+            raise HTTPException(404, "Liberação não encontrada na MK")
+        await _registrar_alteracao(mk, f"Porta liberada ({descricao}) removida, por {user['usuario']}"
+                                   + (" pelo IP público" if via == "publico" else ""))
+        return Response(status_code=204)
 
     @mks.put("/mks/{id}/interfaces-vigiadas", status_code=204)
     async def vigiar(id: str, body: VigiadasIn) -> Response:

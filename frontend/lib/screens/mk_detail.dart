@@ -10,6 +10,7 @@ import '../widgets/common.dart';
 import '../widgets/shell.dart';
 import '../widgets/heartbeat.dart';
 import '../widgets/eventos.dart';
+import '../widgets/alteracoes.dart';
 import '../widgets/inventario.dart';
 import '../widgets/mapa.dart';
 import '../widgets/painel_portas.dart';
@@ -29,6 +30,7 @@ class MkDetailScreen extends StatefulWidget {
 class _MkDetailScreenState extends State<MkDetailScreen> {
   MkDetail? _mk;
   List<HistEvent> _hist = const [];
+  List<String> _ipsSede = const []; // atalhos do diálogo de trocar peer; falha vira lista vazia
   List<String> _alertas = const []; // mesmas regras do painel: vêm de /status
   String? _error;
   int _inv = 0; // muda ao atualizar o inventário: os cards recarregam
@@ -37,6 +39,9 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
   @override
   void initState() {
     super.initState();
+    widget.api.prepararMk().then((p) {
+      if (mounted) setState(() => _ipsSede = p.ipsSede);
+    }, onError: (_) {});
     _timer = Timer.periodic(const Duration(seconds: 15), (_) => _load());
     _load().then((_) {
       if (mounted && widget.chooseInterfaces && _mk != null) _pickInterfaces();
@@ -233,6 +238,12 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
               SizedBox(height: t.space4),
               IpsCard(key: ValueKey('i$_inv'), api: widget.api, id: widget.id),
               SizedBox(height: t.space4),
+              if (!mk.semIpsec) ...[
+                IpsecCard(key: ValueKey('ipsec$_inv'), api: widget.api, id: widget.id, temRw: mk.temRw, ipsSede: _ipsSede),
+                SizedBox(height: t.space4),
+              ],
+              PortasLiberadasCard(key: ValueKey('pl$_inv'), api: widget.api, id: widget.id, temRw: mk.temRw),
+              SizedBox(height: t.space4),
               EventosCard(key: ValueKey('e$_inv'), api: widget.api, id: widget.id, ipTunel: mk.ipTunel, semIpsec: mk.semIpsec),
               SizedBox(height: t.space4),
               _history(t),
@@ -359,7 +370,7 @@ class _MkDetailScreenState extends State<MkDetailScreen> {
       );
 }
 
-const _eventos = {'queda': 'Queda', 'retorno': 'Retorno', 'encerrado': 'Encerrado', 'reinicio': ''};
+const _eventos = {'queda': 'Queda', 'retorno': 'Retorno', 'encerrado': 'Encerrado', 'reinicio': '', 'alteracao': ''};
 
 // Tipos que não são status de MK; os demais vêm de statusLabel.
 const _tipos = {
@@ -368,4 +379,5 @@ const _tipos = {
   'interface_caida': 'Interface caída',
   'falha_sede': 'Falha da sede',
   'reinicio': 'Reinício',
+  'alteracao': 'Alteração',
 };

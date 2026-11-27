@@ -97,6 +97,42 @@ async def test_put_empty_password_keeps_old(client, db):
     assert crypto.decrypt((await store.get_mk(db, id))["senha_cifrada"], KEY) == "nova"
 
 
+async def test_senha_rw_cifrada_e_tem_rw(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    doc = await store.get_mk(db, id)
+    assert doc["senha_rw_cifrada"] != "rw-segredo-1" and crypto.decrypt(doc["senha_rw_cifrada"], KEY) == "rw-segredo-1"
+    assert "senha_rw" not in doc and "remover_rw" not in doc
+    body = (await client.get(f"/api/mks/{id}")).json()
+    assert body["tem_rw"] is True and sem_senha(body) and "rw-segredo-1" not in json.dumps(body)
+
+
+async def test_sem_senha_rw_tem_rw_false(client, db):
+    id = await criar(client)
+    assert "senha_rw_cifrada" not in await store.get_mk(db, id)
+    assert (await client.get(f"/api/mks/{id}")).json()["tem_rw"] is False
+
+
+async def test_put_sem_senha_rw_mantem(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    antes = (await store.get_mk(db, id))["senha_rw_cifrada"]
+    assert (await client.put(f"/api/mks/{id}", json={**MK, "nome": "Outro"})).status_code == 204
+    assert (await store.get_mk(db, id))["senha_rw_cifrada"] == antes
+
+
+async def test_put_remover_rw_apaga(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    assert (await client.put(f"/api/mks/{id}", json={**MK, "remover_rw": True})).status_code == 204
+    doc = await store.get_mk(db, id)
+    assert "senha_rw_cifrada" not in doc and "remover_rw" not in doc and "senha_rw" not in doc
+    assert (await client.get(f"/api/mks/{id}")).json()["tem_rw"] is False
+
+
+async def test_put_nova_senha_rw_troca(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    await client.put(f"/api/mks/{id}", json={**MK, "senha_rw": "rw-nova"})
+    assert crypto.decrypt((await store.get_mk(db, id))["senha_rw_cifrada"], KEY) == "rw-nova"
+
+
 async def test_put_new_tunnel_ip_clears_pin(client, db):
     id = await criar(client)
     await store.set_cert(db, id, "ab" * 32)
@@ -413,3 +449,48 @@ async def test_sem_ipsec_usa_ip_publico_como_acesso(client, db):
 async def test_com_ipsec_sem_ip_tunel_da_422(client):
     resp = await client.post("/api/mks", json={**MK, "ip_tunel": ""})
     assert resp.status_code == 422
+
+
+def _fake_chamar(hosts, exc):
+    def chamar(host, **kw):
+        hosts.append((host, kw.get("porta", 8729)))
+        raise exc
+    return chamar
+
+
+MK_CASC = {"ip_tunel": "10.8.0.2", "ip_publico": "8.8.4.4"}
+
+
+async def test_na_mk_publico_primeiro_ordem():
+    from nodebeat.api import _na_mk
+    hosts = []
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk(MK_CASC, _fake_chamar(hosts, routeros.SemConexao("sem")), publico_primeiro=True)
+    assert hosts == [("8.8.4.4", 8729), ("8.8.4.4", 18729), ("10.8.0.2", 8729)]
+    assert e.value.detalhe == "IP público: sem. Túnel: sem"
+
+
+async def test_na_mk_tunel_primeiro_e_via():
+    from nodebeat.api import _na_mk
+
+    def chamar(host, **kw):
+        if host == "10.8.0.2":
+            raise routeros.SemConexao("sem")
+        return "ok"
+    assert await _na_mk(MK_CASC, chamar) == ("ok", "publico")
+
+
+async def test_na_mk_sem_ip_publico_detalhe_sozinho():
+    from nodebeat.api import _na_mk
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk({"ip_tunel": "10.8.0.2"}, _fake_chamar([], routeros.SemConexao("sem")))
+    assert e.value.detalhe == "sem"
+
+
+async def test_na_mk_erro_nao_de_rede_nao_pula():
+    from nodebeat.api import _na_mk
+    hosts = []
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk(MK_CASC, _fake_chamar(hosts, routeros.RouterOsError("Login recusado (usuário ou senha)")))
+    assert hosts == [("10.8.0.2", 8729)]
+    assert e.value.detalhe == "Login recusado (usuário ou senha)"

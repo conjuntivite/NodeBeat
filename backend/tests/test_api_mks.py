@@ -449,3 +449,48 @@ async def test_sem_ipsec_usa_ip_publico_como_acesso(client, db):
 async def test_com_ipsec_sem_ip_tunel_da_422(client):
     resp = await client.post("/api/mks", json={**MK, "ip_tunel": ""})
     assert resp.status_code == 422
+
+
+def _fake_chamar(hosts, exc):
+    def chamar(host, **kw):
+        hosts.append((host, kw.get("porta", 8729)))
+        raise exc
+    return chamar
+
+
+MK_CASC = {"ip_tunel": "10.8.0.2", "ip_publico": "8.8.4.4"}
+
+
+async def test_na_mk_publico_primeiro_ordem():
+    from nodebeat.api import _na_mk
+    hosts = []
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk(MK_CASC, _fake_chamar(hosts, routeros.SemConexao("sem")), publico_primeiro=True)
+    assert hosts == [("8.8.4.4", 8729), ("8.8.4.4", 18729), ("10.8.0.2", 8729)]
+    assert e.value.detalhe == "IP público: sem. Túnel: sem"
+
+
+async def test_na_mk_tunel_primeiro_e_via():
+    from nodebeat.api import _na_mk
+
+    def chamar(host, **kw):
+        if host == "10.8.0.2":
+            raise routeros.SemConexao("sem")
+        return "ok"
+    assert await _na_mk(MK_CASC, chamar) == ("ok", "publico")
+
+
+async def test_na_mk_sem_ip_publico_detalhe_sozinho():
+    from nodebeat.api import _na_mk
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk({"ip_tunel": "10.8.0.2"}, _fake_chamar([], routeros.SemConexao("sem")))
+    assert e.value.detalhe == "sem"
+
+
+async def test_na_mk_erro_nao_de_rede_nao_pula():
+    from nodebeat.api import _na_mk
+    hosts = []
+    with pytest.raises(routeros.RouterOsError) as e:
+        await _na_mk(MK_CASC, _fake_chamar(hosts, routeros.RouterOsError("Login recusado (usuário ou senha)")))
+    assert hosts == [("10.8.0.2", 8729)]
+    assert e.value.detalhe == "Login recusado (usuário ou senha)"

@@ -261,3 +261,23 @@ def test_cert_mismatch_nao_e_sem_conexao(monkeypatch):
     with pytest.raises(CertMismatch) as e:
         routeros.reboot("h", "u", "p", "0" * 64)
     assert not isinstance(e.value, routeros.SemConexao)
+
+
+@pytest.mark.parametrize("user,detalhe", [
+    ("nodebeat-rw", "Usuário nodebeat-rw sem permissão de escrita"),
+    ("monitor", "Erro da API: not enough permissions (9)")])
+def test_sessao_permissao(monkeypatch, user, detalhe):
+    _patch_connect(monkeypatch, FakeApi())
+
+    def usar(api):
+        raise TrapError("not enough permissions (9)")
+    with pytest.raises(RouterOsError) as e:
+        routeros.sessao("h", user, "p", None, usar)
+    assert e.value.detalhe == detalhe
+
+
+def test_sessao_devolve_resultado_e_fecha(monkeypatch):
+    api = FakeApi()
+    _patch_connect(monkeypatch, api)
+    assert routeros.sessao("h", "nodebeat-rw", "p", None, lambda a: 42) == 42
+    assert api.closed

@@ -8,7 +8,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Callable, Literal, TypeVar
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -22,6 +22,28 @@ from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, invent
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 USUARIO_RW = "nodebeat-rw"
+T = TypeVar("T")
+
+
+async def _na_mk(mk: dict, chamar: Callable[..., T], publico_primeiro: bool = False) -> tuple[T, str]:
+    """Tenta túnel, IP público e porta alternativa; só SemConexao pula para o próximo caminho."""
+    passos = [("tunel", mk["ip_tunel"], {})]
+    if mk.get("ip_publico"):
+        passos += [("publico", mk["ip_publico"], {}), ("publico", mk["ip_publico"], {"porta": routeros.PORTA_API_ALT})]
+    if publico_primeiro:
+        passos.sort(key=lambda p: p[0] != "publico")
+    erros: dict[str, str] = {}
+    for rotulo, host, kw in passos:
+        try:
+            return await asyncio.to_thread(chamar, host, **kw), rotulo
+        except routeros.SemConexao as e:
+            erros[rotulo] = e.detalhe
+        except routeros.RouterOsError as e:
+            erros[rotulo] = e.detalhe
+            break
+    nomes = {"tunel": "Túnel", "publico": "IP público"}
+    raise routeros.RouterOsError(
+        ". ".join(f"{nomes[k]}: {v}" for k, v in erros.items()) if len(erros) > 1 else next(iter(erros.values())))
 _MSG_SEM_RW = ("Para alterar esta MK pelo NodeBeat, aplique o script 'permitir alterações' da página "
                "Preparar MK e preencha a senha no cadastro.")
 
@@ -399,25 +421,10 @@ def create_app(db, r, settings) -> FastAPI:
     async def reiniciar(id: str, user: dict = Depends(auth.current_user)):
         mk = await _achar(id)
 
-        async def _reboot(host: str, **kw) -> None:
-            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
-            await asyncio.to_thread(routeros.reboot, host, mk["usuario"], senha, mk.get("cert_sha256"), **kw)
-
-        via = "tunel"
         try:
-            try:
-                await _reboot(mk["ip_tunel"])
-            except routeros.SemConexao as e:  # túnel caído: tenta pela internet (só falha de rede, não login/TLS)
-                if not mk.get("ip_publico"):
-                    raise
-                via = "publico"
-                try:
-                    try:
-                        await _reboot(mk["ip_publico"])
-                    except routeros.SemConexao:  # operadora bloqueando a 8729: tenta a porta alternativa
-                        await _reboot(mk["ip_publico"], porta=routeros.PORTA_API_ALT)
-                except routeros.RouterOsError as e2:
-                    raise routeros.RouterOsError(f"Túnel: {e.detalhe}. IP público: {e2.detalhe}") from None
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            _, via = await _na_mk(mk, lambda host, **kw: routeros.reboot(
+                host, mk["usuario"], senha, mk.get("cert_sha256"), **kw))
         except routeros.RouterOsError as e:
             return JSONResponse({"detalhe": e.detalhe}, status_code=502)
         except Exception:  # nunca ecoar str(e): pode conter segredo

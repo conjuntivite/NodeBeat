@@ -165,3 +165,16 @@ def reboot(host: str, user: str, password: str, pinned_sha256: str | None, porta
         except (OSError, LibRouterosError):
             pass  # a MK derruba a conexão ao reiniciar, às vezes antes de responder
     _com_api(host, user, password, pinned_sha256, 5.0, usar, porta)
+
+
+def sessao(host: str, user: str, password: str, pinned_sha256: str | None, usar,
+           porta: int = 8729, timeout: float = 10.0):
+    """Síncrono: abre a sessão e devolve usar(api). Sem permissão do nodebeat-rw vira mensagem própria."""
+    def _usar(api, seen):
+        try:
+            return usar(api)
+        except TrapError as e:
+            if user == "nodebeat-rw" and "permission" in str(e):
+                raise RouterOsError("Usuário nodebeat-rw sem permissão de escrita") from None
+            raise
+    return _com_api(host, user, password, pinned_sha256, timeout, _usar, porta)

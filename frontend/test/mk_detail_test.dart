@@ -23,7 +23,7 @@ Future<void> _show(WidgetTester t,
     int statusCode = 200,
     List<Map<String, dynamic>> hist = const [],
     Map<String, dynamic>? portas}) async {
-  t.view.physicalSize = const Size(1000, 2000);
+  t.view.physicalSize = const Size(1000, 3000);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final mock = MockClient((req) async {

@@ -21,7 +21,7 @@ const _reinicio = {'evento': 'reinicio', 'tipo': 'reinicio', 'mk': {'id': 'x', '
 const _inv = {'lido_em': null, 'erro': null, 'desatualizado': false, 'redes': [], 'pools': [], 'nat': [], 'servicos': []};
 
 Future<List<http.Request>> _show(WidgetTester t, {Brightness b = Brightness.light, String via = 'tunel'}) async {
-  t.view.physicalSize = const Size(1200, 1600);
+  t.view.physicalSize = const Size(1200, 2600);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
   final posts = <http.Request>[];

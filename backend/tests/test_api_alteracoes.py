@@ -225,3 +225,40 @@ async def test_post_conflito_422(client, nat_sessao):
     assert (await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)).status_code == 201
     resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"descricao": "Outra"})
     assert resp.status_code == 422 and "em uso" in resp.json()["detail"]
+
+
+class CaiApi(NatApi):
+    def __init__(self, onde):
+        super().__init__()
+        self.onde, self.adds = onde, 0
+
+    def __call__(self, cmd, **kw):
+        if cmd == NAT + "/add":
+            self.adds += 1
+            if self.onde == "add" and self.adds == 2:
+                raise OSError("caiu")
+        if cmd == NAT + "/remove" and self.onde == "remove":
+            raise OSError("caiu")
+        yield from super().__call__(cmd, **kw)
+
+
+@pytest.mark.parametrize("onde", ["add", "remove"])
+async def test_queda_apos_escrever_502_com_historico_sem_outro_caminho(client, r, monkeypatch, onde):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    api, logins = CaiApi(onde), []
+    api.regras = [{".id": "*1", "comment": "nodebeat:DVR bloco B", "protocol": "tcp"}] if onde == "remove" else []
+
+    def fake(host, user, password, pin, usar, porta=8729, timeout=10.0):
+        logins.append(host)
+        try:
+            return usar(api)
+        except OSError:  # como _com_api: queda vira SemConexao
+            raise routeros.SemConexao("sem conexão")
+    monkeypatch.setattr(routeros, "sessao", fake)
+    if onde == "add":
+        resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"protocolo": "ambos"})
+    else:
+        resp = await client.delete(f"/api/mks/{id}/portas-liberadas", params={"descricao": "DVR bloco B"})
+    assert resp.status_code == 502 and "Conexão caiu" in resp.json()["detalhe"]
+    assert len(logins) == 1
+    assert any(h["detalhe"].startswith("Falhou:") for h in await history.history(r, id))

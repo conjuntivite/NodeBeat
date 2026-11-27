@@ -568,13 +568,18 @@ def create_app(db, r, settings) -> FastAPI:
                             user: dict = Depends(auth.current_user)) -> Response:
         mk = await _achar(id)
         senha = _senha_rw(mk)
+        escreveu = []
         try:
             n, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
                 host, USUARIO_RW, senha, mk.get("cert_sha256"),
-                lambda api: alteracoes.remover_porta(api, descricao), **kw))
+                lambda api: alteracoes.remover_porta(api, descricao, lambda: escreveu.append(1)), **kw))
         except routeros.RouterOsError as e:
+            if escreveu:
+                await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
             return JSONResponse({"detalhe": e.detalhe}, status_code=502)
         except Exception:  # nunca ecoar str(e): pode conter segredo
+            if escreveu:
+                await _registrar_alteracao(mk, "Falhou: resposta inesperada da API")
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         if not n:
             raise HTTPException(404, "Liberação não encontrada na MK")

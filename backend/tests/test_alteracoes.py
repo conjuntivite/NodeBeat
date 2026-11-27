@@ -170,7 +170,7 @@ class RwApi(FakeApi):
             self.n_add += 1
             if self.n_add == self.falha_add:
                 self.chamadas.append((cmd, kw))
-                raise OSError("caiu")
+                raise TrapError("falhou")
             self.chamadas.append((cmd, kw))
             yield {"ret": f"*{self.n_add}"}
             return
@@ -215,9 +215,22 @@ def test_liberar_ambos_cria_duas_com_comentario():
 
 def test_liberar_ambos_segunda_falha_remove_primeira():
     api = RwApi(falha_add=2)
-    with pytest.raises(OSError):
+    with pytest.raises(TrapError):
         alteracoes.liberar_porta(api, PEDIDO | {"protocolo": "ambos"}, "8.8.4.4", RES)
     assert api.removidos == ["*1"]
+
+
+def test_liberar_conexao_cai_vira_routeroserror_simples():
+    from nodebeat import routeros
+
+    class Cai(RwApi):
+        def __call__(self, cmd, **kw):
+            if cmd == NAT + "/add":
+                raise OSError("caiu")
+            yield from super().__call__(cmd, **kw)
+    with pytest.raises(routeros.RouterOsError) as e:
+        alteracoes.liberar_porta(Cai(), PEDIDO, "8.8.4.4", RES)
+    assert not isinstance(e.value, routeros.SemConexao) and "Conexão caiu" in e.value.detalhe
 
 
 def test_liberar_porta_reservada():

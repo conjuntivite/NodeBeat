@@ -6,11 +6,13 @@ import ipaddress
 from librouteros.exceptions import LibRouterosError, TrapError
 
 from nodebeat import inventario
+from nodebeat.routeros import RouterOsError
 
 PEER = "/ip/ipsec/peer"
 POLICY = "/ip/ipsec/policy"
 NAT = "/ip/firewall/nat"
 PREFIXO = "nodebeat:"
+_MSG_CAIU = "Conexão caiu durante a alteração; confira as regras nodebeat: na MK"
 
 
 def _por_dominio(endereco: str) -> bool:
@@ -107,6 +109,14 @@ def ler_liberacoes(api) -> list[dict]:
     return liberacoes(list(api(NAT + "/print")))
 
 
+def _adicionar(api, protocolos, pedido, iface, ids) -> None:
+    for p in protocolos:
+        r = list(api(NAT + "/add", chain="dstnat", action="dst-nat", protocol=p, **{"dst-port": str(pedido["porta_externa"])},
+                     **{"to-addresses": pedido["ip_interno"], "to-ports": str(pedido["porta_interna"]),
+                        "in-interface": iface, "comment": PREFIXO + pedido["descricao"]}))
+        ids.append(r[0]["ret"])
+
+
 def liberar_porta(api, pedido: dict, ip_publico: str | None, reservadas: set[int], ao_escrever=None) -> dict:
     ext, desc = pedido["porta_externa"], pedido["descricao"]
     nat_rows = list(api(NAT + "/print"))
@@ -127,21 +137,29 @@ def liberar_porta(api, pedido: dict, ip_publico: str | None, reservadas: set[int
         ao_escrever()
     ids: list[str] = []
     try:
-        for p in protocolos:
-            r = list(api(NAT + "/add", chain="dstnat", action="dst-nat", protocol=p, **{"dst-port": str(ext)},
-                         **{"to-addresses": pedido["ip_interno"], "to-ports": str(pedido["porta_interna"]),
-                            "in-interface": iface, "comment": PREFIXO + desc}))
-            ids.append(r[0]["ret"])
-    except Exception:
-        for i in ids:
-            list(api(NAT + "/remove", **{".id": i}))
-        raise
+        _adicionar(api, protocolos, pedido, iface, ids)
+    except (OSError, LibRouterosError) as e:
+        if isinstance(e, TrapError):
+            try:
+                for i in ids:
+                    list(api(NAT + "/remove", **{".id": i}))
+            except (OSError, LibRouterosError):
+                raise RouterOsError(_MSG_CAIU)
+            raise
+        raise RouterOsError(_MSG_CAIU)  # RouterOsError simples: SemConexao refaria tudo por outro caminho
     return {"wan": iface, "regras": ids}
 
 
-def remover_porta(api, descricao: str) -> int:
+def remover_porta(api, descricao: str, ao_escrever=None) -> int:
     alvo = (PREFIXO + descricao).casefold()
     ids = [n[".id"] for n in list(api(NAT + "/print")) if str(n.get("comment") or "").casefold() == alvo]
-    for i in ids:
-        list(api(NAT + "/remove", **{".id": i}))
+    if ids and ao_escrever:
+        ao_escrever()
+    try:
+        for i in ids:
+            list(api(NAT + "/remove", **{".id": i}))
+    except (OSError, LibRouterosError) as e:
+        if isinstance(e, TrapError):
+            raise
+        raise RouterOsError(_MSG_CAIU)
     return len(ids)

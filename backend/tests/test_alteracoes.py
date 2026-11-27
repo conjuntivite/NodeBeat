@@ -122,3 +122,142 @@ def test_trocar_peer_igual_valueerror():
 def test_trocar_peer_id_inexistente_keyerror():
     with pytest.raises(KeyError):
         alteracoes.trocar_peer(FakeApi({PEER + "/print": [peer()]}), "*9", "203.0.113.2")
+
+
+# ---- liberar porta ----
+NAT = "/ip/firewall/nat"
+IFACES = {"ether1", "ether2"}
+
+
+def test_wan_pelo_ip_publico():
+    assert alteracoes.wan([{"address": "8.8.4.4/30", "interface": "ether1"}], [], IFACES, "8.8.4.4") == "ether1"
+
+
+def test_wan_rota_menor_distance():
+    rotas = [{"dst-address": "0.0.0.0/0", "active": True, "distance": 2, "gateway": "ether2"},
+             {"dst-address": "0.0.0.0/0", "active": True, "distance": 1, "gateway": "ether1"},
+             {"dst-address": "0.0.0.0/0", "active": False, "distance": 0, "gateway": "ether2"}]
+    assert alteracoes.wan([], rotas, IFACES, None) == "ether1"
+
+
+def test_wan_v7_immediate_gw():
+    rotas = [{"dst-address": "0.0.0.0/0", "active": True, "distance": 1, "gateway": "192.0.2.1",
+              "immediate-gw": "192.0.2.1%ether1"}]
+    assert alteracoes.wan([], rotas, IFACES, None) == "ether1"
+
+
+def test_wan_v6_gateway_status():
+    rotas = [{"dst-address": "0.0.0.0/0", "active": True, "distance": 1, "gateway": "192.0.2.1",
+              "gateway-status": "192.0.2.1 reachable via  ether1"}]
+    assert alteracoes.wan([], rotas, IFACES, None) == "ether1"
+
+
+def test_wan_nenhuma():
+    assert alteracoes.wan([], [], IFACES, "8.8.4.4") is None
+    rotas = [{"dst-address": "0.0.0.0/0", "active": True, "distance": 1, "gateway": "192.0.2.1%vlan9"}]
+    assert alteracoes.wan([], rotas, IFACES, None) is None
+
+
+class RwApi(FakeApi):
+    def __init__(self, nat=(), falha_add=None):
+        super().__init__({NAT + "/print": list(nat), "/ip/service/print": [{"name": "api-ssl", "port": 8729}],
+                          "/ip/address/print": [{"address": "8.8.4.4/30", "interface": "ether1"}],
+                          "/ip/route/print": [], "/interface/print": [{"name": "ether1"}]})
+        self.falha_add, self.n_add, self.removidos = falha_add, 0, []
+
+    def __call__(self, cmd, **kw):
+        if cmd == NAT + "/add":
+            self.n_add += 1
+            if self.n_add == self.falha_add:
+                self.chamadas.append((cmd, kw))
+                raise OSError("caiu")
+            self.chamadas.append((cmd, kw))
+            yield {"ret": f"*{self.n_add}"}
+            return
+        if cmd == NAT + "/remove":
+            self.removidos.append(kw[".id"])
+        yield from super().__call__(cmd, **kw)
+
+    def adds(self):
+        return [kw for c, kw in self.chamadas if c == NAT + "/add"]
+
+
+PEDIDO = {"protocolo": "tcp", "porta_externa": 8080, "ip_interno": "192.168.88.50", "porta_interna": 80,
+          "descricao": "DVR bloco B"}
+RES = {8729, 18729, 8291, 18291}
+
+
+def nat(**kw):
+    return {".id": "*9", "chain": "dstnat", "action": "dst-nat", "disabled": False, **kw}
+
+
+@pytest.mark.parametrize("porta", [8050, 8080])
+def test_liberar_conflito_faixa_e_lista(porta):
+    api = RwApi([nat(protocol="tcp", **{"dst-port": "8000-8100"}), nat(protocol="tcp", **{"dst-port": "80,8080"})])
+    with pytest.raises(ValueError, match="em uso"):
+        alteracoes.liberar_porta(api, PEDIDO | {"porta_externa": porta}, "8.8.4.4", RES)
+    assert api.adds() == []
+
+
+def test_liberar_regra_desativada_nao_conflita():
+    api = RwApi([nat(protocol="tcp", disabled=True, **{"dst-port": "8080"})])
+    assert alteracoes.liberar_porta(api, PEDIDO, "8.8.4.4", RES)["regras"] == ["*1"]
+
+
+def test_liberar_ambos_cria_duas_com_comentario():
+    api = RwApi()
+    r = alteracoes.liberar_porta(api, PEDIDO | {"protocolo": "ambos"}, "8.8.4.4", RES)
+    assert r == {"wan": "ether1", "regras": ["*1", "*2"]}
+    assert api.adds() == [{"chain": "dstnat", "action": "dst-nat", "protocol": p, "dst-port": "8080",
+                           "to-addresses": "192.168.88.50", "to-ports": "80", "in-interface": "ether1",
+                           "comment": "nodebeat:DVR bloco B"} for p in ("tcp", "udp")]
+
+
+def test_liberar_ambos_segunda_falha_remove_primeira():
+    api = RwApi(falha_add=2)
+    with pytest.raises(OSError):
+        alteracoes.liberar_porta(api, PEDIDO | {"protocolo": "ambos"}, "8.8.4.4", RES)
+    assert api.removidos == ["*1"]
+
+
+def test_liberar_porta_reservada():
+    for porta in (8729, 8729 + 0):
+        with pytest.raises(ValueError, match="reservada"):
+            alteracoes.liberar_porta(RwApi(), PEDIDO | {"porta_externa": porta}, "8.8.4.4", RES)
+    api = RwApi()
+    api.respostas["/ip/service/print"].append({"name": "www", "port": 8088, "disabled": True})
+    with pytest.raises(ValueError, match="reservada"):
+        alteracoes.liberar_porta(api, PEDIDO | {"porta_externa": 8088}, "8.8.4.4", RES)
+
+
+def test_liberar_descricao_repetida_case_insensitive():
+    api = RwApi([nat(protocol="tcp", comment="nodebeat:dvr BLOCO b", **{"dst-port": "9000"})])
+    with pytest.raises(ValueError, match="descrição"):
+        alteracoes.liberar_porta(api, PEDIDO, "8.8.4.4", RES)
+
+
+def test_liberar_wan_nao_reconhecida():
+    with pytest.raises(ValueError, match="WAN"):
+        alteracoes.liberar_porta(RwApi(), PEDIDO, "9.9.9.9", RES)
+
+
+def test_liberacoes_agrupa_e_ignora_sem_prefixo():
+    rows = [nat(protocol="udp", comment="nodebeat:B", **{"dst-port": "81", "to-addresses": "192.168.88.2",
+                                                           "to-ports": "81", "in-interface": "ether1"}),
+            nat(protocol="tcp", comment="nodebeat:A", disabled=True, **{"dst-port": "80", "to-addresses": "192.168.88.1",
+                                                                         "to-ports": "8080", "in-interface": "ether1"}),
+            nat(protocol="udp", comment="nodebeat:A", **{"dst-port": "80", "to-addresses": "192.168.88.1",
+                                                          "to-ports": "8080", "in-interface": "ether1"}),
+            nat(protocol="tcp", comment="DVR", **{"dst-port": "80"})]
+    a, b = alteracoes.liberacoes(rows)
+    assert a == {"descricao": "A", "protocolos": ["tcp", "udp"], "porta_externa": "80", "ip_interno": "192.168.88.1",
+                 "porta_interna": "8080", "wan": "ether1", "desativada": True}
+    assert b["descricao"] == "B"
+
+
+def test_remover_so_mexe_com_prefixo():
+    api = RwApi([nat(**{".id": "*1"}, comment="nodebeat:DVR bloco B"), nat(**{".id": "*2"}, comment="nodebeat:DVR bloco B"),
+                 nat(**{".id": "*3"}, comment="DVR bloco B")])
+    assert alteracoes.remover_porta(api, "dvr bloco b") == 2
+    assert api.removidos == ["*1", "*2"]
+    assert alteracoes.remover_porta(RwApi(), "x") == 0

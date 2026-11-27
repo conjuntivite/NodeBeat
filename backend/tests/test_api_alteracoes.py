@@ -148,3 +148,80 @@ async def test_get_peers_usa_monitor(client, sessao):
     assert resp.status_code == 200
     assert resp.json()["via"] == "tunel" and resp.json()["peers"][0]["endereco"] == "9.9.9.9"
     assert sessao["logins"] == [("10.8.0.2", "admin", "segredo-mk", 8729)]
+
+
+# ---- portas liberadas ----
+NAT = "/ip/firewall/nat"
+PED = {"protocolo": "tcp", "porta_externa": 8080, "ip_interno": "192.168.88.50", "porta_interna": 80,
+       "descricao": "DVR bloco B"}
+
+
+class NatApi:
+    def __init__(self):
+        self.chamadas, self.regras = [], []
+
+    def __call__(self, cmd, **kw):
+        self.chamadas.append((cmd, kw))
+        if cmd == NAT + "/print":
+            yield from self.regras
+        elif cmd == NAT + "/add":
+            self.regras.append({".id": "*7", "disabled": False, "action": "dst-nat", "protocol": kw["protocol"],
+                                "comment": kw["comment"], "dst-port": kw["dst-port"]})
+            yield {"ret": "*7"}
+        elif cmd == NAT + "/remove":
+            self.regras = [x for x in self.regras if x[".id"] != kw[".id"]]
+        elif cmd == "/ip/address/print":
+            yield {"address": "8.8.4.4/30", "interface": "ether1"}
+        elif cmd == "/interface/print":
+            yield {"name": "ether1"}
+
+
+@pytest.fixture
+def nat_sessao(monkeypatch):
+    api = NatApi()
+    monkeypatch.setattr(routeros, "sessao", lambda host, user, password, pin, usar, porta=8729, timeout=10.0: usar(api))
+    return api
+
+
+async def test_post_sem_senha_rw_409(client, nat_sessao):
+    id = await criar(client)
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)
+    assert resp.status_code == 409 and resp.json() == {"detail": MSG_SEM_RW}
+
+
+async def test_post_descricao_com_aspas_422(client, nat_sessao):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"descricao": 'a"b'})
+    assert resp.status_code == 422
+
+
+async def test_post_ip_fora_das_redes_422(client, db, nat_sessao):
+    from datetime import UTC, datetime
+    id = await criar(client, senha_rw="rw-segredo-1")
+    await store.salvar_inventario(db, id, {"redes": [{"rede": "192.168.10.0/24", "origem": "address"}]},
+                                  datetime.now(UTC))
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)
+    assert resp.status_code == 422 and resp.json()["detail"] == "IP fora das redes da MK"
+
+
+async def test_post_ok_201_e_historico_delete_ok_e_inexistente(client, r, nat_sessao):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)
+    assert resp.status_code == 201, resp.text
+    b = resp.json()
+    assert b["wan"] == "ether1" and b["regras"] == ["*7"] and b["via"] == "tunel"
+    assert "Inventário desatualizado: confira o IP" in b["avisos"]
+    assert "Se não abrir, confira o filtro forward da MK" in b["avisos"]
+    assert (await client.get(f"/api/mks/{id}/portas-liberadas")).json()["liberacoes"][0]["descricao"] == "DVR bloco B"
+    assert (await client.delete(f"/api/mks/{id}/portas-liberadas", params={"descricao": "DVR bloco B"})).status_code == 204
+    assert (await client.delete(f"/api/mks/{id}/portas-liberadas", params={"descricao": "DVR bloco B"})).status_code == 404
+    hist = [h["detalhe"] for h in await history.history(r, id)]
+    assert "Porta tcp 8080 → 192.168.88.50:80 liberada (DVR bloco B), por ana pelo túnel" in hist
+    assert "Porta liberada (DVR bloco B) removida, por ana" in hist
+
+
+async def test_post_conflito_422(client, nat_sessao):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    assert (await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)).status_code == 201
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"descricao": "Outra"})
+    assert resp.status_code == 422 and "em uso" in resp.json()["detail"]

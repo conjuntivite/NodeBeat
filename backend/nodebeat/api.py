@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
+from nodebeat import alteracoes, ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
 USUARIO_RW = "nodebeat-rw"
@@ -84,6 +84,21 @@ class UsuarioIn(BaseModel):
 class UsuarioPatch(BaseModel):
     senha: str | None = Field(default=None, min_length=cli.MIN_SENHA)
     admin: bool | None = None
+
+
+class PeerIn(BaseModel):
+    endereco: str
+
+    @field_validator("endereco")
+    @classmethod
+    def _publico(cls, v: str) -> str:
+        try:
+            ok = ipaddress.IPv4Address(v.strip()).is_global
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("Use um IPv4 público")
+        return v.strip()
 
 
 class MkIn(BaseModel):
@@ -434,6 +449,47 @@ def create_app(db, r, settings) -> FastAPI:
         await history.record(r, Event("reinicio", "reinicio", MkRef(id, mk["nome"]), detalhe,
                                       datetime.now(UTC), None, None))
         return {"via": via}
+
+    async def _registrar_alteracao(mk: dict, detalhe: str) -> None:
+        await history.record(r, Event("alteracao", "alteracao", MkRef(mk["id"], mk["nome"]), detalhe,
+                                      datetime.now(UTC), None, None))
+
+    @mks.get("/mks/{id}/ipsec/peers")
+    async def ipsec_peers(id: str):
+        mk = await _achar(id)
+        try:
+            senha = crypto.decrypt(mk["senha_cifrada"], settings.secret_key)
+            peers, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, mk["usuario"], senha, mk.get("cert_sha256"), alteracoes.ler_peers, **kw))
+        except routeros.RouterOsError as e:
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        return {"peers": peers, "via": via}
+
+    @mks.put("/mks/{id}/ipsec/peers/{peer_id}")
+    async def trocar_peer(id: str, peer_id: str, body: PeerIn, user: dict = Depends(auth.current_user)):
+        mk = await _achar(id)
+        if mk.get("sem_ipsec"):
+            raise HTTPException(409, "MK sem IPsec")
+        senha = _senha_rw(mk)
+        try:
+            res, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
+                host, USUARIO_RW, senha, mk.get("cert_sha256"),
+                lambda api: alteracoes.trocar_peer(api, peer_id, body.endereco), **kw), publico_primeiro=True)
+        except KeyError:
+            raise HTTPException(404, "Peer não encontrado na MK")
+        except ValueError:
+            raise HTTPException(422, "O peer já está com esse endereço")
+        except routeros.RouterOsError as e:
+            await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
+            return JSONResponse({"detalhe": e.detalhe}, status_code=502)
+        except Exception:  # nunca ecoar str(e): pode conter segredo
+            return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
+        nome = res.get("nome") or peer_id
+        await _registrar_alteracao(mk, f"Peer IPsec {nome}: {res['antigo']} → {res['novo']}, por {user['usuario']}"
+                                   + (" pelo IP público" if via == "publico" else ""))
+        return res | {"via": via}
 
     @mks.put("/mks/{id}/interfaces-vigiadas", status_code=204)
     async def vigiar(id: str, body: VigiadasIn) -> Response:

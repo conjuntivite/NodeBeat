@@ -148,6 +148,34 @@ $_natAlt
 ''';
 
 
+/// MK já cadastrada: cria o usuário nodebeat-rw (grupo com write), com que o NodeBeat altera dados da MK (port forward,
+/// peer do IPsec). Não mexe no usuário monitor, nem em serviço, certificado ou firewall. Rodar de novo troca a senha.
+String scriptLiberarAlteracoes({required String ipOrigem, required List<String> ipsSede, required String senha}) => '''{
+:if ([:len [/user find where name="monitor"]] = 0) do={
+  :error "Usuario monitor nao existe: rode o Preparar MK primeiro"
+}
+:local senha "$senha"
+${_lista(ipOrigem, ipsSede)}
+:if ([:len [/user group find where name="nodebeat-rw"]] = 0) do={
+  /user group add name=nodebeat-rw policy=read,write,api
+} else={
+  /user group set nodebeat-rw policy=read,write,api
+}
+:local trocou false
+:if ([:len [/user find where name="nodebeat-rw"]] = 0) do={
+  /user add name=nodebeat-rw group=nodebeat-rw password=\$senha address=\$lista
+} else={
+  /user set nodebeat-rw group=nodebeat-rw password=\$senha address=\$lista
+  :set trocou true
+}
+:put ""
+:put "Cadastro no NodeBeat (Editar MK, Senha de alteracoes):"
+:put "  Usuario:      nodebeat-rw"
+:put ("  Senha:        " . \$senha)
+:if (\$trocou) do={:put "ATENCAO: a senha do nodebeat-rw foi trocada: atualize no cadastro (Editar)."}
+}
+''';
+
 const scriptDesfazer = r'''/ip firewall filter remove [find where comment="winbox-alt"]
 /ip firewall nat remove [find where comment="winbox-alt"]
 /ip firewall nat remove [find where comment="monitor-api-alt"]
@@ -155,6 +183,8 @@ const scriptDesfazer = r'''/ip firewall filter remove [find where comment="winbo
 /ip firewall filter remove [find where comment="monitor-api"]
 /ip firewall filter remove [find where comment="monitor-api-wan"]
 /ip firewall address-list remove [find where list="nodebeat-sede"]
+/user remove [find where name="nodebeat-rw"]
+/user group remove [find where name="nodebeat-rw"]
 /user remove [find where name="monitor"]
 /user group remove [find where name="monitor"]
 /ip service set api-ssl disabled=yes certificate=none

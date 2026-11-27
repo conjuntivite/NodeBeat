@@ -66,7 +66,7 @@ void main() {
   testWidgets('Gerar outra senha troca a senha no script', (t) async {
     await _show(t);
     final antes = _script(t);
-    await t.tap(find.text('Gerar outra senha'));
+    await t.tap(find.text('Gerar outra senha').first);
     await t.pump();
     expect(_script(t), isNot(antes));
   });
@@ -106,5 +106,21 @@ void main() {
     await _show(t, b: Brightness.dark);
     expect(t.takeException(), isNull);
     expect(find.byKey(const Key('script-preparar')), findsOneWidget);
+  });
+
+  testWidgets('permitir alterações: cartão com senha própria e Copiar', (t) async {
+    final copiado = await _show(t);
+    expect(find.text('MK já cadastrada: permitir alterações pelo NodeBeat'), findsOneWidget);
+    final senha = t.widget<SelectableText>(find.byKey(const Key('senha-alteracoes'))).data!;
+    await t.ensureVisible(find.byKey(const Key('copiar-alteracoes')));
+    await t.tap(find.byKey(const Key('copiar-alteracoes')));
+    await t.pump();
+    expect(copiado.single, contains('nodebeat-rw'));
+    expect(copiado.single, contains('"$senha"'));
+  });
+
+  testWidgets('permitir alterações sem as variáveis do servidor: avisa e não mostra o script', (t) async {
+    await _show(t, info: {'ip_origem': null, 'ips_publicos_sede': ['203.0.113.5']});
+    expect(find.byKey(const Key('copiar-alteracoes')), findsNothing);
   });
 }

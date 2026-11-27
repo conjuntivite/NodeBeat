@@ -261,9 +261,12 @@ class ResultadoPeer {
       : antigo = j['antigo'] as String?,
         novo = j['novo'] as String?,
         confirmado = j['confirmado'] == true,
-        policiesErro = j['policies_erro'] as String?,
+        policiesErro = List<String>.from(j['policies_erro'] ?? const []),
         via = j['via'] as String?;
-  final String? antigo, novo, policiesErro, via;
+  final String? antigo, novo, via;
+
+  /// ids das policies que não foram atualizadas para o novo peer.
+  final List<String> policiesErro;
   final bool confirmado;
 }
 

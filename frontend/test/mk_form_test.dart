@@ -143,4 +143,15 @@ void main() {
     await api.removerLiberacao('x', 'cam 1');
     expect(delete, contains('descricao=cam%201'));
   });
+
+  test('trocarPeer lê policies_erro como lista', () async {
+    ApiClient api(List<String> erro) => ApiClient(
+        client: MockClient((req) async => http.Response(
+            jsonEncode({'antigo': '203.0.113.1', 'novo': '203.0.113.2', 'confirmado': true, 'policies': [], 'policies_erro': erro, 'nome': 'x', 'via': 'tunel'}),
+            200)));
+    final ok = await api([]).trocarPeer('x', '*1', '203.0.113.2');
+    expect((ok.confirmado, ok.via), (true, 'tunel'));
+    expect(ok.policiesErro, isEmpty);
+    expect((await api(['*3']).trocarPeer('x', '*1', '203.0.113.2')).policiesErro, ['*3']);
+  });
 }

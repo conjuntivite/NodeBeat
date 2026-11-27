@@ -38,9 +38,10 @@ async def insert_mk(db, doc: dict) -> str:
     return str((await db.mks.insert_one(doc)).inserted_id)
 
 
-async def update_mk(db, id: str, fields: dict) -> bool:
+async def update_mk(db, id: str, fields: dict, unset: tuple[str, ...] = ()) -> bool:
     oid = _oid(id)
-    return bool(oid) and (await db.mks.update_one({"_id": oid}, {"$set": fields})).matched_count > 0
+    op = {"$set": fields} | ({"$unset": dict.fromkeys(unset, "")} if unset else {})
+    return bool(oid) and (await db.mks.update_one({"_id": oid}, op)).matched_count > 0
 
 
 async def delete_mk(db, id: str) -> bool:

@@ -97,6 +97,42 @@ async def test_put_empty_password_keeps_old(client, db):
     assert crypto.decrypt((await store.get_mk(db, id))["senha_cifrada"], KEY) == "nova"
 
 
+async def test_senha_rw_cifrada_e_tem_rw(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    doc = await store.get_mk(db, id)
+    assert doc["senha_rw_cifrada"] != "rw-segredo-1" and crypto.decrypt(doc["senha_rw_cifrada"], KEY) == "rw-segredo-1"
+    assert "senha_rw" not in doc and "remover_rw" not in doc
+    body = (await client.get(f"/api/mks/{id}")).json()
+    assert body["tem_rw"] is True and sem_senha(body) and "rw-segredo-1" not in json.dumps(body)
+
+
+async def test_sem_senha_rw_tem_rw_false(client, db):
+    id = await criar(client)
+    assert "senha_rw_cifrada" not in await store.get_mk(db, id)
+    assert (await client.get(f"/api/mks/{id}")).json()["tem_rw"] is False
+
+
+async def test_put_sem_senha_rw_mantem(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    antes = (await store.get_mk(db, id))["senha_rw_cifrada"]
+    assert (await client.put(f"/api/mks/{id}", json={**MK, "nome": "Outro"})).status_code == 204
+    assert (await store.get_mk(db, id))["senha_rw_cifrada"] == antes
+
+
+async def test_put_remover_rw_apaga(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    assert (await client.put(f"/api/mks/{id}", json={**MK, "remover_rw": True})).status_code == 204
+    doc = await store.get_mk(db, id)
+    assert "senha_rw_cifrada" not in doc and "remover_rw" not in doc and "senha_rw" not in doc
+    assert (await client.get(f"/api/mks/{id}")).json()["tem_rw"] is False
+
+
+async def test_put_nova_senha_rw_troca(client, db):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    await client.put(f"/api/mks/{id}", json={**MK, "senha_rw": "rw-nova"})
+    assert crypto.decrypt((await store.get_mk(db, id))["senha_rw_cifrada"], KEY) == "rw-nova"
+
+
 async def test_put_new_tunnel_ip_clears_pin(client, db):
     id = await criar(client)
     await store.set_cert(db, id, "ab" * 32)

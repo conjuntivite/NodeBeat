@@ -21,7 +21,12 @@ from pymongo.errors import DuplicateKeyError
 from nodebeat import ataques, auth, cli, crypto, eventos, geoip, history, inventario, mapa, painel, routeros, store, switch_painel, tv as tv_pub, unifi, webhook, worker
 from nodebeat.rules import LIMITE, Event, MkRef, _pct
 
-PAINEL_TTL = 120  # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
+USUARIO_RW = "nodebeat-rw"
+_MSG_SEM_RW = ("Para alterar esta MK pelo NodeBeat, aplique o script 'permitir alterações' da página "
+               "Preparar MK e preencha a senha no cadastro.")
+
+
+PAINEL_TTL = 120 # s: maior que os 60 s com que a TV do mapa de ataques relê o painel
 LIMITE_LEITURA = 5000  # eventos lidos por chamada do feed de ataques
 _COOKIE = {"path": "/api", "httponly": True, "secure": True, "samesite": "strict"}
 
@@ -66,6 +71,8 @@ class MkIn(BaseModel):
     sem_ipsec: bool = False  # MK sem VPN: o NodeBeat acessa pelo IP público (guardado também como ip_tunel)
     usuario: str = Field(min_length=1)
     senha: str = ""
+    senha_rw: str = ""  # senha do usuário nodebeat-rw (alterações); vazio = não mexe
+    remover_rw: bool = False
 
     @field_validator("nome", "usuario")
     @classmethod
@@ -309,9 +316,14 @@ def create_app(db, r, settings) -> FastAPI:
 
     extras = [ipaddress.ip_network(n) for n in settings.redes_tunel_extra]
 
+    def _senha_rw(mk: dict) -> str:
+        if not mk.get("senha_rw_cifrada"):
+            raise HTTPException(409, _MSG_SEM_RW)
+        return crypto.decrypt(mk["senha_rw_cifrada"], settings.secret_key)
+
     def _tunel_ok(body: MkIn) -> dict:
         """Campos a gravar; sem IPsec o IP de acesso (ip_tunel) é o público."""
-        campos = body.model_dump(exclude={"senha"})
+        campos = body.model_dump(exclude={"senha", "senha_rw", "remover_rw"})
         if body.sem_ipsec:
             return campos | {"ip_tunel": body.ip_publico}
         if not body.ip_tunel:
@@ -331,13 +343,17 @@ def create_app(db, r, settings) -> FastAPI:
         doc = campos | {
             "senha_cifrada": crypto.encrypt(body.senha, settings.secret_key),
             "cert_sha256": None, "interfaces_vigiadas": []}
+        if body.senha_rw:
+            doc["senha_rw_cifrada"] = crypto.encrypt(body.senha_rw, settings.secret_key)
         return {"id": await store.insert_mk(db, doc)}
 
     @mks.get("/mks/{id}")
     async def obter(id: str) -> dict:
         mk = await _achar(id)
+        tem_rw = bool(mk.get("senha_rw_cifrada"))
         mk = {k: v for k, v in mk.items() if k in ("id", "nome", "ip_tunel", "ip_publico", "usuario", "sem_ipsec",
                                                    "interfaces_vigiadas", "cert_sha256")}
+        mk["tem_rw"] = tem_rw
         mk["estado"] = (await history.load_states(r)).get(id)
         return mk
 
@@ -349,9 +365,12 @@ def create_app(db, r, settings) -> FastAPI:
         await _tunel_livre(campos["ip_tunel"], id)
         if body.senha:
             campos["senha_cifrada"] = crypto.encrypt(body.senha, settings.secret_key)
+        if body.senha_rw:
+            campos["senha_rw_cifrada"] = crypto.encrypt(body.senha_rw, settings.secret_key)
         if campos["ip_tunel"] != antigo["ip_tunel"]:
             campos["cert_sha256"] = None  # outro aparelho: o pin antigo não vale
-        await store.update_mk(db, id, campos)
+        remover = ("senha_rw_cifrada",) if body.remover_rw and not body.senha_rw else ()
+        await store.update_mk(db, id, campos, remover)
         return Response(status_code=204)
 
     @mks.delete("/mks/{id}", status_code=204)

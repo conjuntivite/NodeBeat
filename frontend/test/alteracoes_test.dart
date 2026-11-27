@@ -66,8 +66,15 @@ void main() {
         });
         await _toque(t, find.text('Carregar peers'));
         expect(find.text('pelo domínio: sobe sozinho pelo load balance'), findsOneWidget);
-        expect(find.text('Trocar peer'), findsOneWidget);
-        await _toque(t, find.text('Trocar peer'));
+        expect(find.text('Trocar peer'), findsNWidgets(2));
+        for (final bt in find.widgetWithText(OutlinedButton, 'Trocar peer').evaluate()) {
+          expect((bt.widget as OutlinedButton).onPressed, isNotNull);
+        }
+        await _toque(t, find.text('Trocar peer').last);
+        expect(find.textContaining('trocar para IP fixo tira isso'), findsOneWidget);
+        await _toque(t, find.text('Cancelar'));
+        await _toque(t, find.text('Trocar peer').first);
+        expect(find.textContaining('trocar para IP fixo tira isso'), findsNothing);
         await _toque(t, find.widgetWithText(ActionChip, '198.51.100.7'));
         expect(find.text('Atual: 203.0.113.5 → Novo: 198.51.100.7'), findsOneWidget);
         await _toque(t, find.widgetWithText(FilledButton, 'Trocar'));
@@ -84,7 +91,7 @@ void main() {
           return _json(_peers);
         });
         await _toque(t, find.text('Carregar peers'));
-        await _toque(t, find.text('Trocar peer'));
+        await _toque(t, find.text('Trocar peer').first);
         await t.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), '198.51.100.8');
         await t.pump();
         await _toque(t, find.widgetWithText(FilledButton, 'Trocar'));

@@ -73,7 +73,7 @@ class _IpsecCardState extends _EstadoAlteracao<IpsecCard, List<PeerIpsec>> {
   Future<void> _trocar(PeerIpsec p) async {
     final novo = await showDialog<String>(
       context: context,
-      builder: (c) => _TrocarPeerDialog(atual: p.endereco, ipsSede: widget.ipsSede),
+      builder: (c) => _TrocarPeerDialog(atual: p.endereco, ipsSede: widget.ipsSede, porDominio: p.porDominio),
     );
     if (novo == null) return;
     await executar(() async {
@@ -105,9 +105,8 @@ class _IpsecCardState extends _EstadoAlteracao<IpsecCard, List<PeerIpsec>> {
               Text(p.endereco, style: mono),
               if (p.desativado) Selo('desativado', t.fgSecondary),
               if (p.porDominio)
-                Text('pelo domínio: sobe sozinho pelo load balance', style: TradeType.bodyMd.copyWith(color: t.fgSecondary))
-              else
-                OutlinedButton(onPressed: pode ? () => _trocar(p) : null, child: const Text('Trocar peer')),
+                Text('pelo domínio: sobe sozinho pelo load balance', style: TradeType.bodyMd.copyWith(color: t.fgSecondary)),
+              OutlinedButton(onPressed: pode ? () => _trocar(p) : null, child: const Text('Trocar peer')),
             ]),
           ),
         retorno(t),
@@ -117,8 +116,9 @@ class _IpsecCardState extends _EstadoAlteracao<IpsecCard, List<PeerIpsec>> {
 }
 
 class _TrocarPeerDialog extends StatefulWidget {
-  const _TrocarPeerDialog({required this.atual, required this.ipsSede});
+  const _TrocarPeerDialog({required this.atual, required this.ipsSede, required this.porDominio});
   final String atual;
+  final bool porDominio;
   final List<String> ipsSede;
 
   @override
@@ -143,6 +143,12 @@ class _TrocarPeerDialogState extends State<_TrocarPeerDialog> {
       content: SizedBox(
         width: 360,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (widget.porDominio)
+            Padding(
+              padding: EdgeInsets.only(bottom: t.space3),
+              child: Text('Este peer usa domínio e sobe sozinho pelo load balance; trocar para IP fixo tira isso.',
+                  style: TradeType.bodyMd.copyWith(color: t.warning)),
+            ),
           Wrap(spacing: t.space2, children: [
             for (final ip in widget.ipsSede) ActionChip(label: Text(ip), onPressed: () => setState(() => _ctl.text = ip)),
           ]),

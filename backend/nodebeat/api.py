@@ -473,18 +473,23 @@ def create_app(db, r, settings) -> FastAPI:
         if mk.get("sem_ipsec"):
             raise HTTPException(409, "MK sem IPsec")
         senha = _senha_rw(mk)
+        escreveu = []
         try:
             res, via = await _na_mk(mk, lambda host, **kw: routeros.sessao(
                 host, USUARIO_RW, senha, mk.get("cert_sha256"),
-                lambda api: alteracoes.trocar_peer(api, peer_id, body.endereco), **kw), publico_primeiro=True)
+                lambda api: alteracoes.trocar_peer(api, peer_id, body.endereco, lambda: escreveu.append(1)),
+                **kw), publico_primeiro=True)
         except KeyError:
             raise HTTPException(404, "Peer não encontrado na MK")
         except ValueError:
             raise HTTPException(422, "O peer já está com esse endereço")
         except routeros.RouterOsError as e:
-            await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
+            if escreveu:
+                await _registrar_alteracao(mk, f"Falhou: {e.detalhe}")
             return JSONResponse({"detalhe": e.detalhe}, status_code=502)
         except Exception:  # nunca ecoar str(e): pode conter segredo
+            if escreveu:
+                await _registrar_alteracao(mk, "Falhou: resposta inesperada da API")
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         nome = res.get("nome") or peer_id
         await _registrar_alteracao(mk, f"Peer IPsec {nome}: {res['antigo']} → {res['novo']}, por {user['usuario']}"

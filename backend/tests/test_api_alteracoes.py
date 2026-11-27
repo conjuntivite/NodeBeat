@@ -41,13 +41,12 @@ class FakeApi:
         self.chamadas = []
         self.address = "9.9.9.9"
 
-    def __call__(self, cmd, **kw):
+    def __call__(self, cmd, **kw):  # gerador como o librouteros: so age quando consumido
         self.chamadas.append((cmd, kw))
         if cmd == PEER + "/set":
             self.address = kw["address"]
         if cmd == PEER + "/print":
-            return iter([{".id": "*1", "name": "peer-ipsec", "address": self.address, "disabled": "false"}])
-        return iter([])
+            yield {".id": "*1", "name": "peer-ipsec", "address": self.address, "disabled": False}
 
 
 @pytest.fixture
@@ -111,7 +110,7 @@ async def test_put_mk_sem_ipsec_409(client, sessao):
     assert resp.status_code == 409 and resp.json()["detail"] == "MK sem IPsec"
 
 
-async def test_put_falha_vira_502_e_historico(client, r, monkeypatch):
+async def test_put_falha_antes_de_escrever_502_sem_historico(client, r, monkeypatch):
     id = await criar(client, senha_rw="rw-segredo-1")
 
     def fake(*a, **kw):
@@ -119,6 +118,26 @@ async def test_put_falha_vira_502_e_historico(client, r, monkeypatch):
     monkeypatch.setattr(routeros, "sessao", fake)
     resp = await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": "8.8.8.8"})
     assert resp.status_code == 502 and "sem permissão" in resp.json()["detalhe"]
+    assert await history.history(r, id) == []  # falhou antes de escrever
+
+
+async def test_put_efetivamente_envia_set(client, sessao):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": "8.8.8.8"})
+    assert (PEER + "/set", {".id": "*1", "address": "8.8.8.8"}) in sessao["api"].chamadas
+
+
+async def test_falha_depois_de_escrever_registra(client, r, monkeypatch):
+    id = await criar(client, senha_rw="rw-segredo-1")
+
+    class Api(FakeApi):
+        def __call__(self, cmd, **kw):
+            if cmd == PEER + "/set":
+                raise routeros.RouterOsError("Erro da API: x")
+            yield from super().__call__(cmd, **kw)
+
+    monkeypatch.setattr(routeros, "sessao", lambda host, user, password, pin, usar, porta=8729, timeout=10.0: usar(Api()))
+    assert (await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": "8.8.8.8"})).status_code == 502
     [h] = await history.history(r, id)
     assert h["evento"] == "alteracao" and h["detalhe"].startswith("Falhou: ")
 

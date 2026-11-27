@@ -20,25 +20,25 @@ class FakeApi:
     def __init__(self, respostas: dict, falhas: dict | None = None):
         self.respostas, self.falhas, self.chamadas = respostas, falhas or {}, []
 
-    def __call__(self, cmd, **kw):
+    def __call__(self, cmd, **kw):  # gerador como o librouteros: so age quando consumido
         self.chamadas.append((cmd, kw))
         f = self.falhas.get(cmd)
         if f is not None and (not isinstance(f, list) or f.pop(0)):
             raise (f if not isinstance(f, list) else OSError("caiu"))
-        return iter(self.respostas.get(cmd, []))
+        yield from self.respostas.get(cmd, [])
 
     def sets(self, prefixo):
         return [kw for c, kw in self.chamadas if c == prefixo + "/set"]
 
 
 def peer(id="*1", address="203.0.113.1/32", name="peer-ipsec", **kw):
-    return {".id": id, "name": name, "address": address, "disabled": "false", **kw}
+    return {".id": id, "name": name, "address": address, "disabled": False, **kw}
 
 
 def test_ler_peers_dominio():
     api = FakeApi({PEER + "/print": [peer(address="vpn.exemplo.com", comment="x"),
                                      peer(id="*2", address="203.0.113.1/32"),
-                                     peer(id="*3", address="203.0.113.9", disabled="true")]})
+                                     peer(id="*3", address="203.0.113.9", disabled=True)]})
     a, b, c = alteracoes.ler_peers(api)
     assert a == {"id": "*1", "nome": "peer-ipsec", "endereco": "vpn.exemplo.com", "desativado": False,
                  "comentario": "x", "por_dominio": True}
@@ -63,7 +63,7 @@ def test_trocar_peer_v6_atualiza_sa_dst():
     api = FakeApi({PEER + "/print": [peer()],
                    POLICY + "/print": [{".id": "*5", "sa-dst-address": "203.0.113.1"},
                                        {".id": "*6", "sa-dst-address": "203.0.113.77"},
-                                       {".id": "*7", "template": "true", "sa-dst-address": "203.0.113.1"}]})
+                                       {".id": "*7", "template": True, "sa-dst-address": "203.0.113.1"}]})
     r = alteracoes.trocar_peer(api, "*1", "203.0.113.2")
     assert api.sets(POLICY) == [{".id": "*5", "sa-dst-address": "203.0.113.2"}]
     assert r["policies"] == ["*5"] and r["policies_erro"] == []
@@ -83,13 +83,31 @@ def test_trocar_peer_conexao_cai_depois_do_set():
     assert r["confirmado"] is False and api.sets(PEER)
 
 
+def test_trocar_peer_conexao_cai_durante_o_set():
+    api = FakeApi({PEER + "/print": [peer()]}, {PEER + "/set": OSError("caiu")})
+    r = alteracoes.trocar_peer(api, "*1", "203.0.113.2")
+    assert r["confirmado"] is False and r["policies"] == []
+
+
+def test_trocar_peer_trap_no_set_propaga():
+    api = FakeApi({PEER + "/print": [peer()]}, {PEER + "/set": TrapError("failure: x")})
+    with pytest.raises(TrapError):
+        alteracoes.trocar_peer(api, "*1", "203.0.113.2")
+
+
+def test_trocar_peer_avisa_antes_de_escrever():
+    visto = []
+    api = FakeApi({PEER + "/print": [peer()]})
+    alteracoes.trocar_peer(api, "*1", "203.0.113.2", lambda: visto.append(api.sets(PEER)))
+    assert visto == [[]]
+
+
 def test_trocar_peer_confirma():
     class Api(FakeApi):
         def __call__(self, cmd, **kw):
-            out = super().__call__(cmd, **kw)
             if cmd == PEER + "/set":
                 self.respostas[PEER + "/print"] = [peer(address=kw["address"])]
-            return out
+            yield from super().__call__(cmd, **kw)
     api = Api({PEER + "/print": [peer()]})
     assert alteracoes.trocar_peer(api, "*1", "203.0.113.2")["confirmado"] is True
 

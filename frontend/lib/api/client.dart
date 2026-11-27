@@ -198,25 +198,82 @@ class MkDetail {
         usuario = j['usuario'],
         interfacesVigiadas = List<String>.from(j['interfaces_vigiadas'] ?? []),
         certSha256 = j['cert_sha256'],
+        temRw = j['tem_rw'] == true,
         estado = j['estado'] == null ? null : MkEstado.fromJson(j['estado']);
   final String id, nome, ipTunel, ipPublico, usuario;
-  final bool semIpsec;
+  final bool semIpsec, temRw;
   final List<String> interfacesVigiadas;
   final String? certSha256;
   final MkEstado? estado;
 }
 
 class MkInput {
-  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.semIpsec = false, this.senha});
+  MkInput({required this.nome, required this.ipTunel, required this.ipPublico, required this.usuario, this.semIpsec = false, this.senha, this.senhaRw, this.removerRw = false});
   final String nome, ipTunel, ipPublico, usuario;
-  final bool semIpsec;
+  final bool semIpsec, removerRw;
+
+  /// null/vazio = manter a senha de alterações (nodebeat-rw).
+  final String? senhaRw;
 
   /// null na edição = manter a senha atual (o campo não é enviado).
   final String? senha;
   Map<String, dynamic> toJson() => {
         'nome': nome, 'ip_tunel': ipTunel, 'ip_publico': ipPublico, 'usuario': usuario, 'sem_ipsec': semIpsec,
         if (senha != null) 'senha': senha,
+        if (senhaRw != null) 'senha_rw': senhaRw,
+        if (removerRw) 'remover_rw': true,
       };
+}
+
+int? _porta(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}');
+
+class PeerIpsec {
+  PeerIpsec.fromJson(Map<String, dynamic> j)
+      : id = j['id'] as String,
+        nome = j['nome'] as String?,
+        endereco = (j['endereco'] ?? '') as String,
+        desativado = j['desativado'] == true,
+        comentario = j['comentario'] as String?,
+        porDominio = j['por_dominio'] == true;
+  final String id, endereco;
+  final String? nome, comentario;
+  final bool desativado, porDominio;
+}
+
+class Liberacao {
+  Liberacao.fromJson(Map<String, dynamic> j)
+      : descricao = (j['descricao'] ?? '') as String,
+        protocolos = List<String>.from(j['protocolos'] ?? const []),
+        portaExterna = _porta(j['porta_externa']),
+        ipInterno = j['ip_interno'] as String?,
+        portaInterna = _porta(j['porta_interna']),
+        wan = j['wan'] as String?,
+        desativada = j['desativada'] == true;
+  final String descricao;
+  final List<String> protocolos;
+  final int? portaExterna, portaInterna;
+  final String? ipInterno, wan;
+  final bool desativada;
+}
+
+class ResultadoPeer {
+  ResultadoPeer.fromJson(Map<String, dynamic> j)
+      : antigo = j['antigo'] as String?,
+        novo = j['novo'] as String?,
+        confirmado = j['confirmado'] == true,
+        policiesErro = j['policies_erro'] as String?,
+        via = j['via'] as String?;
+  final String? antigo, novo, policiesErro, via;
+  final bool confirmado;
+}
+
+class ResultadoLiberar {
+  ResultadoLiberar.fromJson(Map<String, dynamic> j)
+      : wan = j['wan'] as String?,
+        via = j['via'] as String?,
+        avisos = List<String>.from(j['avisos'] ?? const []);
+  final String? wan, via;
+  final List<String> avisos;
 }
 
 class IfaceInfo {
@@ -854,6 +911,28 @@ class ApiClient {
 
   Future<void> setWatched(String id, List<String> names) =>
       _send('PUT', '/mks/$id/interfaces-vigiadas', body: {'interfaces': names});
+
+  Future<({List<PeerIpsec> peers, String via})> peers(String id) async {
+    final j = await _send('GET', '/mks/$id/ipsec/peers');
+    return (peers: [for (final p in j['peers']) PeerIpsec.fromJson(Map<String, dynamic>.from(p))], via: j['via'] as String);
+  }
+
+  Future<ResultadoPeer> trocarPeer(String id, String peerId, String endereco) async => ResultadoPeer.fromJson(
+      await _send('PUT', '/mks/$id/ipsec/peers/${Uri.encodeComponent(peerId)}', body: {'endereco': endereco}));
+
+  Future<List<Liberacao>> liberacoes(String id) async => [
+        for (final j in (await _send('GET', '/mks/$id/portas-liberadas'))['liberacoes']) Liberacao.fromJson(Map<String, dynamic>.from(j))
+      ];
+
+  Future<ResultadoLiberar> liberarPorta(String id,
+          {required String protocolo, required int portaExterna, required String ipInterno, required int portaInterna, required String descricao}) async =>
+      ResultadoLiberar.fromJson(await _send('POST', '/mks/$id/portas-liberadas', body: {
+        'protocolo': protocolo, 'porta_externa': portaExterna, 'ip_interno': ipInterno,
+        'porta_interna': portaInterna, 'descricao': descricao,
+      }));
+
+  Future<void> removerLiberacao(String id, String descricao) =>
+      _send('DELETE', '/mks/$id/portas-liberadas?descricao=${Uri.encodeComponent(descricao)}');
 
   Future<void> acceptCert(String id) => _send('POST', '/mks/$id/aceitar-certificado');
 

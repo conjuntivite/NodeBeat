@@ -106,10 +106,27 @@ def test_trocar_peer_confirma():
     class Api(FakeApi):
         def __call__(self, cmd, **kw):
             if cmd == PEER + "/set":
-                self.respostas[PEER + "/print"] = [peer(address=kw["address"])]
+                self.respostas[PEER + "/print"] = [peer(address=kw["address"] + "/32")]  # a MK guarda com /32
             yield from super().__call__(cmd, **kw)
     api = Api({PEER + "/print": [peer()]})
     assert alteracoes.trocar_peer(api, "*1", "203.0.113.2")["confirmado"] is True
+
+
+def test_trocar_peer_v6_policy_com_prefixo():
+    api = FakeApi({PEER + "/print": [peer(address="203.0.113.1")],
+                   POLICY + "/print": [{".id": "*5", "sa-dst-address": "203.0.113.1/32"}]})
+    assert alteracoes.trocar_peer(api, "*1", "203.0.113.2")["policies"] == ["*5"]
+
+
+def test_ler_peers_campos_numericos_viram_texto():
+    # librouteros converte palavra so de digitos em int
+    [p] = alteracoes.ler_peers(FakeApi({PEER + "/print": [peer(name=2, comment=1)]}))
+    assert p["nome"] == "2" and p["comentario"] == "1"
+
+
+def test_liberacoes_wan_numerica_vira_texto():
+    [x] = alteracoes.liberacoes([nat(protocol="tcp", comment="nodebeat:A", **{"in-interface": 1})])
+    assert x["wan"] == "1"
 
 
 def test_trocar_peer_igual_valueerror():

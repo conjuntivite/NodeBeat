@@ -23,14 +23,18 @@ def _por_dominio(endereco: str) -> bool:
         return True
 
 
-def _sem_prefixo(endereco: str) -> str:
-    return endereco.removesuffix("/32")
+def _sem_prefixo(endereco) -> str | None:
+    return None if endereco is None else str(endereco).removesuffix("/32")
+
+
+def _txt(v) -> str | None:  # librouteros converte palavra so de digitos em int
+    return None if v is None else str(v)
 
 
 def ler_peers(api) -> list[dict]:
-    return [{"id": p[".id"], "nome": p.get("name"), "endereco": p.get("address", ""),
-             "desativado": bool(p.get("disabled")), "comentario": p.get("comment", ""),
-             "por_dominio": _por_dominio(p.get("address", ""))} for p in list(api(PEER + "/print"))]
+    return [{"id": p[".id"], "nome": _txt(p.get("name")), "endereco": str(p.get("address", "")),
+             "desativado": bool(p.get("disabled")), "comentario": str(p.get("comment", "")),
+             "por_dominio": _por_dominio(str(p.get("address", "")))} for p in list(api(PEER + "/print"))]
 
 
 def trocar_peer(api, peer_id: str, novo: str, ao_escrever=None) -> dict:
@@ -44,7 +48,7 @@ def trocar_peer(api, peer_id: str, novo: str, ao_escrever=None) -> dict:
     # lido antes do set: na v6 o sa-dst-address ainda e o antigo
     policies = [p for p in list(api(POLICY + "/print"))
                 if not p.get("template") and not p.get("peer")
-                and p.get("sa-dst-address") == _sem_prefixo(antigo)]
+                and _sem_prefixo(p.get("sa-dst-address")) == _sem_prefixo(antigo)]
     if ao_escrever:
         ao_escrever()  # a partir daqui falha conta como "escrita comecou" (historico)
     try:
@@ -52,7 +56,7 @@ def trocar_peer(api, peer_id: str, novo: str, ao_escrever=None) -> dict:
     except TrapError:
         raise
     except (OSError, LibRouterosError):  # conexao caiu durante o set: pode ter aplicado
-        return {"nome": peer.get("name"), "antigo": antigo, "novo": novo, "confirmado": False,
+        return {"nome": _txt(peer.get("name")), "antigo": antigo, "novo": novo, "confirmado": False,
                 "policies": [], "policies_erro": []}
     feitas: list[str] = []
     erro: list[str] = []
@@ -63,10 +67,11 @@ def trocar_peer(api, peer_id: str, novo: str, ao_escrever=None) -> dict:
                 feitas.append(p[".id"])
             except TrapError:
                 erro.append(p[".id"])
-        confirmado = any(p[".id"] == peer_id and p.get("address") == novo for p in list(api(PEER + "/print")))
+        confirmado = any(p[".id"] == peer_id and _sem_prefixo(p.get("address")) == _sem_prefixo(novo)
+                         for p in list(api(PEER + "/print")))
     except (OSError, LibRouterosError):  # a conexao pode cair depois do set (ex.: o peer era o proprio tunel)
         confirmado = False
-    return {"nome": peer.get("name"), "antigo": antigo, "novo": novo, "confirmado": confirmado, "policies": feitas, "policies_erro": erro}
+    return {"nome": _txt(peer.get("name")), "antigo": antigo, "novo": novo, "confirmado": confirmado, "policies": feitas, "policies_erro": erro}
 
 
 def wan(addresses: list[dict], routes: list[dict], interfaces: set[str], ip_publico: str | None) -> str | None:
@@ -100,7 +105,7 @@ def liberacoes(nat_rows: list[dict]) -> list[dict]:
         n = rows[0]
         out.append({"descricao": desc, "protocolos": [str(x.get("protocol")) for x in rows],
                     "porta_externa": str(n.get("dst-port")), "ip_interno": n.get("to-addresses"),
-                    "porta_interna": str(n.get("to-ports")), "wan": n.get("in-interface"),
+                    "porta_interna": str(n.get("to-ports")), "wan": _txt(n.get("in-interface")),
                     "desativada": any(bool(x.get("disabled")) for x in rows)})
     return sorted(out, key=lambda x: x["descricao"].casefold())
 

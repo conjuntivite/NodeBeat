@@ -44,7 +44,7 @@ class FakeApi:
     def __call__(self, cmd, **kw):  # gerador como o librouteros: so age quando consumido
         self.chamadas.append((cmd, kw))
         if cmd == PEER + "/set":
-            self.address = kw["address"]
+            self.address = kw["address"] + "/32"  # a MK guarda com /32
         if cmd == PEER + "/print":
             yield {".id": "*1", "name": "peer-ipsec", "address": self.address, "disabled": False}
 
@@ -75,7 +75,7 @@ async def test_put_sem_senha_rw_409(client, sessao):
 
 async def test_put_ip_privado_422(client, sessao):
     id = await criar(client, senha_rw="rw-segredo-1")
-    for ruim in ("192.168.1.1", "vpn.exemplo.com", "8.8.8.8/32"):
+    for ruim in ("192.168.88.1", "vpn.exemplo.com", "8.8.8.8/32"):
         resp = await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": ruim})
         assert resp.status_code == 422, ruim
 
@@ -90,6 +90,16 @@ async def test_put_ok_usa_publico_rw_e_historico(client, r, sessao):
     [h] = await history.history(r, id)
     assert h["evento"] == "alteracao"
     assert h["detalhe"] == "Peer IPsec peer-ipsec: 9.9.9.9 → 8.8.8.8, por ana pelo IP público"
+
+
+async def test_put_historico_avisa_nao_confirmado_e_policy(client, r, monkeypatch):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    monkeypatch.setattr(routeros, "sessao", lambda *a, **kw: {"nome": "p1", "antigo": "9.9.9.9", "novo": "8.8.8.8",
+                                                               "confirmado": False, "policies": [], "policies_erro": ["*5", "*6"]})
+    assert (await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": "8.8.8.8"})).status_code == 200
+    [h] = await history.history(r, id)
+    assert h["detalhe"] == ("Peer IPsec p1: 9.9.9.9 → 8.8.8.8, por ana pelo IP público"
+                            " (não confirmado) (policy *5, *6 não atualizada)")
 
 
 async def test_put_peer_inexistente_404(client, sessao):
@@ -198,10 +208,31 @@ async def test_post_descricao_com_aspas_422(client, nat_sessao):
 async def test_post_ip_fora_das_redes_422(client, db, nat_sessao):
     from datetime import UTC, datetime
     id = await criar(client, senha_rw="rw-segredo-1")
-    await store.salvar_inventario(db, id, {"redes": [{"rede": "192.168.10.0/24", "origem": "address"}]},
+    await store.salvar_inventario(db, id, {"redes": [{"rede": "192.168.88.0/25", "origem": "address"}]},
                                   datetime.now(UTC))
-    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED)
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"ip_interno": "192.168.88.200"})
     assert resp.status_code == 422 and resp.json()["detail"] == "IP fora das redes da MK"
+
+
+async def test_post_ip_da_propria_mk_422(client, db, nat_sessao):
+    from datetime import UTC, datetime
+    id = await criar(client, senha_rw="rw-segredo-1")
+    await store.salvar_inventario(db, id, {"redes": [{"rede": "192.168.88.0/24", "origem": "address", "ip": "192.168.88.1"}]},
+                                  datetime.now(UTC))
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas", json=PED | {"ip_interno": "192.168.88.1"})
+    assert resp.status_code == 422 and resp.json()["detail"] == "IP é da própria MK"
+    assert nat_sessao.chamadas == []
+
+
+async def test_422_por_campo_tem_mensagem(client, nat_sessao):
+    id = await criar(client, senha_rw="rw-segredo-1")
+    resp = await client.post(f"/api/mks/{id}/portas-liberadas",
+                             json=PED | {"descricao": "ação", "ip_interno": "8.8.8.8", "porta_externa": 0})
+    msgs = {e["loc"][-1]: e["msg"] for e in resp.json()["detail"]}
+    assert resp.status_code == 422 and "Valor inválido" not in msgs.values(), msgs
+    assert set(msgs) == {"descricao", "ip_interno", "porta_externa"}
+    resp = await client.put(f"/api/mks/{id}/ipsec/peers/*1", json={"endereco": "192.168.88.1"})
+    assert resp.json()["detail"][0]["msg"] == "Use um IPv4 público"
 
 
 async def test_post_ok_201_e_historico_delete_ok_e_inexistente(client, r, nat_sessao):

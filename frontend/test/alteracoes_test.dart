@@ -57,10 +57,10 @@ void main() {
 
       testWidgets('IPsec: lista, troca o peer e mostra o caminho', (t) async {
         final puts = <http.Request>[];
-        await _mostra(t, (a) => IpsecCard(api: a, id: 'x', temRw: true, ipsSede: const ['198.51.100.7']), b, (r) async {
+        await _mostra(t, (a) => IpsecCard(api: a, id: 'x', temRw: true, ipsSede: const ['8.8.4.4']), b, (r) async {
           if (r.method == 'PUT') {
             puts.add(r);
-            return _json({'antigo': '203.0.113.5', 'novo': '198.51.100.7', 'confirmado': true, 'policies_erro': [], 'via': 'publico'});
+            return _json({'antigo': '203.0.113.5', 'novo': '8.8.4.4', 'confirmado': true, 'policies_erro': [], 'via': 'publico'});
           }
           return _json(_peers);
         });
@@ -75,10 +75,10 @@ void main() {
         await _toque(t, find.text('Cancelar'));
         await _toque(t, find.text('Trocar peer').first);
         expect(find.textContaining('trocar para IP fixo tira isso'), findsNothing);
-        await _toque(t, find.widgetWithText(ActionChip, '198.51.100.7'));
-        expect(find.text('Atual: 203.0.113.5 → Novo: 198.51.100.7'), findsOneWidget);
+        await _toque(t, find.widgetWithText(ActionChip, '8.8.4.4'));
+        expect(find.text('Atual: 203.0.113.5 → Novo: 8.8.4.4'), findsOneWidget);
         await _toque(t, find.widgetWithText(FilledButton, 'Trocar'));
-        expect(jsonDecode(puts.single.body), {'endereco': '198.51.100.7'});
+        expect(jsonDecode(puts.single.body), {'endereco': '8.8.4.4'});
         expect(puts.single.url.path, '/api/mks/x/ipsec/peers/*1');
         expect(find.textContaining('pelo IP público'), findsOneWidget);
       });
@@ -92,11 +92,79 @@ void main() {
         });
         await _toque(t, find.text('Carregar peers'));
         await _toque(t, find.text('Trocar peer').first);
-        await t.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), '198.51.100.8');
+        await t.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), '8.8.4.4');
         await t.pump();
         await _toque(t, find.widgetWithText(FilledButton, 'Trocar'));
         expect(find.textContaining('Enviado; não deu para confirmar'), findsOneWidget);
         expect(find.textContaining('policy *9 não foi atualizada'), findsOneWidget);
+        final cor = t.widget<Text>(find.textContaining('Enviado; não deu para confirmar')).style!.color;
+        expect(cor, tokensOf(t.element(find.byType(IpsecCard))).warning);
+      });
+
+      testWidgets('IPsec: diálogo recusa IP não público e o atual, sem fechar', (t) async {
+        await _mostra(t, (a) => IpsecCard(api: a, id: 'x', temRw: true, ipsSede: const []), b, (r) async => _json(_peers));
+        await _toque(t, find.text('Carregar peers'));
+        await _toque(t, find.text('Trocar peer').first);
+        final campo = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+        FilledButton trocar() => t.widget<FilledButton>(find.widgetWithText(FilledButton, 'Trocar'));
+        for (final ruim in ['192.168.88.1', '10.8.0.2', '100.64.0.1', '127.0.0.1', '192.0.2.1', '203.0.113.9', '8.8.4']) {
+          await t.enterText(campo, ruim);
+          await t.pump();
+          expect(trocar().onPressed, isNull, reason: ruim);
+        }
+        expect(find.text('Use um IPv4 público'), findsOneWidget);
+        await t.enterText(campo, '203.0.113.5');
+        await t.pump();
+        expect(trocar().onPressed, isNull);
+        await t.enterText(campo, '8.8.4.4');
+        await t.pump();
+        expect(trocar().onPressed, isNotNull);
+        expect(find.byType(AlertDialog), findsOneWidget);
+      });
+
+      testWidgets('Portas: diálogo valida portas, IP privado e descrição antes de enviar', (t) async {
+        await _mostra(t, (a) => PortasLiberadasCard(api: a, id: 'x', temRw: true), b,
+            (r) async => _json(r.url.path.endsWith('/ips') ? [] : _lib));
+        await _toque(t, find.text('Liberar porta'));
+        final campos = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+        FilledButton liberar() => t.widget<FilledButton>(find.widgetWithText(FilledButton, 'Liberar'));
+        Future<void> preenche(String ext, String ip, String desc) async {
+          await t.enterText(campos.at(0), ext);
+          await t.enterText(campos.at(1), ip);
+          await t.enterText(campos.at(3), desc);
+          await t.pump();
+        }
+        expect(find.text('sem acentos'), findsOneWidget);
+        expect(t.widget<TextField>(campos.at(3)).maxLength, 40);
+        await preenche('70000', '192.168.88.20', 'camera');
+        expect(liberar().onPressed, isNull);
+        await preenche('8081', '8.8.4.4', 'camera');
+        expect(liberar().onPressed, isNull);
+        expect(find.text('Use um IPv4 privado'), findsOneWidget);
+        await preenche('8081', '192.168.88.20', 'câmera');
+        expect(liberar().onPressed, isNull);
+        await preenche('8081', '192.168.88.20', 'a"b');
+        expect(liberar().onPressed, isNull);
+        await preenche('8081', '192.168.88.20', 'camera_1.b-2');
+        expect(liberar().onPressed, isNotNull);
+      });
+
+      testWidgets('Portas: 422 por campo mostra a mensagem do servidor', (t) async {
+        await _mostra(t, (a) => PortasLiberadasCard(api: a, id: 'x', temRw: true), b, (r) async {
+          if (r.method == 'POST') {
+            return _json({'detail': [{'loc': ['body', 'descricao'], 'msg': 'Descrição inválida'}]}, 422);
+          }
+          return _json(r.url.path.endsWith('/ips') ? [] : _lib);
+        });
+        await _toque(t, find.text('Liberar porta'));
+        final campos = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+        await t.enterText(campos.at(0), '8081');
+        await t.enterText(campos.at(1), '192.168.88.20');
+        await t.enterText(campos.at(3), 'camera');
+        await t.pump();
+        await _toque(t, find.widgetWithText(FilledButton, 'Liberar'));
+        expect(find.text('Descrição inválida'), findsOneWidget);
+        expect(find.text('Requisição inválida'), findsNothing);
       });
 
       testWidgets('Portas: libera, mostra WAN e avisos; 422 mostra o detalhe', (t) async {

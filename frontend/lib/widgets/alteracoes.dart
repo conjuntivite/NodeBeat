@@ -9,16 +9,44 @@ const _semRw = "Para alterar esta MK pelo NodeBeat, aplique o script 'permitir a
 
 String _via(String? v) => v == 'tunel' ? 'pelo túnel' : 'pelo IP público';
 
-bool _ipValido(String s) {
+List<int>? _ipv4(String s) {
   final p = s.split('.');
-  return p.length == 4 && p.every((x) => RegExp(r'^\d{1,3}$').hasMatch(x) && int.parse(x) <= 255);
+  if (p.length != 4 || !p.every((x) => RegExp(r'^\d{1,3}$').hasMatch(x) && int.parse(x) <= 255)) return null;
+  return [for (final x in p) int.parse(x)];
 }
+
+bool _naFaixa(List<int> ip, String rede) {
+  final [base, bits] = rede.split('/');
+  int n(List<int> o) => o.fold(0, (a, b) => a * 256 + b);
+  final m = bits == '0' ? 0 : (0xFFFFFFFF << (32 - int.parse(bits))) & 0xFFFFFFFF;
+  return (n(ip) & m) == (n(_ipv4(base)!) & m);
+}
+
+const _privadas = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
+
+/// Espelha o `is_global` do backend (Python ipaddress) nas faixas que importam.
+const _naoGlobais = [
+  ..._privadas, '0.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '192.0.0.0/24', '192.0.2.0/24',
+  '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/3',
+];
+
+bool _ipPrivado(String s) {
+  final ip = _ipv4(s);
+  return ip != null && _privadas.any((r) => _naFaixa(ip, r));
+}
+
+bool _ipPublico(String s) {
+  final ip = _ipv4(s);
+  return ip != null && !_naoGlobais.any((r) => _naFaixa(ip, r));
+}
+
+final _descOk = RegExp(r'^[A-Za-z0-9 ._-]{1,40}$');
 
 /// Base dos dois cartões: lê a MK só quando o usuário pede e guarda o resultado da última ação.
 abstract class _EstadoAlteracao<W extends StatefulWidget, T> extends State<W> {
   T? dados;
   String? erro, msg;
-  bool carregando = false;
+  bool carregando = false, alerta = false; // alerta: msg de sucesso parcial (cor warning)
 
   Future<T> buscar();
 
@@ -30,13 +58,15 @@ abstract class _EstadoAlteracao<W extends StatefulWidget, T> extends State<W> {
       carregando = true;
       erro = null;
       msg = null;
+      alerta = false;
     });
     try {
       await acao();
       if (mounted) setState(() => msg ??= sucesso);
     } catch (e) {
       if (!mounted || sessionExpired(context, e)) return;
-      setState(() => erro = errorText(e));
+      // 422 por campo: a mensagem do servidor, não o "Requisição inválida" genérico
+      setState(() => erro = e is ApiError && e.fields.isNotEmpty ? e.fields.values.join(' · ') : errorText(e));
     } finally {
       if (mounted) setState(() => carregando = false);
     }
@@ -51,7 +81,7 @@ abstract class _EstadoAlteracao<W extends StatefulWidget, T> extends State<W> {
 
   Widget retorno(TradeTokens t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (erro != null) Text(erro!, style: TradeType.bodyMd.copyWith(color: t.negative)),
-        if (msg != null) Text(msg!, style: TradeType.bodyMd.copyWith(color: t.positive)),
+        if (msg != null) Text(msg!, style: TradeType.bodyMd.copyWith(color: alerta ? t.warning : t.positive)),
       ]);
 }
 
@@ -75,11 +105,13 @@ class _IpsecCardState extends _EstadoAlteracao<IpsecCard, List<PeerIpsec>> {
       context: context,
       builder: (c) => _TrocarPeerDialog(atual: p.endereco, ipsSede: widget.ipsSede, porDominio: p.porDominio),
     );
+    if (!mounted) return;
     if (novo == null) return;
     await executar(() async {
       final r = await widget.api.trocarPeer(widget.id, p.id, novo);
       msg = r.confirmado ? 'Peer trocado ${_via(r.via)}' : 'Enviado; não deu para confirmar';
       if (r.policiesErro.isNotEmpty) msg = '$msg; policy ${r.policiesErro.join(', ')} não foi atualizada';
+      alerta = !r.confirmado || r.policiesErro.isNotEmpty;
       dados = await buscar();
     });
   }
@@ -138,6 +170,8 @@ class _TrocarPeerDialogState extends State<_TrocarPeerDialog> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final novo = _ctl.text.trim();
+    final igual = novo == widget.atual.split('/').first;
+    final ok = _ipPublico(novo) && !igual;
     return AlertDialog(
       title: const Text('Trocar peer'),
       content: SizedBox(
@@ -155,7 +189,10 @@ class _TrocarPeerDialogState extends State<_TrocarPeerDialog> {
           TextField(
             controller: _ctl,
             style: dataStyle(context, TradeType.dataSm),
-            decoration: const InputDecoration(labelText: 'Novo endereço (IPv4)'),
+            decoration: InputDecoration(
+              labelText: 'Novo endereço (IPv4)',
+              errorText: novo.isEmpty || ok ? null : (igual ? 'Igual ao atual' : 'Use um IPv4 público'),
+            ),
             onChanged: (_) => setState(() {}),
           ),
           SizedBox(height: t.space3),
@@ -164,7 +201,7 @@ class _TrocarPeerDialogState extends State<_TrocarPeerDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(onPressed: _ipValido(novo) ? () => Navigator.pop(context, novo) : null, child: const Text('Trocar')),
+        FilledButton(onPressed: ok ? () => Navigator.pop(context, novo) : null, child: const Text('Trocar')),
       ],
     );
   }
@@ -193,6 +230,7 @@ class _PortasLiberadasCardState extends _EstadoAlteracao<PortasLiberadasCard, Li
     }
     if (!mounted) return;
     final f = await showDialog<_Form>(context: context, builder: (c) => _LiberarDialog(ips: [for (final i in ips) i.ip]));
+    if (!mounted) return;
     if (f == null) return;
     await executar(() async {
       final r = await widget.api.liberarPorta(widget.id,
@@ -216,6 +254,7 @@ class _PortasLiberadasCardState extends _EstadoAlteracao<PortasLiberadasCard, Li
           ),
         ) ??
         false;
+    if (!mounted) return;
     if (!ok) return;
     await executar(() async {
       await widget.api.removerLiberacao(widget.id, l.descricao);
@@ -295,11 +334,13 @@ class _LiberarDialogState extends State<_LiberarDialog> {
     final externa = _porta(_ext.text);
     final interna = _int.text.trim().isEmpty ? externa : _porta(_int.text);
     final ip = _ip.text.trim(), desc = _desc.text.trim();
-    final valido = externa != null && interna != null && _ipValido(ip) && desc.isNotEmpty;
-    Widget campo(TextEditingController c, String label, {bool num = false}) => TextField(
+    final valido = externa != null && interna != null && _ipPrivado(ip) && _descOk.hasMatch(desc);
+    String? erroSe(String texto, bool ok, String msg) => texto.trim().isEmpty || ok ? null : msg;
+    Widget campo(TextEditingController c, String label, {bool num = false, String? erro, String? ajuda, int? max}) => TextField(
           controller: c,
           keyboardType: num ? TextInputType.number : TextInputType.text,
-          decoration: InputDecoration(labelText: label),
+          maxLength: max,
+          decoration: InputDecoration(labelText: label, errorText: erro, helperText: ajuda),
           onChanged: (_) => setState(() {}),
         );
     return AlertDialog(
@@ -312,13 +353,15 @@ class _LiberarDialogState extends State<_LiberarDialog> {
               for (final p in const ['tcp', 'udp', 'ambos'])
                 ChoiceChip(label: Text(p), selected: _proto == p, onSelected: (_) => setState(() => _proto = p)),
             ]),
-            campo(_ext, 'Porta externa', num: true),
-            campo(_ip, 'IP interno'),
+            campo(_ext, 'Porta externa', num: true, erro: erroSe(_ext.text, externa != null, 'Porta de 1 a 65535')),
+            campo(_ip, 'IP interno', erro: erroSe(ip, _ipPrivado(ip), 'Use um IPv4 privado')),
             Wrap(spacing: t.space2, children: [
               for (final s in widget.ips.take(8)) ActionChip(label: Text(s), onPressed: () => setState(() => _ip.text = s)),
             ]),
-            campo(_int, 'Porta interna (padrão: a externa)', num: true),
-            campo(_desc, 'Descrição'),
+            campo(_int, 'Porta interna (padrão: a externa)', num: true,
+                erro: erroSe(_int.text, _porta(_int.text) != null, 'Porta de 1 a 65535')),
+            campo(_desc, 'Descrição', ajuda: 'sem acentos', max: 40,
+                erro: erroSe(desc, _descOk.hasMatch(desc), 'Só letras sem acento, números, espaço, . _ -')),
           ]),
         ),
       ),

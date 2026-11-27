@@ -208,7 +208,11 @@ def _alertas(mk: dict, st: dict) -> list[str]:
 _MSG_422 = {"nome": "Campo obrigatório", "usuario": "Campo obrigatório", "senha": "Campo obrigatório",
             "nova": "Mínimo de 12 caracteres",
             "ip_tunel": "Use o IP privado do túnel",
-            "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo"}
+            "ip_tunel_repetido": "Já existe uma MK com esse IP do túnel", "ip_publico": "Use o IP público fixo",
+            "endereco": "Use um IPv4 público", "ip_interno": "Use um IPv4 privado",
+            "descricao": "Descrição: 1 a 40 caracteres, só letras sem acento, números, espaço, . _ -",
+            "porta_externa": "Porta de 1 a 65535", "porta_interna": "Porta de 1 a 65535",
+            "protocolo": "Use tcp, udp ou ambos"}
 
 
 async def ler_eventos_painel(db, agora: datetime, periodo: str) -> list[dict]:
@@ -512,7 +516,10 @@ def create_app(db, r, settings) -> FastAPI:
             return JSONResponse({"detalhe": "Resposta inesperada da API"}, status_code=502)
         nome = res.get("nome") or peer_id
         await _registrar_alteracao(mk, f"Peer IPsec {nome}: {res['antigo']} → {res['novo']}, por {user['usuario']}"
-                                   + (" pelo IP público" if via == "publico" else ""))
+                                   + (" pelo IP público" if via == "publico" else "")
+                                   + ("" if res["confirmado"] else " (não confirmado)")
+                                   + (f" (policy {', '.join(res['policies_erro'])} não atualizada)"
+                                      if res["policies_erro"] else ""))
         return res | {"via": via}
 
     @mks.get("/mks/{id}/portas-liberadas")
@@ -534,6 +541,8 @@ def create_app(db, r, settings) -> FastAPI:
         senha = _senha_rw(mk)
         inv = await _inv(id)
         avisos = ["Se não abrir, confira o filtro forward da MK"]
+        if any(x.get("ip") == body.ip_interno for x in inv["redes"]):
+            raise HTTPException(422, "IP é da própria MK")
         redes = [ipaddress.ip_network(x["rede"]) for x in inv["redes"] if x.get("origem") != "ipsec"]
         if not redes or inv["desatualizado"]:
             avisos.insert(0, "Inventário desatualizado: confira o IP")
